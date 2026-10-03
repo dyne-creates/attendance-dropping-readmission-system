@@ -12,6 +12,7 @@ class AttendanceRecord extends Model
 
     protected $primaryKey = 'attendance_id';
 
+    public $timestamps = false;
 
     protected $fillable = [
         'enrollment_id',

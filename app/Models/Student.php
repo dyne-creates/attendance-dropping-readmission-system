@@ -13,6 +13,8 @@ class Student extends Model
 
     protected $primaryKey = 'student_id';
 
+    public $timestamps = false;
+
     protected $fillable = [
         'user_id',
         'student_number',
@@ -23,6 +25,11 @@ class Student extends Model
         'year_level',
         'program',
     ];
+
+    public function getFullNameAttribute(): string
+    {
+        return trim("{$this->first_name} {$this->last_name}".($this->honorifics ? ", {$this->honorifics}" : ''));
+    }
 
     /** The login account this profile belongs to. */
     public function user(): BelongsTo

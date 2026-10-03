@@ -12,6 +12,8 @@ class SchoolYear extends Model
 
     protected $primaryKey = 'school_year_id';
 
+    public $timestamps = false;
+
     protected $fillable = [
         'year_label',
         'semester',

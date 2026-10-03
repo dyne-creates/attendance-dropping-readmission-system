@@ -13,6 +13,8 @@ class Course extends Model
 
     protected $primaryKey = 'course_id';
 
+    public $timestamps = false;
+
     protected $fillable = [
         'faculty_id',
         'school_year_id',

@@ -19,6 +19,7 @@ class StudentMiddleware
         if (Auth::user()->role == 'student') {
             return $next($request);
         }
+
         return redirect()->back();
     }
 }
