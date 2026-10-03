@@ -25,7 +25,9 @@ return new class extends Migration
 
             $table->text('message');
 
-            $table->timestamp('sent_at');
+            $table->timestamp('sent_at')->nullable();
+
+            $table->timestamps();
 
             $table->foreign('readmission_id')
                 ->references('readmission_id')

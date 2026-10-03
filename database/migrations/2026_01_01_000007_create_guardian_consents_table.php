@@ -22,6 +22,8 @@ return new class extends Migration
             $table->timestamp('consented_at');
             $table->string('status', 50);
 
+            $table->timestamps();
+
             $table->foreign('guardian_id')
                 ->references('guardian_id')
                 ->on('guardians');

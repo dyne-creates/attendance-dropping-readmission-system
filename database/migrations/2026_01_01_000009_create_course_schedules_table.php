@@ -25,7 +25,10 @@ return new class extends Migration
 
             $table->time('start_time');
             $table->time('end_time');
-            $table->string('room', 50);
+
+            $table->string('room', 50)->nullable();
+
+            $table->timestamps();
 
             $table->foreign('course_id')
                 ->references('course_id')

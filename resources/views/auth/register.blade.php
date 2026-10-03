@@ -1,222 +1,136 @@
-<x-guest-layout>
+<x-guest-layout
+    heading="Register"
+    subheading="Register with your official University of Baguio email."
+    width="max-w-lg"
+>
+    @php
+        $field = 'mt-1.5 block w-full rounded-md border bg-white px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 shadow-sm focus:outline-none focus:ring-1 dark:bg-gray-900 dark:text-gray-100 dark:placeholder-gray-500';
+        $ok    = 'border-gray-300 focus:border-red-700 focus:ring-red-700 dark:border-gray-600 dark:focus:border-red-500 dark:focus:ring-red-500';
+        $bad   = 'border-red-600 focus:border-red-700 focus:ring-red-700 dark:border-red-500 dark:focus:border-red-400 dark:focus:ring-red-400';
+        $label = 'block text-sm font-medium text-gray-700 dark:text-gray-300';
+        $error = 'mt-2 text-sm text-red-700 dark:text-red-400';
+    @endphp
 
-    <div class="w-full max-w-lg">
+    <form method="POST" action="{{ route('register') }}">
+        @csrf
 
-        <!-- Title -->
-        <div class="mb-8 text-center">
-            <div class="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-red-600 text-2xl font-bold text-white shadow-sm">
-                A
-            </div>
+        <!-- Full name -->
+        <div>
+            <label for="name" class="{{ $label }}">Full name</label>
 
-            <h1 class="text-3xl font-bold tracking-tight text-gray-900">
-                Create an Account
-            </h1>
-
-            <p class="mt-2 text-sm text-gray-500">
-                Register for the Attendance, Dropping, and Readmission System
-            </p>
-        </div>
-
-        <!-- Registration Card -->
-        <div class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm sm:p-8">
-
-            <div class="mb-6">
-                <h2 class="text-lg font-semibold text-gray-900">
-                    Registration
-                </h2>
-
-                <p class="mt-1 text-sm text-gray-500">
-                    Select your account type and use your official University of Baguio email.
-                </p>
-            </div>
-
-            <form method="POST" action="{{ route('register') }}">
-                @csrf
-
-                <!-- Name -->
-                <div>
-                    <x-input-label
-                        for="name"
-                        :value="__('Full Name')"
-                    />
-
-                    <x-text-input
-                        id="name"
-                        class="mt-2 block w-full"
-                        type="text"
-                        name="name"
-                        :value="old('name')"
-                        required
-                        autofocus
-                        autocomplete="name"
-                        placeholder="Enter your full name"
-                    />
-
-                    <x-input-error
-                        :messages="$errors->get('name')"
-                        class="mt-2"
-                    />
-                </div>
-
-                <!-- Role -->
-                <div class="mt-5">
-                    <x-input-label
-                        for="role"
-                        :value="__('Account Type')"
-                    />
-
-                    <select
-                        id="role"
-                        name="role"
-                        required
-                        class="mt-2 block w-full rounded-lg border-gray-300 bg-white py-3 text-sm shadow-sm focus:border-red-500 focus:ring-red-500"
-                    >
-                        <option value="" disabled {{ old('role') ? '' : 'selected' }}>
-                            Select your account type
-                        </option>
-
-                        <option
-                            value="student"
-                            {{ old('role') === 'student' ? 'selected' : '' }}
-                        >
-                            Student
-                        </option>
-
-                        <option
-                            value="faculty"
-                            {{ old('role') === 'faculty' ? 'selected' : '' }}
-                        >
-                            Faculty
-                        </option>
-
-                        <option
-                            value="osa_staff"
-                            {{ old('role') === 'osa_staff' ? 'selected' : '' }}
-                        >
-                            OSA Staff
-                        </option>
-                    </select>
-
-                    <p class="mt-2 text-xs text-gray-500">
-                        Student accounts use @s.ubaguio.edu.
-                        Faculty and OSA Staff accounts use @e.ubaguio.edu.
-                    </p>
-
-                    <x-input-error
-                        :messages="$errors->get('role')"
-                        class="mt-2"
-                    />
-                </div>
-
-                <!-- Email -->
-                <div class="mt-5">
-                    <x-input-label
-                        for="email"
-                        :value="__('University Email')"
-                    />
-
-                    <x-text-input
-                        id="email"
-                        class="mt-2 block w-full"
-                        type="email"
-                        name="email"
-                        :value="old('email')"
-                        required
-                        autocomplete="username"
-                        placeholder="yourname@s.ubaguio.edu"
-                    />
-
-                    <x-input-error
-                        :messages="$errors->get('email')"
-                        class="mt-2"
-                    />
-                </div>
-
-                <!-- Password -->
-                <div class="mt-5">
-                    <x-input-label
-                        for="password"
-                        :value="__('Password')"
-                    />
-
-                    <x-text-input
-                        id="password"
-                        class="mt-2 block w-full"
-                        type="password"
-                        name="password"
-                        required
-                        autocomplete="new-password"
-                        placeholder="Create a password"
-                    />
-
-                    <x-input-error
-                        :messages="$errors->get('password')"
-                        class="mt-2"
-                    />
-                </div>
-
-                <!-- Confirm Password -->
-                <div class="mt-5">
-                    <x-input-label
-                        for="password_confirmation"
-                        :value="__('Confirm Password')"
-                    />
-
-                    <x-text-input
-                        id="password_confirmation"
-                        class="mt-2 block w-full"
-                        type="password"
-                        name="password_confirmation"
-                        required
-                        autocomplete="new-password"
-                        placeholder="Confirm your password"
-                    />
-
-                    <x-input-error
-                        :messages="$errors->get('password_confirmation')"
-                        class="mt-2"
-                    />
-                </div>
-
-                <!-- Submit -->
-                <button
-                    type="submit"
-                    class="mt-6 flex w-full items-center justify-center rounded-lg bg-red-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2"
-                >
-                    Create Account
-                </button>
-
-            </form>
-
-        </div>
-
-        <!-- Account Information -->
-        <div class="mt-6 rounded-xl border border-red-100 bg-red-50 p-4">
-            <p class="text-sm font-semibold text-red-800">
-                University Email Requirement
-            </p>
-
-            <ul class="mt-2 space-y-1 text-xs text-red-700">
-                <li>• Students: @s.ubaguio.edu</li>
-                <li>• Faculty: @e.ubaguio.edu</li>
-                <li>• OSA Staff: @e.ubaguio.edu</li>
-            </ul>
-        </div>
-
-        <!-- Mobile Login -->
-        <div class="mt-6 text-center sm:hidden">
-            <span class="text-sm text-gray-500">
-                Already have an account?
-            </span>
-
-            <a
-                href="{{ route('login') }}"
-                class="font-semibold text-red-600 hover:underline"
+            <input
+                id="name"
+                type="text"
+                name="name"
+                value="{{ old('name') }}"
+                maxlength="150"
+                required
+                autofocus
+                autocomplete="name"
+                class="{{ $field }} {{ $errors->has('name') ? $bad : $ok }}"
+                @if ($errors->has('name')) aria-invalid="true" @endif
             >
-                Login
-            </a>
+
+            @if ($errors->has('name'))
+                <p class="{{ $error }}" role="alert">{{ $errors->first('name') }}</p>
+            @endif
         </div>
 
-    </div>
+        <!-- Account type -->
+        <div class="mt-5">
+            <label for="role" class="{{ $label }}">Account type</label>
 
+            <select
+                id="role"
+                name="role"
+                required
+                class="{{ $field }} pr-10 {{ $errors->has('role') ? $bad : $ok }}"
+                @if ($errors->has('role')) aria-invalid="true" @endif
+            >
+                <option value="" disabled class="bg-white text-gray-900 dark:bg-gray-800 dark:text-gray-100" @selected(! old('role'))>Select your account type</option>
+                <option value="student" class="bg-white text-gray-900 dark:bg-gray-800 dark:text-gray-100" @selected(old('role') === 'student')>Student</option>
+                <option value="faculty" class="bg-white text-gray-900 dark:bg-gray-800 dark:text-gray-100" @selected(old('role') === 'faculty')>Faculty</option>
+                <option value="osa_staff" class="bg-white text-gray-900 dark:bg-gray-800 dark:text-gray-100" @selected(old('role') === 'osa_staff')>OSA Staff</option>
+            </select>
+
+            @if ($errors->has('role'))
+                <p class="{{ $error }}" role="alert">{{ $errors->first('role') }}</p>
+            @endif
+        </div>
+
+        <!-- University email -->
+        <div class="mt-5">
+            <label for="email" class="{{ $label }}">Email</label>
+
+            <input
+                id="email"
+                type="email"
+                name="email"
+                value="{{ old('email') }}"
+                required
+                autocomplete="username"
+                class="{{ $field }} {{ $errors->has('email') ? $bad : $ok }}"
+                @if ($errors->has('email')) aria-invalid="true" @endif
+            >
+
+            @if ($errors->has('email'))
+                <p class="{{ $error }}" role="alert">{{ $errors->first('email') }}</p>
+            @endif
+        </div>
+
+        <!-- Password -->
+        <div class="mt-5">
+            <label for="password" class="{{ $label }}">Password</label>
+
+            <input
+                id="password"
+                type="password"
+                name="password"
+                required
+                autocomplete="new-password"
+                placeholder="Create a password"
+                class="{{ $field }} {{ $errors->has('password') ? $bad : $ok }}"
+                @if ($errors->has('password')) aria-invalid="true" @endif
+            >
+
+            @if ($errors->has('password'))
+                <p class="{{ $error }}" role="alert">{{ $errors->first('password') }}</p>
+            @else
+                <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">At least 8 characters.</p>
+            @endif
+        </div>
+
+        <!-- Confirm password -->
+        <div class="mt-5">
+            <label for="password_confirmation" class="{{ $label }}">Confirm password</label>
+
+            <input
+                id="password_confirmation"
+                type="password"
+                name="password_confirmation"
+                required
+                autocomplete="new-password"
+                placeholder="Re-enter your password"
+                class="{{ $field }} {{ $errors->has('password_confirmation') ? $bad : $ok }}"
+                @if ($errors->has('password_confirmation')) aria-invalid="true" @endif
+            >
+
+            @if ($errors->has('password_confirmation'))
+                <p class="{{ $error }}" role="alert">{{ $errors->first('password_confirmation') }}</p>
+            @endif
+        </div>
+
+        <!-- Submit -->
+        <button
+            type="submit"
+            class="mt-6 flex w-full justify-center rounded-md bg-red-700 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-red-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-700 focus-visible:ring-offset-2 dark:bg-red-600 dark:hover:bg-red-500 dark:focus-visible:ring-red-400 dark:focus-visible:ring-offset-gray-800"
+        >
+            Create account
+        </button>
+    </form>
+
+    <p class="mt-6 border-t border-gray-200 pt-6 text-center text-sm text-gray-600 dark:border-gray-700 dark:text-gray-400">
+        Already have an account?
+        <a href="{{ route('login') }}" class="font-semibold text-red-700 hover:underline dark:text-red-400">Log in</a>
+    </p>
 </x-guest-layout>

@@ -27,7 +27,7 @@ return new class extends Migration
             $table->boolean('is_out_of_schedule')
                 ->default(false);
 
-            $table->timestamp('recorded_at');
+            $table->timestamps();
 
             $table->foreign('enrollment_id')
                 ->references('enrollment_id')

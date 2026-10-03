@@ -28,9 +28,27 @@ class LoginRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'email' => ['required', 'string', 'email'],
+            'email' => [
+                'required',
+                'string',
+                'email',
+                function (string $attribute, mixed $value, \Closure $fail): void {
+                    $domain = strtolower((string) substr(strrchr((string) $value, '@') ?: '', 1));
+
+                    if (! in_array($domain, ['s.ubaguio.edu', 'e.ubaguio.edu'], true)) {
+                        $fail('Use your University of Baguio email address to sign in.');
+                    }
+                },
+            ],
             'password' => ['required', 'string'],
         ];
+    }
+
+    protected function prepareForValidation(): void
+    {
+        $this->merge([
+            'email' => strtolower(trim((string) $this->input('email'))),
+        ]);
     }
 
     /**
@@ -43,6 +61,19 @@ class LoginRequest extends FormRequest
         $this->ensureIsNotRateLimited();
 
         if (! Auth::attempt($this->only('email', 'password'), $this->boolean('remember'))) {
+            RateLimiter::hit($this->throttleKey());
+
+            throw ValidationException::withMessages([
+                'email' => trans('auth.failed'),
+            ]);
+        }
+
+        $user = Auth::user();
+        $requiredDomain = $user?->role === 'student' ? 's.ubaguio.edu' : 'e.ubaguio.edu';
+        $emailDomain = strtolower((string) substr(strrchr((string) $user?->email, '@') ?: '', 1));
+
+        if ($emailDomain !== $requiredDomain) {
+            Auth::logout();
             RateLimiter::hit($this->throttleKey());
 
             throw ValidationException::withMessages([

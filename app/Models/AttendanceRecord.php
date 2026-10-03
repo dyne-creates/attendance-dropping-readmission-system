@@ -12,7 +12,6 @@ class AttendanceRecord extends Model
 
     protected $primaryKey = 'attendance_id';
 
-    public $timestamps = false;
 
     protected $fillable = [
         'enrollment_id',
@@ -21,7 +20,6 @@ class AttendanceRecord extends Model
         'status',
         'remarks',
         'is_out_of_schedule',
-        'recorded_at',
     ];
 
     protected function casts(): array
@@ -29,15 +27,16 @@ class AttendanceRecord extends Model
         return [
             'session_date' => 'date',
             'is_out_of_schedule' => 'boolean',
-            'recorded_at' => 'datetime',
         ];
     }
 
+    /** The enrollment (student + course) this mark belongs to. */
     public function enrollment(): BelongsTo
     {
         return $this->belongsTo(Enrollment::class, 'enrollment_id', 'enrollment_id');
     }
 
+    /** The faculty member who recorded this mark. */
     public function recorder(): BelongsTo
     {
         return $this->belongsTo(FacultyMember::class, 'recorded_by', 'faculty_id');

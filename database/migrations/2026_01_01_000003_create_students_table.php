@@ -28,8 +28,10 @@ return new class extends Migration
             $table->integer('year_level');
             $table->string('program', 100);
 
+            $table->timestamps();
+
             $table->foreign('user_id')
-                ->references('user_id')
+                ->references('user_id') 
                 ->on('users');
         });
     }

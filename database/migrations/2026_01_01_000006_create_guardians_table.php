@@ -15,13 +15,17 @@ return new class extends Migration
 
             $table->string('full_name', 150);
             $table->string('relationship', 50);
-            $table->string('email', 255);
+
+            $table->string('email', 255)->nullable();
+
             $table->string('phone_number', 20);
 
             $table->boolean('is_verified')->default(false);
 
             $table->string('verification_method', 50)->nullable();
             $table->timestamp('verified_at')->nullable();
+
+            $table->timestamps();
 
             $table->foreign('student_id')
                 ->references('student_id')

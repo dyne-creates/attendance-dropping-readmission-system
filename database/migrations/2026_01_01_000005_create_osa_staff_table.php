@@ -13,6 +13,8 @@ return new class extends Migration
 
             $table->unsignedBigInteger('user_id')->unique();
 
+            $table->timestamps();
+
             $table->foreign('user_id')
                 ->references('user_id')
                 ->on('users');

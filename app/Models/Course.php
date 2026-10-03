@@ -13,8 +13,6 @@ class Course extends Model
 
     protected $primaryKey = 'course_id';
 
-    public $timestamps = false;
-
     protected $fillable = [
         'faculty_id',
         'school_year_id',
@@ -28,26 +26,30 @@ class Course extends Model
     protected function casts(): array
     {
         return [
-            'hours_per_week' => 'decimal:2',
+            'hours_per_week' => 'integer',
             'total_semester_hours' => 'decimal:2',
         ];
     }
 
+    /** The faculty member teaching this course. */
     public function facultyMember(): BelongsTo
     {
         return $this->belongsTo(FacultyMember::class, 'faculty_id', 'faculty_id');
     }
 
+    /** The school year this offering belongs to. */
     public function schoolYear(): BelongsTo
     {
         return $this->belongsTo(SchoolYear::class, 'school_year_id', 'school_year_id');
     }
 
+    /** Weekly meeting slots for this course (used for the schedule-warning check). */
     public function schedules(): HasMany
     {
         return $this->hasMany(CourseSchedule::class, 'course_id', 'course_id');
     }
 
+    /** Students enrolled in this course offering. */
     public function enrollments(): HasMany
     {
         return $this->hasMany(Enrollment::class, 'course_id', 'course_id');

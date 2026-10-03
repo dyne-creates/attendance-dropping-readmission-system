@@ -17,15 +17,29 @@ class ProfileUpdateRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'name' => ['required', 'string', 'max:255'],
+            'name' => ['required', 'string', 'max:150'],
             'email' => [
                 'required',
                 'string',
-                'lowercase',
                 'email',
                 'max:255',
-                Rule::unique(User::class)->ignore($this->user()->id),
+                Rule::unique(User::class)->ignore($this->user()->getKey()),
+                function (string $attribute, mixed $value, \Closure $fail): void {
+                    $domain = $this->user()->role === 'student' ? 's.ubaguio.edu' : 'e.ubaguio.edu';
+                    $emailDomain = strtolower((string) substr(strrchr((string) $value, '@') ?: '', 1));
+
+                    if ($emailDomain !== $domain) {
+                        $fail('Use the University of Baguio email domain assigned to your account type.');
+                    }
+                },
             ],
         ];
+    }
+
+    protected function prepareForValidation(): void
+    {
+        $this->merge([
+            'email' => strtolower(trim((string) $this->input('email'))),
+        ]);
     }
 }

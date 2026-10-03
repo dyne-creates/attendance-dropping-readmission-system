@@ -13,8 +13,6 @@ class Guardian extends Model
 
     protected $primaryKey = 'guardian_id';
 
-    public $timestamps = false;
-
     protected $fillable = [
         'student_id',
         'full_name',
@@ -34,16 +32,19 @@ class Guardian extends Model
         ];
     }
 
+    /** The student this guardian is attached to. */
     public function student(): BelongsTo
     {
         return $this->belongsTo(Student::class, 'student_id', 'student_id');
     }
 
+    /** Consent records (e.g. "ok to share my number / drop details"). */
     public function consents(): HasMany
     {
         return $this->hasMany(GuardianConsent::class, 'guardian_id', 'guardian_id');
     }
 
+    /** Notifications sent to this guardian. */
     public function notifications(): HasMany
     {
         return $this->hasMany(Notification::class, 'guardian_id', 'guardian_id');

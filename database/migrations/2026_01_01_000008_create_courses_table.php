@@ -18,8 +18,10 @@ return new class extends Migration
             $table->string('course_name', 150);
             $table->string('section', 20);
 
-            $table->decimal('hours_per_week', 4, 2);
+            $table->unsignedInteger('hours_per_week');
             $table->decimal('total_semester_hours', 6, 2);
+
+            $table->timestamps();
 
             $table->foreign('faculty_id')
                 ->references('faculty_id')

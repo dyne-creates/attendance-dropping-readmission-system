@@ -12,8 +12,6 @@ class GuardianConsent extends Model
 
     protected $primaryKey = 'consent_id';
 
-    public $timestamps = false;
-
     protected $fillable = [
         'guardian_id',
         'consent_type',
@@ -29,6 +27,7 @@ class GuardianConsent extends Model
         ];
     }
 
+    /** Which guardian this consent concerns. */
     public function guardian(): BelongsTo
     {
         return $this->belongsTo(Guardian::class, 'guardian_id', 'guardian_id');

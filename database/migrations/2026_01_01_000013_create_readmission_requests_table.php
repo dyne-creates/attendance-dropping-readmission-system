@@ -26,10 +26,12 @@ return new class extends Migration
                 'pending',
                 'approved',
                 'rejected',
-            ]);
+            ])->default('pending');
 
             $table->date('notice_sent_date')->nullable();
             $table->date('processed_date')->nullable();
+
+            $table->timestamps();
 
             $table->foreign('drop_id')
                 ->references('drop_id')

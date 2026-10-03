@@ -13,8 +13,6 @@ class Student extends Model
 
     protected $primaryKey = 'student_id';
 
-    public $timestamps = false;
-
     protected $fillable = [
         'user_id',
         'student_number',
@@ -26,21 +24,25 @@ class Student extends Model
         'program',
     ];
 
+    /** The login account this profile belongs to. */
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class, 'user_id', 'user_id');
     }
 
+    /** Guardians this student has on file (for drop/readmission contact). */
     public function guardians(): HasMany
     {
         return $this->hasMany(Guardian::class, 'student_id', 'student_id');
     }
 
+    /** Every course enrollment this student has ever had. */
     public function enrollments(): HasMany
     {
         return $this->hasMany(Enrollment::class, 'student_id', 'student_id');
     }
 
+    /** Notifications sent directly to this student (drop/readmission notices). */
     public function notifications(): HasMany
     {
         return $this->hasMany(Notification::class, 'student_id', 'student_id');

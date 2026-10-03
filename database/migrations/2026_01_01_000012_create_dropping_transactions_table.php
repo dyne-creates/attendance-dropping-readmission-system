@@ -20,6 +20,8 @@ return new class extends Migration
 
             $table->date('drop_date');
 
+            $table->timestamps();
+
             $table->unique([
                 'enrollment_id',
                 'sequence_in_cycle',

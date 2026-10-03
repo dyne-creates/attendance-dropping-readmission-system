@@ -15,6 +15,8 @@ return new class extends Migration
             $table->date('start_date');
             $table->date('end_date');
             $table->boolean('is_archived')->default(false);
+            $table->date('archived_date')->nullable();
+            $table->timestamps();
         });
     }
 

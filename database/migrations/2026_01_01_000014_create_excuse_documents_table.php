@@ -15,7 +15,8 @@ return new class extends Migration
 
             $table->string('document_type', 50);
             $table->string('file_path', 255);
-            $table->timestamp('uploaded_at');
+
+            $table->timestamps();
 
             $table->foreign('readmission_id')
                 ->references('readmission_id')

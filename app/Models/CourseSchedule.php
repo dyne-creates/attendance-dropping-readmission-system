@@ -12,8 +12,6 @@ class CourseSchedule extends Model
 
     protected $primaryKey = 'schedule_id';
 
-    public $timestamps = false;
-
     protected $fillable = [
         'course_id',
         'day_of_week',
@@ -22,6 +20,7 @@ class CourseSchedule extends Model
         'room',
     ];
 
+    /** The course this meeting slot belongs to. */
     public function course(): BelongsTo
     {
         return $this->belongsTo(Course::class, 'course_id', 'course_id');

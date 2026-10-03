@@ -19,6 +19,8 @@ return new class extends Migration
             $table->boolean('suppress_schedule_warnings')
                 ->default(false);
 
+            $table->timestamps();
+
             $table->foreign('user_id')
                 ->references('user_id')
                 ->on('users');

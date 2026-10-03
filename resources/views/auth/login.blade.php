@@ -1,179 +1,109 @@
-<x-guest-layout>
+<x-guest-layout
+    heading="Log in"
+    subheading="Use your University of Baguio account to continue."
+>
+    @php
+        $field = 'mt-1.5 block w-full rounded-md border bg-white px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 shadow-sm focus:outline-none focus:ring-1 dark:bg-gray-900 dark:text-gray-100 dark:placeholder-gray-500';
+        $ok    = 'border-gray-300 focus:border-red-700 focus:ring-red-700 dark:border-gray-600 dark:focus:border-red-500 dark:focus:ring-red-500';
+        $bad   = 'border-red-600 focus:border-red-700 focus:ring-red-700 dark:border-red-500 dark:focus:border-red-400 dark:focus:ring-red-400';
+        $label = 'block text-sm font-medium text-gray-700 dark:text-gray-300';
+    @endphp
 
-    <div class="w-full max-w-md">
-
-        <!-- Title -->
-        <div class="mb-8 text-center">
-            <div class="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-red-600 text-2xl font-bold text-white shadow-sm">
-                A
-            </div>
-
-            <h1 class="text-3xl font-bold tracking-tight text-gray-900">
-                Welcome Back
-            </h1>
-
-            <p class="mt-2 text-sm text-gray-500">
-                Sign in to the Attendance, Dropping, and Readmission System
-            </p>
+    @if (session('status'))
+        <div
+            class="mb-5 rounded-md border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800 dark:border-green-700 dark:bg-green-900 dark:text-green-300"
+            role="status"
+        >
+            {{ session('status') }}
         </div>
+    @endif
 
-        <!-- Login Card -->
-        <div class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm sm:p-8">
+    <form method="POST" action="{{ route('login') }}">
+        @csrf
 
-            <div class="mb-6">
-                <h2 class="text-lg font-semibold text-gray-900">
-                    Login
-                </h2>
+        <!-- Email -->
+        <div>
+            <label for="email" class="{{ $label }}">Email</label>
 
-                <p class="mt-1 text-sm text-gray-500">
-                    Use your University of Baguio account.
-                </p>
-            </div>
-
-            <!-- Session Status -->
-            <x-auth-session-status
-                class="mb-4"
-                :status="session('status')"
-            />
-
-            <form method="POST" action="{{ route('login') }}">
-                @csrf
-
-                <!-- Email -->
-                <div>
-                    <x-input-label
-                        for="email"
-                        :value="__('University Email')"
-                    />
-
-                    <x-text-input
-                        id="email"
-                        class="mt-2 block w-full"
-                        type="email"
-                        name="email"
-                        :value="old('email')"
-                        required
-                        autofocus
-                        autocomplete="username"
-                        placeholder="yourname@s.ubaguio.edu"
-                    />
-
-                    <x-input-error
-                        :messages="$errors->get('email')"
-                        class="mt-2"
-                    />
-                </div>
-
-                <!-- Password -->
-                <div class="mt-5">
-                    <div class="flex items-center justify-between">
-                        <x-input-label
-                            for="password"
-                            :value="__('Password')"
-                        />
-
-                        @if (Route::has('password.request'))
-                            <a
-                                href="{{ route('password.request') }}"
-                                class="text-sm font-medium text-red-600 hover:text-red-700 hover:underline"
-                            >
-                                Forgot password?
-                            </a>
-                        @endif
-                    </div>
-
-                    <x-text-input
-                        id="password"
-                        class="mt-2 block w-full"
-                        type="password"
-                        name="password"
-                        required
-                        autocomplete="current-password"
-                        placeholder="Enter your password"
-                    />
-
-                    <x-input-error
-                        :messages="$errors->get('password')"
-                        class="mt-2"
-                    />
-                </div>
-
-                <!-- Remember -->
-                <div class="mt-5">
-                    <label for="remember_me" class="inline-flex items-center">
-                        <input
-                            id="remember_me"
-                            type="checkbox"
-                            class="rounded border-gray-300 text-red-600 shadow-sm focus:ring-red-500"
-                            name="remember"
-                        >
-
-                        <span class="ms-2 text-sm text-gray-600">
-                            Remember me
-                        </span>
-                    </label>
-                </div>
-
-                <!-- Submit -->
-                <button
-                    type="submit"
-                    class="mt-6 flex w-full items-center justify-center rounded-lg bg-red-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2"
-                >
-                    Sign In
-                </button>
-            </form>
-
-        </div>
-
-        <!-- Account Types -->
-        <div class="mt-6 grid grid-cols-3 gap-3">
-
-            <div class="rounded-xl border border-gray-200 bg-white p-3 text-center">
-                <div class="mx-auto mb-2 flex h-8 w-8 items-center justify-center rounded-lg bg-red-50 text-red-600">
-                    🎓
-                </div>
-
-                <p class="text-xs font-semibold text-gray-700">
-                    Student
-                </p>
-            </div>
-
-            <div class="rounded-xl border border-gray-200 bg-white p-3 text-center">
-                <div class="mx-auto mb-2 flex h-8 w-8 items-center justify-center rounded-lg bg-red-50 text-red-600">
-                    👨‍🏫
-                </div>
-
-                <p class="text-xs font-semibold text-gray-700">
-                    Faculty
-                </p>
-            </div>
-
-            <div class="rounded-xl border border-gray-200 bg-white p-3 text-center">
-                <div class="mx-auto mb-2 flex h-8 w-8 items-center justify-center rounded-lg bg-red-50 text-red-600">
-                    🏢
-                </div>
-
-                <p class="text-xs font-semibold text-gray-700">
-                    OSA Staff
-                </p>
-            </div>
-
-        </div>
-
-        <!-- Mobile Register -->
-        <div class="mt-6 text-center sm:hidden">
-            <span class="text-sm text-gray-500">
-                Don't have an account?
-            </span>
-
-            <a
-                href="{{ route('register') }}"
-                class="font-semibold text-red-600 hover:underline"
+            <input
+                id="email"
+                type="email"
+                name="email"
+                value="{{ old('email') }}"
+                required
+                autofocus
+                autocomplete="username"
+                class="{{ $field }} {{ $errors->has('email') ? $bad : $ok }}"
+                @if ($errors->has('email')) aria-invalid="true" @endif
             >
-                Register
-            </a>
+
+            @if ($errors->has('email'))
+                <p class="mt-2 text-sm text-red-700 dark:text-red-400" role="alert">
+                    {{ $errors->first('email') }}
+                </p>
+            @endif
+
         </div>
 
-    </div>
+        <!-- Password -->
+        <div class="mt-5">
+            <div class="flex items-center justify-between">
+                <label for="password" class="{{ $label }}">Password</label>
 
+                @if (Route::has('password.request'))
+                    <a
+                        href="{{ route('password.request') }}"
+                        class="text-sm font-medium text-red-700 hover:underline dark:text-red-400"
+                    >
+                        Forgot password?
+                    </a>
+                @endif
+            </div>
+
+            <input
+                id="password"
+                type="password"
+                name="password"
+                required
+                autocomplete="current-password"
+                placeholder="Enter your password"
+                class="{{ $field }} {{ $errors->has('password') ? $bad : $ok }}"
+                @if ($errors->has('password')) aria-invalid="true" @endif
+            >
+
+            @if ($errors->has('password'))
+                <p class="mt-2 text-sm text-red-700 dark:text-red-400" role="alert">
+                    {{ $errors->first('password') }}
+                </p>
+            @endif
+        </div>
+
+        <!-- Remember me -->
+        <div class="mt-5">
+            <label for="remember_me" class="inline-flex items-center gap-2">
+                <input
+                    id="remember_me"
+                    type="checkbox"
+                    name="remember"
+                    class="h-4 w-4 rounded border-gray-300 text-red-700 accent-red-700 focus:ring-red-700 dark:border-gray-600 dark:bg-gray-900 dark:focus:ring-red-500 dark:focus:ring-offset-gray-800"
+                >
+                <span class="text-sm text-gray-600 dark:text-gray-400">Remember me</span>
+            </label>
+        </div>
+
+        <!-- Submit -->
+        <button
+            type="submit"
+            class="mt-6 flex w-full justify-center rounded-md bg-red-700 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-red-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-700 focus-visible:ring-offset-2 dark:bg-red-600 dark:hover:bg-red-500 dark:focus-visible:ring-red-400 dark:focus-visible:ring-offset-gray-800"
+        >
+            Sign in
+        </button>
+    </form>
+
+    @if (Route::has('register'))
+        <p class="mt-6 border-t border-gray-200 pt-6 text-center text-sm text-gray-600 dark:border-gray-700 dark:text-gray-400">
+            Don't have an account?
+            <a href="{{ route('register') }}" class="font-semibold text-red-700 hover:underline dark:text-red-400">Register</a>
+        </p>
+    @endif
 </x-guest-layout>

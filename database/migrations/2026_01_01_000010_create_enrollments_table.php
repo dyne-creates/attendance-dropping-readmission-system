@@ -18,9 +18,13 @@ return new class extends Migration
                 'enrolled',
                 'dropped',
                 'readmitted',
-            ]);
+            ])->default('enrolled');
 
-            $table->integer('cycle_number');
+            $table->integer('cycle_number')->default(1);
+
+            $table->timestamps();
+
+            $table->unique(['student_id', 'course_id']);
 
             $table->foreign('student_id')
                 ->references('student_id')
