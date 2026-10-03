@@ -18,6 +18,7 @@ class AttendanceRecord extends Model
         'enrollment_id',
         'recorded_by',
         'session_date',
+        'grading_period',
         'status',
         'remarks',
         'is_out_of_schedule',
