@@ -29,6 +29,10 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
 
         $middleware->redirectUsersTo(function (Request $request) {
+            if ($request->user() === null) {
+                return route('login');
+            }
+
             return match ($request->user()?->role) {
                 'faculty' => route('faculty.dashboard'),
                 'osa_staff' => route('osa.dashboard'),

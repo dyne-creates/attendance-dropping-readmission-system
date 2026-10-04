@@ -29,7 +29,7 @@ class ProfileTest extends TestCase
             ->actingAs($user)
             ->patch('/profile', [
                 'name' => 'Test User',
-                'email' => 'test@example.com',
+                'email' => 'renamed-'.$user->getKey().'@s.ubaguio.edu',
             ]);
 
         $response
@@ -39,7 +39,7 @@ class ProfileTest extends TestCase
         $user->refresh();
 
         $this->assertSame('Test User', $user->name);
-        $this->assertSame('test@example.com', $user->email);
+        $this->assertSame('renamed-'.$user->getKey().'@s.ubaguio.edu', $user->email);
         $this->assertNull($user->email_verified_at);
     }
 
@@ -59,6 +59,20 @@ class ProfileTest extends TestCase
             ->assertRedirect('/profile');
 
         $this->assertNotNull($user->refresh()->email_verified_at);
+    }
+
+    public function test_profile_update_does_not_change_the_account_role(): void
+    {
+        $user = User::factory()->create(['role' => 'student']);
+
+        $response = $this->actingAs($user)->patch('/profile', [
+            'name' => $user->name,
+            'email' => $user->email,
+            'role' => 'osa_staff',
+        ]);
+
+        $response->assertSessionHasNoErrors();
+        $this->assertSame('student', $user->refresh()->role);
     }
 
     public function test_user_can_delete_their_account(): void

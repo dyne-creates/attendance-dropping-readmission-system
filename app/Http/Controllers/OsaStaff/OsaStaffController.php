@@ -193,16 +193,18 @@ class OsaStaffController extends Controller
             ->get();
 
         return view(
-            'osa.readmission-details',
+            'osa-staff.readmission-details',
             compact('request', 'documents')
         );
     }
 
-    public function approveReadmission($id)
+    public function approveReadmission(Request $request, int $id)
     {
         DB::beginTransaction();
 
         try {
+            $osaStaff = $request->user()->osaStaff()->firstOrCreate();
+
             $readmission = DB::table('readmission_requests')
                 ->join(
                     'dropping_transactions',
@@ -259,6 +261,8 @@ class OsaStaffController extends Controller
                 ->first();
 
             if (!$readmission) {
+                DB::rollBack();
+
                 return redirect()
                     ->route('osa.readmissions')
                     ->with('error', 'Readmission request not found.');
@@ -268,7 +272,7 @@ class OsaStaffController extends Controller
                 ->where('readmission_id', $id)
                 ->update([
                     'status' => 'approved',
-                    'processed_by' => 1,
+                    'processed_by' => $osaStaff->getKey(),
                     'processed_date' => now()->toDateString(),
                     'notice_sent_date' => now()->toDateString(),
                 ]);
@@ -284,7 +288,7 @@ class OsaStaffController extends Controller
 
             DB::table('notifications')->insert([
                 'readmission_id' => $id,
-                'osa_id' => 1,
+                'osa_id' => $osaStaff->getKey(),
                 'student_id' => $readmission->student_id,
                 'guardian_id' => null,
                 'notification_type' => 'readmission_approved',
@@ -296,7 +300,7 @@ class OsaStaffController extends Controller
 
             DB::table('notifications')->insert([
                 'readmission_id' => $id,
-                'osa_id' => 1,
+                'osa_id' => $osaStaff->getKey(),
                 'student_id' => null,
                 'guardian_id' => null,
                 'notification_type' => 'student_readmitted',
@@ -312,21 +316,19 @@ class OsaStaffController extends Controller
 
             DB::commit();
 
-            Mail::to($readmission->student_email)
-                ->send(
-                    new ReadmissionDecisionMail(
-                        $readmission,
-                        'approved'
-                    )
-                );
+            try {
+                Mail::to($readmission->student_email)
+                    ->send(new ReadmissionDecisionMail($readmission, 'approved'));
 
-            Mail::to($readmission->faculty_email)
-                ->send(
-                    new ReadmissionDecisionMail(
-                        $readmission,
-                        'approved_faculty'
-                    )
-                );
+                Mail::to($readmission->faculty_email)
+                    ->send(new ReadmissionDecisionMail($readmission, 'approved_faculty'));
+            } catch (\Throwable $exception) {
+                report($exception);
+
+                return redirect()
+                    ->route('osa.readmissions')
+                    ->with('warning', 'The readmission was approved, but an email notification could not be sent.');
+            }
 
             return redirect()
                 ->route('osa.readmissions')
@@ -335,25 +337,28 @@ class OsaStaffController extends Controller
                     'Readmission approved. Notifications were sent to the student and faculty.'
                 );
 
-        } catch (\Exception $e) {
-            DB::rollBack();
+        } catch (\Throwable $exception) {
+            if (DB::transactionLevel() > 0) {
+                DB::rollBack();
+            }
+
+            report($exception);
 
             return redirect()
                 ->back()
-                ->with(
-                    'error',
-                    'Something went wrong: ' . $e->getMessage()
-                );
+                ->with('error', 'The readmission could not be approved. Please try again.');
         }
     }
 
     public function rejectReadmission(
         Request $request,
-        $id
+        int $id
     ) {
         DB::beginTransaction();
 
         try {
+            $osaStaff = $request->user()->osaStaff()->firstOrCreate();
+
             $readmission = DB::table('readmission_requests')
                 ->join(
                     'dropping_transactions',
@@ -407,6 +412,8 @@ class OsaStaffController extends Controller
                 ->first();
 
             if (!$readmission) {
+                DB::rollBack();
+
                 return redirect()
                     ->route('osa.readmissions')
                     ->with('error', 'Request not found.');
@@ -416,14 +423,14 @@ class OsaStaffController extends Controller
                 ->where('readmission_id', $id)
                 ->update([
                     'status' => 'rejected',
-                    'processed_by' => 1,
+                    'processed_by' => $osaStaff->getKey(),
                     'processed_date' => now()->toDateString(),
                     'notice_sent_date' => now()->toDateString(),
                 ]);
 
             DB::table('notifications')->insert([
                 'readmission_id' => $id,
-                'osa_id' => 1,
+                'osa_id' => $osaStaff->getKey(),
                 'student_id' => $readmission->student_id,
                 'guardian_id' => null,
                 'notification_type' => 'readmission_rejected',
@@ -435,13 +442,16 @@ class OsaStaffController extends Controller
 
             DB::commit();
 
-            Mail::to($readmission->student_email)
-                ->send(
-                    new ReadmissionDecisionMail(
-                        $readmission,
-                        'rejected'
-                    )
-                );
+            try {
+                Mail::to($readmission->student_email)
+                    ->send(new ReadmissionDecisionMail($readmission, 'rejected'));
+            } catch (\Throwable $exception) {
+                report($exception);
+
+                return redirect()
+                    ->route('osa.readmissions')
+                    ->with('warning', 'The readmission was rejected, but the notification email could not be sent.');
+            }
 
             return redirect()
                 ->route('osa.readmissions')
@@ -450,15 +460,16 @@ class OsaStaffController extends Controller
                     'Readmission request rejected and student notified.'
                 );
 
-        } catch (\Exception $e) {
-            DB::rollBack();
+        } catch (\Throwable $exception) {
+            if (DB::transactionLevel() > 0) {
+                DB::rollBack();
+            }
+
+            report($exception);
 
             return redirect()
                 ->back()
-                ->with(
-                    'error',
-                    'Something went wrong: ' . $e->getMessage()
-                );
+                ->with('error', 'The readmission could not be rejected. Please try again.');
         }
     }
 

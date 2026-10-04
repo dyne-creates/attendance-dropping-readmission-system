@@ -13,8 +13,6 @@ class Enrollment extends Model
 
     protected $primaryKey = 'enrollment_id';
 
-    public $timestamps = false;
-
     protected $fillable = [
         'student_id',
         'course_id',

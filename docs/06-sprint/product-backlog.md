@@ -10,7 +10,7 @@ The Product Backlog contains the prioritized user stories for the Attendance, Dr
 | 2 | **US-01B** | As a faculty member, I want to log in using my employee credentials, so that I can manage my assigned class rosters. | High | 2 | Backlog |
 | 3 | **US-01C** | As an OSA staff member, I want to log in securely using my administrative credentials, so that I can oversee school-wide academic transitions. | High | 2 | Backlog |
 | 4 | **US-02** | As a faculty member, I want to mark student attendance as present, absent, or late with optional remarks, so that student attendance can be properly monitored. | High | 3 | Backlog |
-| 5 | **US-03** | As a faculty member, I want the system to automatically flag a student's status as "Dropped" when their absences exceed 20% of the total class hours, so that the dropping status is recorded without manual calculations. | High | 5 | Backlog |
+| 5 | **US-03** | As a faculty member, I want to manually drop a student from my course at my discretion, so that my dropping decision is properly recorded. | High | 5 | Backlog |
 | 6 | **US-04** | As a student with a dropped status, I want to submit an online re-admission request, so that I can initiate my return to the academic program. | Medium | 3 | Backlog |
 | 7 | **US-05** | As an OSA staff member, I want to export dropping and re-admission records as a downloadable CSV file, so that I can organize and monitor student academic transitions. | Medium | 2 | Backlog |
 | 8 | **US-06A** | As a faculty member, I want to hide previous school year class sheets from my active dashboard, so that I can keep my current records organized. | Low | 1 | Backlog |
@@ -22,9 +22,9 @@ The Product Backlog contains the prioritized user stories for the Attendance, Dr
 
 Authentication is prioritized first because each user role needs secure access before using the system's other functions. The three login stories are small, focused stories with an estimate of 2 points each.
 
-### Ranks 4 to 5: Attendance and Automatic Dropping
+### Ranks 4 to 5: Attendance and Faculty Drop Decisions
 
-Attendance is the next priority because it provides the data needed for the dropping process. Automatic dropping is a core workflow and has a higher estimate because it requires automated calculations, status updates, and testing.
+Attendance is the next priority because it provides information for faculty decisions. Faculty members manually record drops at their discretion; attendance thresholds do not trigger a drop.
 
 ### Ranks 6 to 7: Re-admission and Data Export
 

@@ -110,10 +110,10 @@ class FacultyAttendanceTest extends TestCase
             ->get(route('faculty.dashboard'));
 
         $response->assertStatus(200);
-        $response->assertSee('Faculty Attendance Dashboard');
+        $response->assertSee('Attendance');
         $response->assertSee('CS 101');
         $response->assertSee('John Doe');
-        $response->assertSee('Absence Limit: 10.8 hrs');
+        $response->assertSee('Attendance records do not automatically drop students.');
     }
 
     public function test_student_cannot_access_faculty_dashboard(): void
@@ -123,7 +123,7 @@ class FacultyAttendanceTest extends TestCase
         $response = $this->actingAs($studentUser)
             ->get(route('faculty.dashboard'));
 
-        $response->assertRedirect();
+        $response->assertRedirect(route('student.dashboard'));
     }
 
     public function test_faculty_can_record_attendance_for_session(): void
@@ -190,11 +190,9 @@ class FacultyAttendanceTest extends TestCase
         $this->assertTrue((bool) $record->is_out_of_schedule);
     }
 
-    public function test_student_is_automatically_dropped_when_absences_exceed_twenty_percent_threshold(): void
+    public function test_recording_attendance_does_not_automatically_drop_a_student_after_many_absences(): void
     {
-        // 54 semester hours * 20% = 10.8 hrs threshold
-        // Each session is 1.5 hrs. 8 absences = 12.0 hrs (> 10.8 hrs)
-        // Record 7 absences first
+        // Record multiple absences that previously crossed the automatic-drop limit.
         for ($i = 1; $i <= 7; $i++) {
             $date = Carbon::parse('2026-08-10')->addWeeks($i)->toDateString();
             AttendanceRecord::create([
@@ -208,7 +206,7 @@ class FacultyAttendanceTest extends TestCase
 
         $this->assertEquals('enrolled', $this->enrollment->fresh()->status);
 
-        // Now record the 8th absence via attendance form
+        // Record another absence through the attendance form.
         $eighthDate = Carbon::parse('2026-08-10')->addWeeks(8)->toDateString();
         $payload = [
             'course_id' => $this->course->course_id,
@@ -226,16 +224,11 @@ class FacultyAttendanceTest extends TestCase
             ->post(route('faculty.attendance.store'), $payload);
 
         $response->assertRedirect();
-        $response->assertSessionHas('dropped_alert');
+        $response->assertSessionMissing('dropped_alert');
 
-        // Verify enrollment is now dropped
-        $this->assertEquals('dropped', $this->enrollment->fresh()->status);
-
-        // Verify DroppingTransaction was created
-        $this->assertDatabaseHas('dropping_transactions', [
+        $this->assertEquals('enrolled', $this->enrollment->fresh()->status);
+        $this->assertDatabaseMissing('dropping_transactions', [
             'enrollment_id' => $this->enrollment->enrollment_id,
-            'dropped_by' => $this->faculty->faculty_id,
-            'sequence_in_cycle' => 1,
         ]);
     }
 
@@ -267,6 +260,7 @@ class FacultyAttendanceTest extends TestCase
 
     public function test_faculty_can_manually_drop_student(): void
     {
+        // The faculty can make the decision before any absence threshold is reached.
         $response = $this->actingAs($this->facultyUser)
             ->post(route('faculty.enrollments.drop', $this->enrollment));
 
@@ -277,6 +271,10 @@ class FacultyAttendanceTest extends TestCase
         $this->assertDatabaseHas('dropping_transactions', [
             'enrollment_id' => $this->enrollment->enrollment_id,
             'dropped_by' => $this->faculty->faculty_id,
+        ]);
+        $this->assertDatabaseHas('notifications', [
+            'student_id' => $this->student->student_id,
+            'notification_type' => 'student_dropped',
         ]);
     }
 

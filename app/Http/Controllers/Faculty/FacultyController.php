@@ -58,15 +58,12 @@ class FacultyController extends Controller
         $courseStats = [
             'total_students' => 0,
             'sessions_count' => 0,
-            'at_risk_count' => 0,
             'dropped_count' => 0,
             'attendance_rate' => 0,
-            'threshold_hours' => 0.0,
         ];
         $sessionHistory = collect();
 
         if ($course) {
-            $thresholdHours = $this->attendanceService->getAbsenceThresholdHours($course);
             $scheduledDays = $course->schedules->pluck('day_of_week')->toArray();
             $isOnSchedule = $this->attendanceService->isDateOnSchedule($course, $selectedDate);
 
@@ -77,18 +74,10 @@ class FacultyController extends Controller
 
             $totalPresences = 0;
             $totalRecordedEntries = 0;
-            $atRiskCount = 0;
             $droppedCount = 0;
 
             foreach ($enrollments as $enrollment) {
                 $absentHours = $this->attendanceService->calculateStudentAbsenceHours($enrollment);
-                $percent = $thresholdHours > 0 ? min(100, round(($absentHours / $thresholdHours) * 100, 1)) : 0;
-                $isAtRisk = ($percent >= 70 && $enrollment->status !== 'dropped');
-
-                if ($isAtRisk) {
-                    $atRiskCount++;
-                }
-
                 if ($enrollment->status === 'dropped') {
                     $droppedCount++;
                 }
@@ -109,8 +98,6 @@ class FacultyController extends Controller
                     'student' => $enrollment->student,
                     'status' => $enrollment->status,
                     'absent_hours' => $absentHours,
-                    'percent_of_threshold' => $percent,
-                    'is_at_risk' => $isAtRisk,
                     'presences' => $presences,
                     'lates' => $lates,
                     'absences' => $absences,
@@ -153,10 +140,8 @@ class FacultyController extends Controller
             $courseStats = [
                 'total_students' => $enrollments->count(),
                 'sessions_count' => $distinctDates->count(),
-                'at_risk_count' => $atRiskCount,
                 'dropped_count' => $droppedCount,
                 'attendance_rate' => $overallRate,
-                'threshold_hours' => $thresholdHours,
             ];
         }
 
@@ -200,9 +185,7 @@ class FacultyController extends Controller
         $sessionDate = Carbon::parse($validated['session_date'])->toDateString();
         $isOutOfSchedule = ! $this->attendanceService->isDateOnSchedule($course, $sessionDate);
 
-        $newlyDroppedStudents = [];
-
-        DB::transaction(function () use ($validated, $faculty, $sessionDate, $isOutOfSchedule, &$newlyDroppedStudents): void {
+        DB::transaction(function () use ($validated, $faculty, $sessionDate, $isOutOfSchedule): void {
             foreach ($validated['attendance'] as $entry) {
                 $enrollment = Enrollment::with('student', 'course')->find($entry['enrollment_id']);
 
@@ -228,21 +211,10 @@ class FacultyController extends Controller
                     ]
                 );
 
-                // Evaluate if absence limit was reached
-                $dropTx = $this->attendanceService->evaluateAndApplyDropping($enrollment, $faculty->faculty_id);
-
-                if ($dropTx) {
-                    $newlyDroppedStudents[] = $enrollment->student->fullName;
-                }
             }
         });
 
         $message = "Attendance records successfully saved for {$sessionDate}.";
-
-        if (! empty($newlyDroppedStudents)) {
-            $studentNames = implode(', ', $newlyDroppedStudents);
-            session()->flash('dropped_alert', "Warning: {$studentNames} exceeded the 20% absence threshold and has been automatically flagged as Dropped.");
-        }
 
         return redirect()->route('faculty.dashboard', [
             'course_id' => $course->course_id,
@@ -252,7 +224,7 @@ class FacultyController extends Controller
     }
 
     /**
-     * Manually drop a student meeting the required absence percentage.
+     * Drop a student from a course at the faculty member's discretion.
      */
     public function dropStudent(Request $request, Enrollment $enrollment): RedirectResponse
     {
@@ -268,29 +240,30 @@ class FacultyController extends Controller
         }
 
         $absenceHours = $this->attendanceService->calculateStudentAbsenceHours($enrollment);
-        $threshold = $this->attendanceService->getAbsenceThresholdHours($enrollment->course);
 
-        $enrollment->update(['status' => 'dropped']);
+        DB::transaction(function () use ($enrollment, $faculty, $absenceHours): void {
+            $enrollment->update(['status' => 'dropped']);
 
-        $sequence = DroppingTransaction::where('enrollment_id', $enrollment->enrollment_id)->count() + 1;
+            $sequence = DroppingTransaction::where('enrollment_id', $enrollment->enrollment_id)->count() + 1;
 
-        DroppingTransaction::create([
-            'enrollment_id' => $enrollment->enrollment_id,
-            'dropped_by' => $faculty->faculty_id,
-            'absence_hours_at_drop' => $absenceHours,
-            'sequence_in_cycle' => $sequence,
-            'drop_date' => now()->toDateString(),
-        ]);
-
-        if ($enrollment->student_id) {
-            Notification::create([
-                'student_id' => $enrollment->student_id,
-                'notification_type' => 'student_dropped',
-                'channel' => 'email',
-                'message' => "You have been dropped from {$enrollment->course->subject_code} by faculty for exceeding the allowable absence hours ({$absenceHours} / {$threshold} hrs).",
-                'sent_at' => now(),
+            DroppingTransaction::create([
+                'enrollment_id' => $enrollment->enrollment_id,
+                'dropped_by' => $faculty->faculty_id,
+                'absence_hours_at_drop' => $absenceHours,
+                'sequence_in_cycle' => $sequence,
+                'drop_date' => now()->toDateString(),
             ]);
-        }
+
+            if ($enrollment->student_id) {
+                Notification::create([
+                    'student_id' => $enrollment->student_id,
+                    'notification_type' => 'student_dropped',
+                    'channel' => 'email',
+                    'message' => "You have been dropped from {$enrollment->course->subject_code} by your faculty member. Contact your faculty member for more information.",
+                    'sent_at' => now(),
+                ]);
+            }
+        });
 
         return back()->with('success', "Student {$enrollment->student->fullName} has been dropped from the course.");
     }

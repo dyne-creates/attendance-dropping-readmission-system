@@ -53,18 +53,18 @@ The INVEST framework is used to evaluate whether each user story is well-formed 
 ### US-03
 
 **Issues:**
-- The required absence percentage should be clearly defined.
-- The exact behavior after reaching the threshold should be specified.
+- The faculty member must be able to make the drop decision without an absence threshold.
+- The student and OSA need an auditable record of who made the decision and when.
 
-**Action:** Define the absence threshold and expected system response.
+**Action:** Record faculty-initiated drops and notify the student; attendance totals remain informational.
 
 ### US-04
 
 **Issues:**
-- The story depends on attendance calculations and dropping eligibility.
-- The faculty dropping action and the eligibility determination can be separated.
+- Re-admission depends on the student having a faculty-recorded Dropped status.
+- Re-admission requirements and attachments must be specified separately.
 
-**Action:** Refine the story and define its relationship with the attendance and eligibility process.
+**Action:** Keep re-admission as a separate workflow that follows a faculty drop decision.
 
 ### US-05
 

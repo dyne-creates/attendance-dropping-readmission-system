@@ -18,7 +18,7 @@ Story points represent the relative effort, complexity, and uncertainty of a use
 | **US-01B** | 2 | Faculty credential verification, secure session handling, and role-based access. |
 | **US-01C** | 2 | OSA login validation and routing to the centralized OSA dashboard. |
 | **US-02** | 3 | Attendance interface with status selection, optional remarks, and database saving. |
-| **US-03** | 5 | Higher complexity due to automatic absence calculation, the 20% threshold, status updates, and related testing. |
+| **US-03** | 5 | Course authorization, transactional status and drop-history updates, student notification, and attendance/drop regression coverage. |
 | **US-04** | 3 | Re-admission form, attachment handling, and conditional access based on the student's dropped status. |
 | **US-05** | 2 | Database record retrieval and conversion into a standardized CSV file. |
 | **US-06A** | 1 | Simple filtering of previous school year class sheets from the faculty dashboard. |

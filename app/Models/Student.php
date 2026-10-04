@@ -13,8 +13,6 @@ class Student extends Model
 
     protected $primaryKey = 'student_id';
 
-    public $timestamps = false;
-
     protected $fillable = [
         'user_id',
         'student_number',

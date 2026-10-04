@@ -14,7 +14,7 @@ return new class extends Migration
             $table->unsignedBigInteger('user_id')->unique();
 
             $table->string('full_name', 150);
-            $table->string('department', 100);
+            $table->string('department', 100)->nullable();
 
             $table->boolean('suppress_schedule_warnings')
                 ->default(false);

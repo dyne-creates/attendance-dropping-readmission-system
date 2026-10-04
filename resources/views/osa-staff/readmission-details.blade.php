@@ -1,588 +1,205 @@
+@php
+    $statusBadges = [
+        'pending'  => ['badge-warning', 'Pending'],
+        'approved' => ['badge-success', 'Approved'],
+        'rejected' => ['badge-danger',  'Rejected'],
+    ];
+    [$statusClass, $statusLabel] = $statusBadges[$request->status] ?? ['badge-neutral', ucfirst((string) $request->status)];
+@endphp
+
 <x-app-layout>
+    <x-slot name="header">
+        <x-page-header
+            eyebrow="Review"
+            title="Review Readmission Request"
+            description="Review the student's information before making a decision."
+        >
+            <x-slot name="actions">
+                <span class="badge {{ $statusClass }}">{{ $statusLabel }}</span>
 
-    <div class="px-4 sm:px-6 lg:px-8 py-8">
-
-        <div class="mb-8">
-
-            <div class="flex flex-col sm:flex-row
-                        sm:items-center
-                        sm:justify-between
-                        gap-4">
-
-                <div>
-
-                    <div class="flex items-center gap-2 mb-2">
-
-                        <span class="text-xs uppercase tracking-widest
-                                     text-red-500 font-semibold">
-
-                            Review
-
-                        </span>
-
-                    </div>
-
-                    <h1 class="text-3xl font-bold text-white">
-
-                        Review Readmission Request
-
-                    </h1>
-
-                    <p class="mt-2 text-gray-400">
-
-                        Review the student's information before making a decision.
-
-                    </p>
-
-                </div>
-
-                <a href="{{ route('osa.readmissions') }}"
-                   class="inline-flex items-center
-                          px-4 py-2
-                          rounded-lg
-                          border border-gray-700
-                          bg-gray-900
-                          text-gray-300
-                          text-sm
-                          hover:bg-gray-800
-                          hover:text-white
-                          transition">
-
-                    ← Back to Requests
-
+                <a href="{{ route('osa.readmissions') }}" class="btn btn-secondary btn-sm">
+                    Back to requests
                 </a>
+            </x-slot>
+        </x-page-header>
+    </x-slot>
 
-            </div>
+    <div class="mx-auto max-w-7xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
+
+        <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
+
+            <!-- Student -->
+            <section class="card overflow-hidden">
+                <div class="card-header">
+                    <h2 class="text-base font-semibold">Student information</h2>
+                </div>
+
+                <dl class="card-body grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2">
+                    <div class="sm:col-span-2">
+                        <dt class="text-sm font-medium muted">Full name</dt>
+                        <dd class="mt-1 text-sm font-semibold">{{ $request->first_name }} {{ $request->last_name }}</dd>
+                    </div>
+
+                    <div>
+                        <dt class="text-sm font-medium muted">Student number</dt>
+                        <dd class="mt-1 text-sm">{{ $request->student_number }}</dd>
+                    </div>
+
+                    <div>
+                        <dt class="text-sm font-medium muted">Year level</dt>
+                        <dd class="mt-1 text-sm">{{ $request->year_level }}</dd>
+                    </div>
+
+                    <div class="sm:col-span-2">
+                        <dt class="text-sm font-medium muted">Program</dt>
+                        <dd class="mt-1 text-sm">{{ $request->program }}</dd>
+                    </div>
+                </dl>
+            </section>
+
+            <!-- Course -->
+            <section class="card overflow-hidden">
+                <div class="card-header">
+                    <h2 class="text-base font-semibold">Course information</h2>
+                </div>
+
+                <dl class="card-body grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2">
+                    <div>
+                        <dt class="text-sm font-medium muted">Subject code</dt>
+                        <dd class="mt-1 text-sm font-semibold">{{ $request->subject_code }}</dd>
+                    </div>
+
+                    <div>
+                        <dt class="text-sm font-medium muted">Section</dt>
+                        <dd class="mt-1 text-sm">{{ $request->section }}</dd>
+                    </div>
+
+                    <div class="sm:col-span-2">
+                        <dt class="text-sm font-medium muted">Course</dt>
+                        <dd class="mt-1 text-sm">{{ $request->course_name }}</dd>
+                    </div>
+
+                    <div class="sm:col-span-2">
+                        <dt class="text-sm font-medium muted">Faculty</dt>
+                        <dd class="mt-1 text-sm">{{ $request->faculty_name }}</dd>
+                    </div>
+                </dl>
+            </section>
+
+            <!-- Dropping -->
+            <section class="card overflow-hidden">
+                <div class="card-header">
+                    <h2 class="text-base font-semibold">Dropping information</h2>
+                </div>
+
+                <dl class="card-body grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2">
+                    <div>
+                        <dt class="text-sm font-medium muted">Drop date</dt>
+                        <dd class="mt-1 text-sm">{{ $request->drop_date ? Carbon\Carbon::parse($request->drop_date)->format('M d, Y') : '—' }}</dd>
+                    </div>
+
+                    <div>
+                        <dt class="text-sm font-medium muted">Absence hours</dt>
+                        <dd class="mt-1 text-sm">{{ $request->absence_hours_at_drop }} hrs</dd>
+                    </div>
+
+                    <div class="sm:col-span-2">
+                        <dt class="text-sm font-medium muted">Drop transaction</dt>
+                        <dd class="mt-1 text-sm font-semibold">#{{ $request->drop_id }}</dd>
+                    </div>
+                </dl>
+            </section>
+
+            <!-- Request -->
+            <section class="card overflow-hidden">
+                <div class="card-header">
+                    <h2 class="text-base font-semibold">Readmission request</h2>
+                </div>
+
+                <dl class="card-body grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2">
+                    <div>
+                        <dt class="text-sm font-medium muted">Reason</dt>
+                        <dd class="mt-1 text-sm">{{ ucfirst(str_replace('_', ' ', (string) $request->reason_code)) }}</dd>
+                    </div>
+
+                    <div>
+                        <dt class="text-sm font-medium muted">Submission channel</dt>
+                        <dd class="mt-1"><span class="badge badge-neutral">{{ strtoupper($request->channel) }}</span></dd>
+                    </div>
+
+                    <div class="sm:col-span-2">
+                        <dt class="text-sm font-medium muted">Details</dt>
+                        <dd class="mt-1 whitespace-pre-line text-sm">{{ $request->reason_details ?? 'No additional details provided.' }}</dd>
+                    </div>
+                </dl>
+            </section>
 
         </div>
 
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-
-            <div class="bg-gray-900/80
-                        border border-gray-800
-                        rounded-2xl
-                        overflow-hidden">
-
-                <div class="px-6 py-4
-                            border-b border-gray-800
-                            bg-gray-950/50">
-
-                    <h2 class="font-semibold text-white">
-
-                        Student Information
-
-                    </h2>
-
-                </div>
-
-                <div class="p-6 space-y-5">
-
-                    <div>
-
-                        <p class="text-xs uppercase tracking-wider text-gray-500">
-                            Full Name
-                        </p>
-
-                        <p class="mt-1 font-medium text-white">
-
-                            {{ $request->first_name }}
-                            {{ $request->last_name }}
-
-                        </p>
-
-                    </div>
-
-                    <div>
-
-                        <p class="text-xs uppercase tracking-wider text-gray-500">
-                            Student Number
-                        </p>
-
-                        <p class="mt-1 text-gray-300">
-
-                            {{ $request->student_number }}
-
-                        </p>
-
-                    </div>
-
-                    <div>
-
-                        <p class="text-xs uppercase tracking-wider text-gray-500">
-                            Program
-                        </p>
-
-                        <p class="mt-1 text-gray-300">
-
-                            {{ $request->program }}
-
-                        </p>
-
-                    </div>
-
-                    <div>
-
-                        <p class="text-xs uppercase tracking-wider text-gray-500">
-                            Year Level
-                        </p>
-
-                        <p class="mt-1 text-gray-300">
-
-                            {{ $request->year_level }}
-
-                        </p>
-
-                    </div>
-
-                </div>
-
+        <!-- Supporting documents -->
+        <section class="card overflow-hidden">
+            <div class="card-header">
+                <h2 class="text-base font-semibold">Supporting documents</h2>
             </div>
 
-            <div class="bg-gray-900/80
-                        border border-gray-800
-                        rounded-2xl
-                        overflow-hidden">
-
-                <div class="px-6 py-4
-                            border-b border-gray-800
-                            bg-gray-950/50">
-
-                    <h2 class="font-semibold text-white">
-
-                        Course Information
-
-                    </h2>
-
-                </div>
-
-                <div class="p-6 space-y-5">
-
-                    <div>
-
-                        <p class="text-xs uppercase tracking-wider text-gray-500">
-                            Subject Code
-                        </p>
-
-                        <p class="mt-1 font-medium text-white">
-
-                            {{ $request->subject_code }}
-
-                        </p>
-
-                    </div>
-
-                    <div>
-
-                        <p class="text-xs uppercase tracking-wider text-gray-500">
-                            Course
-                        </p>
-
-                        <p class="mt-1 text-gray-300">
-
-                            {{ $request->course_name }}
-
-                        </p>
-
-                    </div>
-
-                    <div>
-
-                        <p class="text-xs uppercase tracking-wider text-gray-500">
-                            Section
-                        </p>
-
-                        <p class="mt-1 text-gray-300">
-
-                            {{ $request->section }}
-
-                        </p>
-
-                    </div>
-
-                    <div>
-
-                        <p class="text-xs uppercase tracking-wider text-gray-500">
-                            Faculty
-                        </p>
-
-                        <p class="mt-1 text-gray-300">
-
-                            {{ $request->faculty_name }}
-
-                        </p>
-
-                    </div>
-
-                </div>
-
-            </div>
-
-        </div>
-
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-
-            <div class="bg-gray-900/80
-                        border border-gray-800
-                        rounded-2xl
-                        overflow-hidden">
-
-                <div class="px-6 py-4
-                            border-b border-gray-800">
-
-                    <h2 class="font-semibold text-white">
-
-                        Dropping Information
-
-                    </h2>
-
-                </div>
-
-                <div class="p-6 space-y-5">
-
-                    <div>
-
-                        <p class="text-xs uppercase tracking-wider text-gray-500">
-                            Drop Date
-                        </p>
-
-                        <p class="mt-1 text-gray-300">
-
-                            {{ $request->drop_date }}
-
-                        </p>
-
-                    </div>
-
-                    <div>
-
-                        <p class="text-xs uppercase tracking-wider text-gray-500">
-                            Absence Hours
-                        </p>
-
-                        <p class="mt-1 text-gray-300">
-
-                            {{ $request->absence_hours_at_drop }}
-
-                        </p>
-
-                    </div>
-
-                    <div>
-
-                        <p class="text-xs uppercase tracking-wider text-gray-500">
-                            Drop Transaction
-                        </p>
-
-                        <p class="mt-1 text-red-400 font-medium">
-
-                            #{{ $request->drop_id }}
-
-                        </p>
-
-                    </div>
-
-                </div>
-
-            </div>
-
-            <div class="bg-gray-900/80
-                        border border-gray-800
-                        rounded-2xl
-                        overflow-hidden">
-
-                <div class="px-6 py-4
-                            border-b border-gray-800">
-
-                    <h2 class="font-semibold text-white">
-
-                        Readmission Request
-
-                    </h2>
-
-                </div>
-
-                <div class="p-6 space-y-5">
-
-                    <div>
-
-                        <p class="text-xs uppercase tracking-wider text-gray-500">
-                            Reason
-                        </p>
-
-                        <p class="mt-1 text-gray-300">
-
-                            {{ $request->reason_code }}
-
-                        </p>
-
-                    </div>
-
-                    <div>
-
-                        <p class="text-xs uppercase tracking-wider text-gray-500">
-                            Details
-                        </p>
-
-                        <p class="mt-1 text-gray-400 whitespace-pre-line">
-
-                            {{ $request->reason_details
-                                ?? 'No additional details provided.' }}
-
-                        </p>
-
-                    </div>
-
-                    <div>
-
-                        <p class="text-xs uppercase tracking-wider text-gray-500">
-                            Submission Channel
-                        </p>
-
-                        <span class="inline-flex mt-2
-                                     px-3 py-1
-                                     rounded-full
-                                     text-xs font-medium
-                                     bg-red-900/30
-                                     text-red-400
-                                     border border-red-800/40">
-
-                            {{ strtoupper($request->channel) }}
-
-                        </span>
-
-                    </div>
-
-                </div>
-
-            </div>
-
-        </div>
-
-        <div class="bg-gray-900/80
-                    border border-gray-800
-                    rounded-2xl
-                    overflow-hidden
-                    mb-6">
-
-            <div class="px-6 py-4
-                        border-b border-gray-800">
-
-                <h2 class="font-semibold text-white">
-
-                    Supporting Documents
-
-                </h2>
-
-            </div>
-
-            <div class="p-6">
-
-                @forelse($documents as $document)
-
-                    <div class="flex flex-col sm:flex-row
-                                sm:items-center
-                                sm:justify-between
-                                gap-4
-                                p-4 mb-3
-                                rounded-xl
-                                bg-gray-950
-                                border border-gray-800
-                                hover:border-red-900
-                                transition">
-
-                        <div class="flex items-center">
-
-                            <div class="w-10 h-10 rounded-lg
-                                        bg-red-900/30
-                                        flex items-center justify-center
-                                        mr-3">
-
-                                <svg class="w-5 h-5 text-red-500"
-                                     fill="none"
-                                     stroke="currentColor"
-                                     viewBox="0 0 24 24">
-
-                                    <path
-                                        stroke-linecap="round"
-                                        stroke-linejoin="round"
-                                        stroke-width="2"
-                                        d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"/>
-
-                                </svg>
-
-                            </div>
-
-                            <div>
-
-                                <p class="font-medium text-white">
-
-                                    {{ $document->document_type }}
-
-                                </p>
-
-                                <p class="text-xs text-gray-500">
-
-                                    Uploaded {{ $document->uploaded_at }}
-
-                                </p>
-
-                            </div>
-
+            <div class="card-body">
+                @forelse ($documents as $document)
+                    <div class="flex flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between {{ $loop->first ? 'pt-0' : 'border-t' }} {{ $loop->last ? 'pb-0' : '' }}">
+                        <div>
+                            <p class="text-sm font-medium">{{ ucfirst(str_replace('_', ' ', (string) $document->document_type)) }}</p>
+                            <p class="mt-0.5 text-xs muted">
+                                Uploaded {{ $document->created_at ? Carbon\Carbon::parse($document->created_at)->format('M d, Y') : '—' }}
+                            </p>
                         </div>
 
                         <a href="{{ asset('storage/' . $document->file_path) }}"
                            target="_blank"
-                           class="px-4 py-2
-                                  text-sm font-medium
-                                  text-red-500
-                                  border border-red-900/50
-                                  rounded-lg
-                                  hover:bg-red-950/30
-                                  transition">
-
-                            View Document
-
+                           rel="noopener"
+                           class="btn btn-secondary btn-sm">
+                            View document
                         </a>
-
                     </div>
-
                 @empty
-
-                    <p class="text-sm text-gray-500">
-
-                        No supporting documents were uploaded.
-
-                    </p>
-
+                    <p class="text-sm muted">No supporting documents were uploaded.</p>
                 @endforelse
-
             </div>
+        </section>
 
-        </div>
-
-        @if($request->status === 'pending')
-
-            <div class="bg-gray-900/80
-                        border border-red-900/40
-                        rounded-2xl
-                        overflow-hidden
-                        shadow-xl shadow-red-950/10">
-
-                <div class="px-6 py-4
-                            border-b border-gray-800">
-
-                    <h2 class="font-semibold text-white">
-
-                        OSA Decision
-
-                    </h2>
-
+        <!-- Decision -->
+        @if ($request->status === 'pending')
+            <section class="card overflow-hidden">
+                <div class="card-header">
+                    <h2 class="text-base font-semibold">OSA decision</h2>
+                    <p class="mt-0.5 text-sm muted">Review all information before processing this request.</p>
                 </div>
 
-                <div class="p-6">
+                <div class="card-body flex flex-col gap-3 sm:flex-row">
+                    <form method="POST" action="{{ route('osa.readmissions.approve', $request->readmission_id) }}">
+                        @csrf
 
-                    <p class="text-sm text-gray-400 mb-6">
+                        <button type="submit"
+                                onclick="return confirm('Are you sure you want to approve this readmission request?')"
+                                class="btn btn-success w-full sm:w-auto">
+                            Approve readmission
+                        </button>
+                    </form>
 
-                        Review all information before processing this
-                        readmission request.
+                    <form method="POST" action="{{ route('osa.readmissions.reject', $request->readmission_id) }}">
+                        @csrf
 
-                    </p>
-
-                    <div class="flex flex-col sm:flex-row gap-3">
-
-                        <form method="POST"
-                              action="{{ route(
-                                  'osa.readmissions.approve',
-                                  $request->readmission_id
-                              ) }}">
-
-                            @csrf
-
-                            <button
-                                type="submit"
-                                onclick="return confirm(
-                                    'Are you sure you want to approve this readmission request?'
-                                )"
-                                class="w-full sm:w-auto
-                                       inline-flex items-center
-                                       justify-center
-                                       px-6 py-3
-                                       rounded-lg
-                                       bg-green-600
-                                       text-white
-                                       font-medium
-                                       text-sm
-                                       hover:bg-green-500
-                                       transition">
-
-                                ✓
-
-                                <span class="ml-2">
-                                    Approve Readmission
-                                </span>
-
-                            </button>
-
-                        </form>
-
-                        <form method="POST"
-                              action="{{ route(
-                                  'osa.readmissions.reject',
-                                  $request->readmission_id
-                              ) }}">
-
-                            @csrf
-
-                            <button
-                                type="submit"
-                                onclick="return confirm(
-                                    'Are you sure you want to reject this readmission request?'
-                                )"
-                                class="w-full sm:w-auto
-                                       inline-flex items-center
-                                       justify-center
-                                       px-6 py-3
-                                       rounded-lg
-                                       bg-red-600
-                                       text-white
-                                       font-medium
-                                       text-sm
-                                       hover:bg-red-500
-                                       transition">
-
-                                ✕
-
-                                <span class="ml-2">
-                                    Reject Request
-                                </span>
-
-                            </button>
-
-                        </form>
-
-                    </div>
-
+                        <button type="submit"
+                                onclick="return confirm('Are you sure you want to reject this readmission request?')"
+                                class="btn btn-danger w-full sm:w-auto">
+                            Reject request
+                        </button>
+                    </form>
                 </div>
-
-            </div>
-
+            </section>
         @else
-
-            <div class="bg-gray-900/80
-                        border border-gray-800
-                        rounded-2xl
-                        p-6">
-
-                <p class="text-sm text-gray-400">
-
-                    This request has already been processed.
-
-                </p>
-
+            <div class="alert alert-neutral" role="status">
+                This request has already been processed.
             </div>
-
         @endif
 
     </div>
-
 </x-app-layout>

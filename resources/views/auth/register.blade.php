@@ -3,134 +3,159 @@
     subheading="Register with your official University of Baguio email."
     width="max-w-lg"
 >
-    @php
-        $field = 'mt-1.5 block w-full rounded-md border bg-white px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 shadow-sm focus:outline-none focus:ring-1 dark:bg-gray-900 dark:text-gray-100 dark:placeholder-gray-500';
-        $ok    = 'border-gray-300 focus:border-red-700 focus:ring-red-700 dark:border-gray-600 dark:focus:border-red-500 dark:focus:ring-red-500';
-        $bad   = 'border-red-600 focus:border-red-700 focus:ring-red-700 dark:border-red-500 dark:focus:border-red-400 dark:focus:ring-red-400';
-        $label = 'block text-sm font-medium text-gray-700 dark:text-gray-300';
-        $error = 'mt-2 text-sm text-red-700 dark:text-red-400';
-    @endphp
-
     <form method="POST" action="{{ route('register') }}">
         @csrf
 
         <!-- Full name -->
         <div>
-            <label for="name" class="{{ $label }}">Full name</label>
+            <x-input-label for="name" value="Full name" />
 
-            <input
+            <x-text-input
                 id="name"
+                class="mt-1.5"
                 type="text"
                 name="name"
-                value="{{ old('name') }}"
+                :value="old('name')"
                 maxlength="150"
                 required
                 autofocus
                 autocomplete="name"
-                class="{{ $field }} {{ $errors->has('name') ? $bad : $ok }}"
-                @if ($errors->has('name')) aria-invalid="true" @endif
-            >
+                placeholder="Enter your full name"
+                :aria-invalid="$errors->has('name') ? 'true' : null"
+            />
 
-            @if ($errors->has('name'))
-                <p class="{{ $error }}" role="alert">{{ $errors->first('name') }}</p>
-            @endif
+            <x-input-error class="mt-2" :messages="$errors->get('name')" />
         </div>
 
         <!-- Account type -->
         <div class="mt-5">
-            <label for="role" class="{{ $label }}">Account type</label>
+            <x-input-label for="role" value="Account type" />
 
             <select
                 id="role"
                 name="role"
                 required
-                class="{{ $field }} pr-10 {{ $errors->has('role') ? $bad : $ok }}"
+                class="field mt-1.5"
                 @if ($errors->has('role')) aria-invalid="true" @endif
             >
-                <option value="" disabled class="bg-white text-gray-900 dark:bg-gray-800 dark:text-gray-100" @selected(! old('role'))>Select your account type</option>
-                <option value="student" class="bg-white text-gray-900 dark:bg-gray-800 dark:text-gray-100" @selected(old('role') === 'student')>Student</option>
-                <option value="faculty" class="bg-white text-gray-900 dark:bg-gray-800 dark:text-gray-100" @selected(old('role') === 'faculty')>Faculty</option>
-                <option value="osa_staff" class="bg-white text-gray-900 dark:bg-gray-800 dark:text-gray-100" @selected(old('role') === 'osa_staff')>OSA Staff</option>
+                <option value="" disabled @selected(! old('role'))>Select your account type</option>
+                <option value="student" @selected(old('role') === 'student')>Student</option>
+                <option value="faculty" @selected(old('role') === 'faculty')>Faculty</option>
+                <option value="osa_staff" @selected(old('role') === 'osa_staff')>OSA Staff</option>
             </select>
 
-            @if ($errors->has('role'))
-                <p class="{{ $error }}" role="alert">{{ $errors->first('role') }}</p>
-            @endif
+            <x-input-error class="mt-2" :messages="$errors->get('role')" />
+        </div>
+
+        <!-- Student number -->
+        <div id="student-number-field" class="mt-5" @if (old('role') !== 'student') hidden @endif>
+            <x-input-label for="student_number" value="Student number" />
+
+            <x-text-input
+                id="student_number"
+                class="mt-1.5"
+                type="text"
+                name="student_number"
+                :value="old('student_number')"
+                maxlength="50"
+                autocomplete="off"
+                placeholder="Enter your student number"
+                :aria-invalid="$errors->has('student_number') ? 'true' : null"
+            />
+
+            <x-input-error class="mt-2" :messages="$errors->get('student_number')" />
         </div>
 
         <!-- University email -->
         <div class="mt-5">
-            <label for="email" class="{{ $label }}">Email</label>
+            <x-input-label for="email" value="University email" />
 
-            <input
+            <x-text-input
                 id="email"
+                class="mt-1.5"
                 type="email"
                 name="email"
-                value="{{ old('email') }}"
+                :value="old('email')"
                 required
                 autocomplete="username"
-                class="{{ $field }} {{ $errors->has('email') ? $bad : $ok }}"
-                @if ($errors->has('email')) aria-invalid="true" @endif
-            >
+                :aria-invalid="$errors->has('email') ? 'true' : null"
+            />
 
-            @if ($errors->has('email'))
-                <p class="{{ $error }}" role="alert">{{ $errors->first('email') }}</p>
-            @endif
+            <x-input-error class="mt-2" :messages="$errors->get('email')" />
         </div>
 
         <!-- Password -->
         <div class="mt-5">
-            <label for="password" class="{{ $label }}">Password</label>
+            <x-input-label for="password" value="Password" />
 
-            <input
+            <x-text-input
                 id="password"
+                class="mt-1.5"
                 type="password"
                 name="password"
                 required
                 autocomplete="new-password"
                 placeholder="Create a password"
-                class="{{ $field }} {{ $errors->has('password') ? $bad : $ok }}"
-                @if ($errors->has('password')) aria-invalid="true" @endif
-            >
+                :aria-invalid="$errors->has('password') ? 'true' : null"
+            />
 
-            @if ($errors->has('password'))
-                <p class="{{ $error }}" role="alert">{{ $errors->first('password') }}</p>
-            @else
-                <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">At least 8 characters.</p>
-            @endif
+            <x-input-error class="mt-2" :messages="$errors->get('password')" />
+
+            @unless ($errors->has('password'))
+                <p class="mt-2 text-xs muted">At least 8 characters.</p>
+            @endunless
         </div>
 
         <!-- Confirm password -->
         <div class="mt-5">
-            <label for="password_confirmation" class="{{ $label }}">Confirm password</label>
+            <x-input-label for="password_confirmation" value="Confirm password" />
 
-            <input
+            <x-text-input
                 id="password_confirmation"
+                class="mt-1.5"
                 type="password"
                 name="password_confirmation"
                 required
                 autocomplete="new-password"
                 placeholder="Re-enter your password"
-                class="{{ $field }} {{ $errors->has('password_confirmation') ? $bad : $ok }}"
-                @if ($errors->has('password_confirmation')) aria-invalid="true" @endif
-            >
+                :aria-invalid="$errors->has('password_confirmation') ? 'true' : null"
+            />
 
-            @if ($errors->has('password_confirmation'))
-                <p class="{{ $error }}" role="alert">{{ $errors->first('password_confirmation') }}</p>
-            @endif
+            <x-input-error class="mt-2" :messages="$errors->get('password_confirmation')" />
         </div>
 
         <!-- Submit -->
-        <button
-            type="submit"
-            class="mt-6 flex w-full justify-center rounded-md bg-red-700 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-red-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-700 focus-visible:ring-offset-2 dark:bg-red-600 dark:hover:bg-red-500 dark:focus-visible:ring-red-400 dark:focus-visible:ring-offset-gray-800"
-        >
+        <x-primary-button class="mt-6 w-full">
             Create account
-        </button>
+        </x-primary-button>
     </form>
 
-    <p class="mt-6 border-t border-gray-200 pt-6 text-center text-sm text-gray-600 dark:border-gray-700 dark:text-gray-400">
+    <p class="mt-6 border-t pt-6 text-center text-sm muted">
         Already have an account?
-        <a href="{{ route('login') }}" class="font-semibold text-red-700 hover:underline dark:text-red-400">Log in</a>
+        <a href="{{ route('login') }}" class="link">Log in</a>
     </p>
+
+    <script>
+        // Show the matching email domain as the placeholder for the selected account type.
+        (function () {
+            var role  = document.getElementById('role');
+            var email = document.getElementById('email');
+            var studentNumberField = document.getElementById('student-number-field');
+            var studentNumber = document.getElementById('student_number');
+            var hints = {
+                student:   'idnumber@s.ubaguio.edu',
+                faculty:   'username@e.ubaguio.edu',
+                osa_staff: 'username@e.ubaguio.edu'
+            };
+
+            function sync() {
+                email.placeholder = hints[role.value] || '';
+                studentNumberField.hidden = role.value !== 'student';
+                studentNumber.required = role.value === 'student';
+            }
+
+            role.addEventListener('change', sync);
+            sync();
+        })();
+    </script>
 </x-guest-layout>

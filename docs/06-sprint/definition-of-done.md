@@ -52,7 +52,7 @@ A user story is considered **Done** only when all required development, testing,
 - [ ] School year constraints are correctly handled.
 - [ ] Role-based access is correctly enforced for Students, Faculty, and OSA staff.
 - [ ] Student records are protected from unauthorized modification.
-- [ ] The 20% absence threshold is correctly implemented where applicable.
+- [ ] Faculty drop decisions are manual, authorized for assigned courses, recorded, and never triggered by attendance thresholds.
 - [ ] Re-admission eligibility is restricted to students with a valid Dropped status.
 - [ ] Historical records are protected from unauthorized modification.
 

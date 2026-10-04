@@ -19,7 +19,7 @@ Route::middleware(['auth', 'prevent-back-history'])->group(function () {
             'student' => redirect()->route('student.dashboard'),
             'faculty' => redirect()->route('faculty.dashboard'),
             'osa_staff' => redirect()->route('osa.dashboard'),
-            default => abort(403),
+            default => redirect()->route('profile.edit'),
         };
     })->name('dashboard');
 
@@ -56,7 +56,7 @@ Route::middleware(['auth', 'prevent-back-history'])->group(function () {
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
 });
 
-Route::middleware(['auth'])->prefix('osa')->name('osa.')->group(function () {
+Route::middleware(['auth', 'staffMiddleware'])->prefix('osa')->name('osa.')->group(function () {
 
     // Dashboard
     Route::get('/dashboard', [

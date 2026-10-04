@@ -13,8 +13,6 @@ class FacultyMember extends Model
 
     protected $primaryKey = 'faculty_id';
 
-    public $timestamps = false;
-
     protected $fillable = [
         'user_id',
         'full_name',

@@ -10,46 +10,41 @@
 @endphp
 <!DOCTYPE html>
 <html lang="{{ str_replace('_', '-', app()->getLocale()) }}">
-
 <head>
-
-    <meta charset="utf-8">
-
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-
-    <meta name="csrf-token" content="{{ csrf_token() }}">
-
-    <title>
-        {{ config('app.name', 'OSA Management System') }}
-    </title>
-
-    @vite(['resources/css/app.css', 'resources/js/app.js'])
-
+    @include('layouts.partials.head', ['title' => $roleLabel.' | ADRS'])
 </head>
 
-<body class="font-sans antialiased bg-slate-950 text-gray-100">
+<body class="min-h-screen antialiased">
+    @if ($user->role === 'osa_staff')
+        @include('layouts.osa-navigation')
+    @elseif ($user->role === 'faculty')
+        @include('layouts.faculty-navigation')
+    @elseif (request()->routeIs('student.dashboard'))
+        @include('layouts.student-topbar')
+    @else
+        @include('layouts.student-navigation')
+    @endif
 
-    <div class="min-h-screen bg-slate-950">
+    {{-- Pages describe themselves here: <x-slot name="header"><x-page-title ... /></x-slot> --}}
+    @isset($header)
+        <header class="page-header">
+            <div class="mx-auto max-w-7xl px-4 py-5 sm:px-6 lg:px-8">
+                {{ $header }}
+            </div>
+        </header>
+    @endisset
 
-        {{-- Navigation --}}
-        @include('layouts.navigation')
+    <main>
+        {{ $slot }}
+    </main>
 
-
-        {{-- Main Background --}}
-        <div class="relative overflow-hidden min-h-[calc(100vh-64px)]">
-
-
-            {{-- Page Content --}}
-            <main class="relative z-10">
-
-                {{ $slot }}
-
-            </main>
-
-        </div>
-
-    </div>
-
+    <script>
+        // If the browser restores this page from its back/forward cache (e.g. after logout), reload it.
+        window.addEventListener('pageshow', function (event) {
+            if (event.persisted) {
+                window.location.reload();
+            }
+        });
+    </script>
 </body>
-
 </html>

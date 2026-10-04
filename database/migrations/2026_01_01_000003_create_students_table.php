@@ -22,11 +22,11 @@ return new class extends Migration
                 'Ms.',
                 'Mx.',
                 'Other',
-            ]);
+            ])->nullable();
 
-            $table->string('department', 100);
-            $table->integer('year_level');
-            $table->string('program', 100);
+            $table->string('department', 100)->nullable();
+            $table->integer('year_level')->nullable();
+            $table->string('program', 100)->nullable();
 
             $table->timestamps();
 

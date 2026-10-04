@@ -12,8 +12,6 @@ class Notification extends Model
 
     protected $primaryKey = 'notification_id';
 
-    public $timestamps = false;
-
     protected $fillable = [
         'readmission_id',
         'osa_id',

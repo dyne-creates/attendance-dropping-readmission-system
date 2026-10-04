@@ -1,464 +1,116 @@
+@php
+    $badgeFor = [
+        'pending'  => 'badge-warning',
+        'approved' => 'badge-success',
+        'rejected' => 'badge-danger',
+    ];
+@endphp
+
 <x-app-layout>
+    <x-slot name="header">
+        <x-page-title title="OSA dashboard"
+                      description="Manage student drops and readmission requests." />
+    </x-slot>
 
-    <div class="px-4 sm:px-6 lg:px-8 py-8">
+    <div class="page space-y-6">
 
-        <div class="mb-8">
-
-            <div class="flex flex-col md:flex-row
-                        md:items-center
-                        md:justify-between
-                        gap-4">
+        {{-- Key figures --}}
+        <section class="card overflow-hidden" aria-label="Summary">
+            <div class="stat-grid grid-cols-2 lg:grid-cols-4">
 
                 <div>
-
-                    <div class="flex items-center gap-2 mb-2">
-
-                        <span class="text-xs uppercase tracking-widest
-                                     text-red-500 font-semibold">
-
-                            Office of Student Affairs
-
-                        </span>
-
-                    </div>
-
-                    <h1 class="text-3xl font-bold text-white">
-
-                        OSA Staff Dashboard
-
-                    </h1>
-
-                    <p class="mt-2 text-gray-400">
-
-                        Manage student drops and readmission requests.
-
+                    <p class="muted text-sm">Pending readmissions</p>
+                    <p @class(['mt-1 text-3xl font-semibold tabular-nums', 'text-warn' => $pendingReadmissions > 0])>
+                        {{ $pendingReadmissions }}
                     </p>
-
-                </div>
-
-                <div class="flex items-center gap-3">
-
-                    <div class="px-4 py-2 rounded-lg
-                                bg-gray-900/80
-                                border border-gray-800">
-
-                        <p class="text-xs text-gray-500">
-                            Logged in as
-                        </p>
-
-                        <p class="text-sm font-medium text-white">
-                            {{ Auth::user()->name }}
-                        </p>
-
-                    </div>
-
-                </div>
-
-            </div>
-
-        </div>
-
-        <div class="grid grid-cols-1 gap-5 mb-8">
-
-            <div class="group relative
-                        bg-gray-900/80
-                        backdrop-blur
-                        border border-gray-800
-                        rounded-2xl
-                        p-6
-                        overflow-hidden
-                        hover:border-red-800
-                        transition">
-
-                <div class="absolute -right-8 -top-8
-                            w-24 h-24
-                            bg-red-600/10
-                            rounded-full
-                            blur-2xl
-                            group-hover:bg-red-600/20
-                            transition">
-                </div>
-
-                <div class="relative">
-
-                    <div class="flex items-center justify-between">
-
-                        <div>
-
-                            <p class="text-sm text-gray-500">
-                                Pending Readmissions
-                            </p>
-
-                            <p class="mt-2 text-3xl font-bold text-white">
-
-                                {{ $pendingReadmissions }}
-
-                            </p>
-
-                        </div>
-
-                    </div>
-
-                    <a href="{{ route('osa.readmissions') }}" class="inline-block mt-5 text-sm
-                              font-medium text-red-500
-                              hover:text-red-400">
-
-                        Review requests →
-
+                    <a href="{{ route('osa.readmissions') }}" class="link mt-3 inline-block text-sm">
+                        Review requests
                     </a>
-
                 </div>
-
-            </div>
-
-            <div class="group relative
-                        bg-gray-900/80
-                        backdrop-blur
-                        border border-gray-800
-                        rounded-2xl
-                        p-6
-                        overflow-hidden
-                        hover:border-green-900
-                        transition">
-
-                <div class="absolute -right-8 -top-8
-                            w-24 h-24
-                            bg-green-600/5
-                            rounded-full
-                            blur-2xl">
-                </div>
-
-                <div class="flex items-center justify-between">
-
-                    <div>
-
-                        <p class="text-sm text-gray-500">
-                            Approved
-                        </p>
-
-                        <p class="mt-2 text-3xl font-bold text-white">
-
-                            {{ $approvedReadmissions }}
-
-                        </p>
-
-                    </div>
-
-                </div>
-
-            </div>
-
-            <div class="group relative
-                        bg-gray-900/80
-                        backdrop-blur
-                        border border-gray-800
-                        rounded-2xl
-                        p-6
-                        overflow-hidden
-                        hover:border-red-900
-                        transition">
-
-                <div class="flex items-center justify-between">
-
-                    <div>
-
-                        <p class="text-sm text-gray-500">
-                            Rejected
-                        </p>
-
-                        <p class="mt-2 text-3xl font-bold text-white">
-
-                            {{ $rejectedReadmissions }}
-
-                        </p>
-
-                    </div>
-
-                </div>
-
-            </div>
-
-            <div class="group relative
-                        bg-gray-900/80
-                        backdrop-blur
-                        border border-gray-800
-                        rounded-2xl
-                        p-6
-                        overflow-hidden
-                        hover:border-red-800
-                        transition">
-
-                <div class="flex items-center justify-between">
-
-                    <div>
-
-                        <p class="text-sm text-gray-500">
-                            Total Drop Records
-                        </p>
-
-                        <p class="mt-2 text-3xl font-bold text-white">
-
-                            {{ $totalDrops }}
-
-                        </p>
-
-                    </div>
-
-                </div>
-
-                <a href="{{ route('osa.archive.drops') }}" class="inline-block mt-5 text-sm
-                          font-medium text-red-500
-                          hover:text-red-400">
-
-                    View records →
-
-                </a>
-
-            </div>
-
-        </div>
-
-        <div class="bg-gray-900/80
-                    backdrop-blur
-                    border border-gray-800
-                    rounded-2xl
-                    overflow-hidden
-                    shadow-2xl shadow-black/20">
-
-            <div class="px-6 py-5
-                        border-b border-gray-800
-                        flex flex-col sm:flex-row
-                        sm:items-center
-                        sm:justify-between
-                        gap-3">
 
                 <div>
-
-                    <div class="flex items-center gap-2">
-
-                        <div class="w-1.5 h-6 rounded-full bg-red-600">
-                        </div>
-
-                        <h2 class="text-lg font-semibold text-white">
-
-                            Recent Readmission Requests
-
-                        </h2>
-
-                    </div>
-
-                    <p class="text-sm text-gray-500 mt-1">
-
-                        Review recently submitted requests.
-
-                    </p>
-
+                    <p class="muted text-sm">Approved</p>
+                    <p class="mt-1 text-3xl font-semibold tabular-nums">{{ $approvedReadmissions }}</p>
                 </div>
 
-                <a href="{{ route('osa.readmissions') }}" class="text-sm font-medium text-red-500
-                          hover:text-red-400">
+                <div>
+                    <p class="muted text-sm">Rejected</p>
+                    <p class="mt-1 text-3xl font-semibold tabular-nums">{{ $rejectedReadmissions }}</p>
+                </div>
 
-                    View all →
+                <div>
+                    <p class="muted text-sm">Total drop records</p>
+                    <p class="mt-1 text-3xl font-semibold tabular-nums">{{ $totalDrops }}</p>
+                    <a href="{{ route('osa.archive.drops') }}" class="link mt-3 inline-block text-sm">
+                        View drop records
+                    </a>
+                </div>
 
-                </a>
+            </div>
+        </section>
 
+        {{-- Recent requests --}}
+        <section class="card overflow-hidden">
+
+            <div class="card-header flex items-center justify-between gap-3">
+                <div>
+                    <h2 class="font-semibold">Recent readmission requests</h2>
+                    <p class="muted mt-0.5 text-sm">The latest requests submitted by students.</p>
+                </div>
+
+                <a href="{{ route('osa.readmissions') }}" class="link shrink-0 text-sm">View all</a>
             </div>
 
             <div class="overflow-x-auto">
-
-                <table class="min-w-full">
-
-                    <thead class="bg-gray-950">
-
+                <table class="data-table">
+                    <thead>
                         <tr>
-
-                            <th class="px-6 py-4 text-left
-                                       text-xs font-semibold
-                                       text-gray-500 uppercase tracking-wider">
-
-                                Student
-
-                            </th>
-
-                            <th class="px-6 py-4 text-left
-                                       text-xs font-semibold
-                                       text-gray-500 uppercase tracking-wider">
-
-                                Course
-
-                            </th>
-
-                            <th class="px-6 py-4 text-left
-                                       text-xs font-semibold
-                                       text-gray-500 uppercase tracking-wider">
-
-                                Reason
-
-                            </th>
-
-                            <th class="px-6 py-4 text-left
-                                       text-xs font-semibold
-                                       text-gray-500 uppercase tracking-wider">
-
-                                Status
-
-                            </th>
-
-                            <th class="px-6 py-4 text-right
-                                       text-xs font-semibold
-                                       text-gray-500 uppercase tracking-wider">
-
-                                Action
-
-                            </th>
-
+                            <th scope="col">Student</th>
+                            <th scope="col">Course</th>
+                            <th scope="col">Reason</th>
+                            <th scope="col">Status</th>
+                            <th scope="col" class="is-end"><span class="sr-only">Action</span></th>
                         </tr>
-
                     </thead>
-
-                    <tbody class="divide-y divide-gray-800">
-
-                        @forelse($recentReadmissions as $request)
-
-                                                <tr class="hover:bg-red-950/10 transition">
-
-                                                    <td class="px-6 py-5">
-
-                                                        <div class="font-medium text-white">
-
-                                                            {{ $request->first_name }}
-                                                            {{ $request->last_name }}
-
-                                                        </div>
-
-                                                        <div class="text-sm text-gray-500">
-
-                                                            {{ $request->student_number }}
-
-                                                        </div>
-
-                                                    </td>
-
-                                                    <td class="px-6 py-5">
-
-                                                        <div class="font-medium text-gray-300">
-
-                                                            {{ $request->subject_code }}
-
-                                                        </div>
-
-                                                        <div class="text-sm text-gray-500">
-
-                                                            {{ $request->course_name }}
-
-                                                        </div>
-
-                                                    </td>
-
-                                                    <td class="px-6 py-5 text-sm text-gray-400">
-
-                                                        {{ $request->reason_code }}
-
-                                                    </td>
-
-                                                    <td class="px-6 py-5">
-
-                                                        @if($request->status === 'pending')
-
-                                                            <span class="inline-flex items-center
-                                                                                 px-3 py-1
-                                                                                 rounded-full
-                                                                                 text-xs font-medium
-                                                                                 bg-yellow-900/30
-                                                                                 text-yellow-400
-                                                                                 border border-yellow-800/40">
-
-                                                                Pending
-
-                                                            </span>
-
-                                                        @elseif($request->status === 'approved')
-
-                                                            <span class="inline-flex items-center
-                                                                                 px-3 py-1
-                                                                                 rounded-full
-                                                                                 text-xs font-medium
-                                                                                 bg-green-900/30
-                                                                                 text-green-400
-                                                                                 border border-green-800/40">
-
-                                                                Approved
-
-                                                            </span>
-
-                                                        @else
-
-                                                            <span class="inline-flex items-center
-                                                                                 px-3 py-1
-                                                                                 rounded-full
-                                                                                 text-xs font-medium
-                                                                                 bg-red-900/30
-                                                                                 text-red-400
-                                                                                 border border-red-800/40">
-
-                                                                Rejected
-
-                                                            </span>
-
-                                                        @endif
-
-                                                    </td>
-
-                                                    <td class="px-6 py-5 text-right">
-
-                                                        <a href="{{ route(
-                                'osa.readmissions.show',
-                                $request->readmission_id
-                            ) }}" class="inline-flex items-center
-                                                                      px-4 py-2
-                                                                      rounded-lg
-                                                                      bg-red-600
-                                                                      text-white
-                                                                      text-sm
-                                                                      font-medium
-                                                                      hover:bg-red-500
-                                                                      shadow-lg shadow-red-900/20
-                                                                      transition">
-
-                                                            Review
-
-                                                        </a>
-
-                                                    </td>
-
-                                                </tr>
-
-                        @empty
-
+                    <tbody>
+                        @forelse ($recentReadmissions as $request)
                             <tr>
-
-                                <td colspan="5" class="px-6 py-12 text-center">
-
-                                    <p class="text-gray-500">
-
-                                        No readmission requests found.
-
-                                    </p>
-
+                                <td>
+                                    <div class="font-medium">{{ $request->first_name }} {{ $request->last_name }}</div>
+                                    <div class="muted text-xs">{{ $request->student_number }}</div>
                                 </td>
 
+                                <td>
+                                    <div class="font-medium">{{ $request->subject_code }}</div>
+                                    <div class="muted text-xs">{{ $request->course_name }}</div>
+                                </td>
+
+                                <td>{{ ucfirst(str_replace('_', ' ', (string) $request->reason_code)) }}</td>
+
+                                <td>
+                                    <span class="badge {{ $badgeFor[$request->status] ?? 'badge-neutral' }}">
+                                        {{ ucfirst($request->status) }}
+                                    </span>
+                                </td>
+
+                                <td class="is-end">
+                                    <a href="{{ route('osa.readmissions.show', $request->readmission_id) }}"
+                                       @class(['btn btn-sm', 'btn-primary' => $request->status === 'pending', 'btn-secondary' => $request->status !== 'pending'])>
+                                        {{ $request->status === 'pending' ? 'Review request' : 'View request' }}
+                                    </a>
+                                </td>
                             </tr>
-
+                        @empty
+                            <tr>
+                                <td colspan="5" class="muted py-12 text-center">
+                                    No readmission requests found.
+                                </td>
+                            </tr>
                         @endforelse
-
                     </tbody>
-
                 </table>
-
             </div>
-
-        </div>
+        </section>
 
     </div>
-
 </x-app-layout>

@@ -4,7 +4,6 @@ namespace App\Http\Middleware;
 
 use Closure;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
 use Symfony\Component\HttpFoundation\Response;
 
 class FacultyMiddleware
@@ -16,10 +15,14 @@ class FacultyMiddleware
      */
     public function handle(Request $request, Closure $next): Response
     {
-        if (Auth::user()->role == 'faculty') {
-            return $next($request);
+        if ($request->user()?->role !== 'faculty') {
+            return redirect()->route(match ($request->user()?->role) {
+                'student' => 'student.dashboard',
+                'osa_staff' => 'osa.dashboard',
+                default => 'profile.edit',
+            });
         }
 
-        return redirect()->back();
+        return $next($request);
     }
 }

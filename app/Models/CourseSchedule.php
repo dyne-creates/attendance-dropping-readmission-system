@@ -12,8 +12,6 @@ class CourseSchedule extends Model
 
     protected $primaryKey = 'schedule_id';
 
-    public $timestamps = false;
-
     protected $fillable = [
         'course_id',
         'day_of_week',

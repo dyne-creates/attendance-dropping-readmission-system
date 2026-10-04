@@ -23,7 +23,10 @@ class ProfileUpdateRequest extends FormRequest
                 'string',
                 'email',
                 'max:255',
-                Rule::unique(User::class)->ignore($this->user()->getKey()),
+                Rule::unique(User::class)->ignore(
+                    $this->user()->getKey(),
+                    $this->user()->getKeyName(),
+                ),
                 function (string $attribute, mixed $value, \Closure $fail): void {
                     $domain = $this->user()->role === 'student' ? 's.ubaguio.edu' : 'e.ubaguio.edu';
                     $emailDomain = strtolower((string) substr(strrchr((string) $value, '@') ?: '', 1));
