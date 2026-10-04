@@ -19,6 +19,7 @@ class FacultyMiddleware
         if (Auth::user()->role == 'faculty') {
             return $next($request);
         }
+
         return redirect()->back();
     }
 }

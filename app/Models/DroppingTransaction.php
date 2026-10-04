@@ -13,6 +13,8 @@ class DroppingTransaction extends Model
 
     protected $primaryKey = 'drop_id';
 
+    public $timestamps = false;
+
     protected $fillable = [
         'enrollment_id',
         'dropped_by',

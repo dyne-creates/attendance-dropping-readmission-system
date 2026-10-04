@@ -15,6 +15,8 @@ class OsaStaff extends Model
 
     protected $primaryKey = 'osa_id';
 
+    public $timestamps = false;
+
     protected $fillable = [
         'user_id',
     ];

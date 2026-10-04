@@ -1,10 +1,9 @@
 <?php
 
-use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\Faculty\FacultyController;
 use App\Http\Controllers\OsaStaff\OsaStaffController;
+use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\Student\StudentController;
-
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -31,6 +30,22 @@ Route::middleware(['auth', 'prevent-back-history'])->group(function () {
     Route::get('/faculty/dashboard', [FacultyController::class, 'dashboard'])
         ->middleware('facultyMiddleware')
         ->name('faculty.dashboard');
+
+    Route::post('/faculty/attendance', [FacultyController::class, 'storeAttendance'])
+        ->middleware('facultyMiddleware')
+        ->name('faculty.attendance.store');
+
+    Route::post('/faculty/enrollments/{enrollment}/drop', [FacultyController::class, 'dropStudent'])
+        ->middleware('facultyMiddleware')
+        ->name('faculty.enrollments.drop');
+
+    Route::post('/faculty/toggle-schedule-warning', [FacultyController::class, 'toggleScheduleWarning'])
+        ->middleware('facultyMiddleware')
+        ->name('faculty.toggle-schedule-warning');
+
+    Route::get('/faculty/enrollments/{enrollment}/attendance-history', [FacultyController::class, 'studentAttendanceHistory'])
+        ->middleware('facultyMiddleware')
+        ->name('faculty.enrollments.history');
 
     Route::get('/osa-staff/dashboard', [OsaStaffController::class, 'dashboard'])
         ->middleware('staffMiddleware')

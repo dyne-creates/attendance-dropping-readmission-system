@@ -19,6 +19,7 @@ class StaffMiddleware
         if (Auth::user()->role == 'osa_staff') {
             return $next($request);
         }
+
         return redirect()->back();
     }
 }
