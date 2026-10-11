@@ -119,7 +119,7 @@
                 <dl class="card-body grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2">
                     <div>
                         <dt class="text-sm font-medium muted">Reason</dt>
-                        <dd class="mt-1 text-sm">{{ ucfirst(str_replace('_', ' ', (string) $request->reason_code)) }}</dd>
+                        <dd class="mt-1 text-sm">{{ \App\Models\ReadmissionRequest::reasonLabel((string) $request->reason_code) }}</dd>
                     </div>
 
                     <div>
@@ -131,9 +131,68 @@
                         <dt class="text-sm font-medium muted">Details</dt>
                         <dd class="mt-1 whitespace-pre-line text-sm">{{ $request->reason_details ?? 'No additional details provided.' }}</dd>
                     </div>
+
+                    <div class="sm:col-span-2">
+                        <dt class="text-sm font-medium muted">Policy consent</dt>
+                        <dd class="mt-1 text-sm">
+                            {{ $request->policy_acknowledged_at ? 'Acknowledged on '.Carbon\Carbon::parse($request->policy_acknowledged_at)->format('M d, Y g:i A') : 'Not recorded' }}
+                        </dd>
+                    </div>
                 </dl>
             </section>
 
+        </div>
+
+        <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
+            <section class="card overflow-hidden">
+                <div class="card-header">
+                    <h2 class="text-base font-semibold">Parent / guardian information</h2>
+                </div>
+                <dl class="card-body grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2">
+                    @if ($guardian)
+                        <div>
+                            <dt class="text-sm font-medium muted">Name</dt>
+                            <dd class="mt-1 text-sm">{{ $guardian->full_name }}</dd>
+                        </div>
+                        <div>
+                            <dt class="text-sm font-medium muted">Relationship</dt>
+                            <dd class="mt-1 text-sm">{{ $guardian->relationship }}</dd>
+                        </div>
+                        <div>
+                            <dt class="text-sm font-medium muted">Email</dt>
+                            <dd class="mt-1 text-sm">{{ $guardian->email ?? '—' }}</dd>
+                        </div>
+                        <div>
+                            <dt class="text-sm font-medium muted">Contact number</dt>
+                            <dd class="mt-1 text-sm">{{ $guardian->phone_number }}</dd>
+                        </div>
+                    @else
+                        <div class="sm:col-span-2">
+                            <dd class="text-sm muted">No parent or guardian is listed on the student's profile.</dd>
+                        </div>
+                    @endif
+                </dl>
+            </section>
+
+            <section class="card overflow-hidden">
+                <div class="card-header">
+                    <h2 class="text-base font-semibold">Recorded absence dates</h2>
+                </div>
+                <div class="card-body space-y-4">
+                    @forelse ($absenceDates as $period => $dates)
+                        <div>
+                            <h3 class="text-sm font-medium">{{ ucfirst(str_replace('_', ' ', $period)) }}</h3>
+                            <ul class="mt-1 list-inside list-disc text-sm">
+                                @foreach ($dates as $absence)
+                                    <li>{{ Carbon\Carbon::parse($absence->session_date)->format('F j, Y') }}</li>
+                                @endforeach
+                            </ul>
+                        </div>
+                    @empty
+                        <p class="text-sm muted">No absences assigned to a grading period.</p>
+                    @endforelse
+                </div>
+            </section>
         </div>
 
         <!-- Supporting documents -->
@@ -152,11 +211,9 @@
                             </p>
                         </div>
 
-                        <a href="{{ asset('storage/' . $document->file_path) }}"
-                           target="_blank"
-                           rel="noopener"
+                        <a href="{{ route('osa.readmissions.documents.download', $document->document_id) }}"
                            class="btn btn-secondary btn-sm">
-                            View document
+                            Download document
                         </a>
                     </div>
                 @empty

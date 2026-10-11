@@ -55,7 +55,7 @@
 
                                 <td>{{ $request->faculty_name }}</td>
 
-                                <td>{{ ucfirst(str_replace('_', ' ', (string) $request->reason_code)) }}</td>
+                                <td>{{ \App\Models\ReadmissionRequest::reasonLabel((string) $request->reason_code) }}</td>
 
                                 <td><span class="badge badge-neutral">{{ strtoupper($request->channel) }}</span></td>
 

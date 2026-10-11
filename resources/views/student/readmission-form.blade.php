@@ -1,0 +1,237 @@
+<x-app-layout>
+    <x-slot name="header">
+        <x-page-title
+            title="Online readmission request"
+            description="Review your automatically filled information, provide your reason, and submit the request to the Office of Student Affairs." />
+    </x-slot>
+
+    <div class="page space-y-6">
+        <section class="card p-5 sm:p-6" aria-labelledby="policy-heading">
+            <h2 id="policy-heading" class="text-lg font-semibold">Section 1: Attendance monitoring and consent</h2>
+            <div class="muted mt-3 space-y-3 text-sm leading-6">
+                <p>
+                    In line with the University's Vision and Mission of a relevant and responsive education, timely and
+                    accurate monitoring of student attendance can help improve the University's academic process. The
+                    Office of Student Affairs operates the Online Attendance Monitoring and Readmission System to
+                    support a timely, proper, and efficient response to factors affecting student attendance and
+                    performance.
+                </p>
+                <p>
+                    The University may coordinate with parents or guardians by notifying them of student absences and
+                    providing an opportunity to share any concerns. Attendance monitoring is intended to encourage
+                    responsibility and help students get the full benefit of their education.
+                </p>
+                <p>
+                    By submitting this readmission request, you acknowledge that the readmission officer may notify
+                    your parents or guardians about your absences as part of the readmission process. Your personal
+                    information will be handled in accordance with applicable data protection laws, securely stored,
+                    and accessed only by authorized personnel involved in the process. It will not be disclosed to
+                    third parties unless required by law or with your explicit consent. For privacy concerns, contact
+                    the Office of Student Affairs before submitting.
+                </p>
+                <p>
+                    Please ensure that your information is accurate and use your student email address.
+                </p>
+                <p>
+                    I certify that the information provided is true and correct and understand that false statements
+                    or concealment may lead to disciplinary sanctions. I consent to the collection, processing, and
+                    storage of my data under RA 10173 (Data Privacy Act of 2012), and authorize the Office of Student
+                    Affairs to use this information to notify my parents or guardians about my absences and attendance.
+                </p>
+            </div>
+        </section>
+
+        <section class="card p-5 sm:p-6" aria-labelledby="student-information-heading">
+            <h2 id="student-information-heading" class="text-lg font-semibold">Section 2: Student information</h2>
+            <p class="muted mt-1 text-sm">Automatically loaded from your student profile.</p>
+
+            <dl class="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                    <dt class="field-label">ID number</dt>
+                    <dd class="mt-1 font-medium">{{ $student->student_number }}</dd>
+                </div>
+                <div>
+                    <dt class="field-label">Student email</dt>
+                    <dd class="mt-1 font-medium">{{ $student->user->email }}</dd>
+                </div>
+                <div>
+                    <dt class="field-label">Last name</dt>
+                    <dd class="mt-1 font-medium">{{ $student->last_name }}</dd>
+                </div>
+                <div>
+                    <dt class="field-label">First name</dt>
+                    <dd class="mt-1 font-medium">{{ $student->first_name }}</dd>
+                </div>
+                <div>
+                    <dt class="field-label">Honorifics</dt>
+                    <dd class="mt-1 font-medium">{{ $student->honorifics ?? 'Not provided' }}</dd>
+                </div>
+                <div>
+                    <dt class="field-label">Year level</dt>
+                    <dd class="mt-1 font-medium">{{ $student->year_level ?? 'Not provided' }}</dd>
+                </div>
+                <div>
+                    <dt class="field-label">School / college</dt>
+                    <dd class="mt-1 font-medium">{{ $student->department ?? 'Not provided' }}</dd>
+                </div>
+                <div>
+                    <dt class="field-label">Program</dt>
+                    <dd class="mt-1 font-medium">{{ $student->program ?? 'Not provided' }}</dd>
+                </div>
+            </dl>
+        </section>
+
+        <section class="card p-5 sm:p-6" aria-labelledby="class-information-heading">
+            <h2 id="class-information-heading" class="text-lg font-semibold">Section 3: Class information</h2>
+            <p class="muted mt-1 text-sm">Automatically loaded from the dropped class and its history.</p>
+
+            <dl class="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                    <dt class="field-label">Course</dt>
+                    <dd class="mt-1 font-medium">{{ $enrollment->course->course_name }}</dd>
+                </div>
+                <div>
+                    <dt class="field-label">Subject code</dt>
+                    <dd class="mt-1 font-medium">{{ $enrollment->course->subject_code }}</dd>
+                </div>
+                <div>
+                    <dt class="field-label">Section</dt>
+                    <dd class="mt-1 font-medium">{{ $enrollment->course->section }}</dd>
+                </div>
+                <div>
+                    <dt class="field-label">Class schedule</dt>
+                    <dd class="mt-1 font-medium">
+                        @forelse ($enrollment->course->schedules as $schedule)
+                            {{ $schedule->day_of_week }}
+                            {{ \Carbon\Carbon::parse($schedule->start_time)->format('g:i A') }}–{{ \Carbon\Carbon::parse($schedule->end_time)->format('g:i A') }}@unless ($loop->last), @endunless
+                        @empty
+                            Not provided
+                        @endforelse
+                    </dd>
+                </div>
+                <div>
+                    <dt class="field-label">Times dropped from this class</dt>
+                    <dd class="mt-1 font-medium">{{ $dropCount }}</dd>
+                </div>
+                <div>
+                    <dt class="field-label">Instructor</dt>
+                    <dd class="mt-1 font-medium">{{ $enrollment->course->facultyMember->full_name }}</dd>
+                </div>
+            </dl>
+        </section>
+
+        <section class="card p-5 sm:p-6" aria-labelledby="absence-heading">
+            <h2 id="absence-heading" class="text-lg font-semibold">Section 4: Absence and reason information</h2>
+            <p class="muted mt-1 text-sm">
+                Absence dates below are taken from recorded attendance and grouped by grading period.
+            </p>
+
+            <div class="mt-5 grid grid-cols-1 gap-4 md:grid-cols-3">
+                @foreach ($absenceDates as $period)
+                    <div class="rounded-lg border p-4">
+                        <h3 class="font-medium">{{ $period['label'] }}</h3>
+                        @if ($period['dates']->isNotEmpty())
+                            <ul class="mt-2 list-inside list-disc space-y-1 text-sm">
+                                @foreach ($period['dates'] as $absence)
+                                    <li>{{ $absence->session_date->format('F j, Y') }}</li>
+                                @endforeach
+                            </ul>
+                        @else
+                            <p class="muted mt-2 text-sm">No absences assigned to this period.</p>
+                        @endif
+                    </div>
+                @endforeach
+            </div>
+
+            <p class="alert alert-warning mt-4" role="note">
+                Only absences assigned to a grading period are listed. Ask your instructor to assign a grading period
+                if an absence is missing. For additional dates, submit another request after this request is processed.
+            </p>
+
+            <form method="POST"
+                  action="{{ route('student.readmissions.store', $enrollment) }}"
+                  enctype="multipart/form-data"
+                  class="mt-6 space-y-5">
+                @csrf
+
+                <div>
+                    <label for="reason_code" class="field-label mb-1">Reason for absences <span aria-hidden="true">*</span></label>
+                    <select id="reason_code" name="reason_code" class="field" required>
+                        <option value="">Select a reason</option>
+                        @foreach ($reasons as $code => $label)
+                            <option value="{{ $code }}" @selected(old('reason_code') === $code)>{{ $label }}</option>
+                        @endforeach
+                    </select>
+                    @error('reason_code')
+                        <p class="field-error mt-1">{{ $message }}</p>
+                    @enderror
+                </div>
+
+                <div>
+                    <label for="reason_details" class="field-label mb-1">Additional details <span class="muted">(required if you select Other)</span></label>
+                    <textarea id="reason_details" name="reason_details" rows="4" maxlength="2000" class="field">{{ old('reason_details') }}</textarea>
+                    @error('reason_details')
+                        <p class="field-error mt-1">{{ $message }}</p>
+                    @enderror
+                </div>
+
+                <div>
+                    <label for="attachment" class="field-label mb-1">Supporting document <span class="muted">(optional, JPEG or PNG only)</span></label>
+                    <input id="attachment" name="attachment" type="file" accept=".jpg,.jpeg,.png,image/jpeg,image/png" class="field">
+                    @error('attachment')
+                        <p class="field-error mt-1">{{ $message }}</p>
+                    @enderror
+                </div>
+
+                <section class="rounded-lg border p-4" aria-labelledby="guardian-information-heading">
+                    <h3 id="guardian-information-heading" class="font-semibold">Section 5: Parent / guardian information</h3>
+                    <p class="muted mt-1 text-sm">Automatically loaded from your student profile.</p>
+
+                    @if ($guardian)
+                        <dl class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                            <div>
+                                <dt class="field-label">Name</dt>
+                                <dd class="mt-1 font-medium">{{ $guardian->full_name }}</dd>
+                            </div>
+                            <div>
+                                <dt class="field-label">Relationship</dt>
+                                <dd class="mt-1 font-medium">{{ $guardian->relationship }}</dd>
+                            </div>
+                            <div>
+                                <dt class="field-label">Email address</dt>
+                                <dd class="mt-1 font-medium">{{ $guardian->email ?? 'Not provided' }}</dd>
+                            </div>
+                            <div>
+                                <dt class="field-label">Contact number</dt>
+                                <dd class="mt-1 font-medium">{{ $guardian->phone_number }}</dd>
+                            </div>
+                        </dl>
+                    @else
+                        <p class="alert alert-warning mt-4" role="status">
+                            No parent or guardian information is on file. Please update your profile before submitting.
+                        </p>
+                    @endif
+                </section>
+
+                <div>
+                    <label class="flex items-start gap-3">
+                        <input type="checkbox" name="consent" value="1" class="mt-1" @checked(old('consent')) required>
+                        <span class="text-sm">
+                            I certify that the information provided is true and correct, consent to the collection,
+                            processing, and storage of my data under RA 10173, and authorize the Office of Student
+                            Affairs to notify my parent or guardian about my absences and attendance.
+                        </span>
+                    </label>
+                    @error('consent')
+                        <p class="field-error mt-1">{{ $message }}</p>
+                    @enderror
+                </div>
+
+                <div class="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+                    <a href="{{ route('student.dashboard') }}" class="btn btn-secondary">Cancel</a>
+                    <button type="submit" class="btn btn-primary">Submit readmission request</button>
+                </div>
+            </form>
+        </section>
+    </div>
+</x-app-layout>

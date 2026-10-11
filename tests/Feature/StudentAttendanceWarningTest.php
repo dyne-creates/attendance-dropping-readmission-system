@@ -34,6 +34,7 @@ class StudentAttendanceWarningTest extends TestCase
         $response = $this->actingAs($user)->get(route('student.dashboard'));
 
         $response->assertSee('80% warning level');
+        $response->assertSee('Absence warning');
         $response->assertSee('9.00 of');
         $response->assertSee('10.80 allowable absence hours');
     }

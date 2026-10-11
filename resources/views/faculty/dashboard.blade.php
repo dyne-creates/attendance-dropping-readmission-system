@@ -273,6 +273,7 @@
                                 <div class="w-full sm:w-64">
                                     <label for="grading-period" class="field-label">Grading period</label>
                                     <select id="grading-period" name="grading_period" class="field" required>
+                                        <option value="">Select a grading period</option>
                                         <option value="first_grading">First Grading</option>
                                         <option value="midterms">Midterms</option>
                                         <option value="finals">Finals</option>

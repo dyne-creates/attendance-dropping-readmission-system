@@ -25,6 +25,12 @@
 
     <div class="page">
 
+        @if (session('success'))
+            <div class="alert alert-success mb-4" role="status">{{ session('success') }}</div>
+        @elseif (session('info'))
+            <div class="alert alert-warning mb-4" role="status">{{ session('info') }}</div>
+        @endif
+
         @forelse ($groups as $term => $items)
             <section @class(['mt-10' => ! $loop->first]) aria-labelledby="term-{{ $loop->index }}">
 
@@ -51,6 +57,23 @@
 
                                             @if ($enrollment->status === 'dropped')
                                                 <span class="badge badge-neutral">Dropped</span>
+                                            @endif
+                                            @if ($enrollment->absence_warning === 'approaching_limit')
+                                                <span class="badge badge-warning">Absence warning</span>
+                                            @elseif ($enrollment->absence_warning === 'limit_reached')
+                                                <span class="badge badge-danger">Absence limit reached</span>
+                                            @endif
+                                            @if ($enrollment->status === 'dropped')
+                                                @if ($enrollment->latest_drop?->readmissionRequest)
+                                                    <span class="badge badge-warning shrink-0">
+                                                        Readmission {{ ucfirst($enrollment->latest_drop->readmissionRequest->status) }}
+                                                    </span>
+                                                @else
+                                                    <a href="{{ route('student.readmissions.create', $enrollment) }}"
+                                                       class="btn btn-primary btn-sm shrink-0">
+                                                        Request readmission
+                                                    </a>
+                                                @endif
                                             @endif
                                         </div>
 

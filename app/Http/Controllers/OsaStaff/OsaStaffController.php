@@ -4,13 +4,15 @@ namespace App\Http\Controllers\OsaStaff;
 
 use App\Http\Controllers\Controller;
 use App\Mail\ReadmissionDecisionMail;
+use App\Models\ExcuseDocument;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Storage;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class OsaStaffController extends Controller
 {
-
     public function dashboard()
     {
         $pendingReadmissions = DB::table('readmission_requests')
@@ -184,7 +186,7 @@ class OsaStaffController extends Controller
             )
             ->first();
 
-        if (!$request) {
+        if (! $request) {
             abort(404);
         }
 
@@ -192,10 +194,30 @@ class OsaStaffController extends Controller
             ->where('readmission_id', $id)
             ->get();
 
+        $guardian = DB::table('guardians')
+            ->where('student_id', $request->student_id)
+            ->orderBy('guardian_id')
+            ->first();
+
+        $absenceDates = DB::table('attendance_records')
+            ->where('enrollment_id', $request->enrollment_id)
+            ->where('status', 'absent')
+            ->whereNotNull('grading_period')
+            ->orderBy('session_date')
+            ->get()
+            ->groupBy('grading_period');
+
         return view(
             'osa-staff.readmission-details',
-            compact('request', 'documents')
+            compact('request', 'documents', 'guardian', 'absenceDates')
         );
+    }
+
+    public function downloadExcuseDocument(ExcuseDocument $document): StreamedResponse
+    {
+        abort_unless(Storage::disk('local')->exists($document->file_path), 404);
+
+        return Storage::disk('local')->download($document->file_path);
     }
 
     public function approveReadmission(Request $request, int $id)
@@ -260,7 +282,7 @@ class OsaStaffController extends Controller
                 )
                 ->first();
 
-            if (!$readmission) {
+            if (! $readmission) {
                 DB::rollBack();
 
                 return redirect()
@@ -283,7 +305,7 @@ class OsaStaffController extends Controller
                     $readmission->enrollment_id
                 )
                 ->update([
-                    'status' => 'readmitted'
+                    'status' => 'readmitted',
                 ]);
 
             DB::table('notifications')->insert([
@@ -293,8 +315,7 @@ class OsaStaffController extends Controller
                 'guardian_id' => null,
                 'notification_type' => 'readmission_approved',
                 'channel' => 'email',
-                'message' =>
-                    'Your readmission request has been approved by the OSA.',
+                'message' => 'Your readmission request has been approved by the OSA.',
                 'sent_at' => now(),
             ]);
 
@@ -305,11 +326,10 @@ class OsaStaffController extends Controller
                 'guardian_id' => null,
                 'notification_type' => 'student_readmitted',
                 'channel' => 'email',
-                'message' =>
-                    'The readmission request of ' .
-                    $readmission->first_name .
-                    ' ' .
-                    $readmission->last_name .
+                'message' => 'The readmission request of '.
+                    $readmission->first_name.
+                    ' '.
+                    $readmission->last_name.
                     ' has been approved.',
                 'sent_at' => now(),
             ]);
@@ -411,7 +431,7 @@ class OsaStaffController extends Controller
                 )
                 ->first();
 
-            if (!$readmission) {
+            if (! $readmission) {
                 DB::rollBack();
 
                 return redirect()
@@ -435,8 +455,7 @@ class OsaStaffController extends Controller
                 'guardian_id' => null,
                 'notification_type' => 'readmission_rejected',
                 'channel' => 'email',
-                'message' =>
-                    'Your readmission request has been rejected by the OSA.',
+                'message' => 'Your readmission request has been rejected by the OSA.',
                 'sent_at' => now(),
             ]);
 

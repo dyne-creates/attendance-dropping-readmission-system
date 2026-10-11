@@ -16,6 +16,17 @@ class ReadmissionRequest extends Model
 {
     use HasFactory;
 
+    public const REASONS = [
+        'dental_medical' => 'Dental & Medical Concerns',
+        'mental_health' => 'Mental Health Concerns',
+        'technology_connectivity' => 'Technology & Connectivity Issues',
+        'scheduling_admin' => 'Scheduling & Administrative Conflicts',
+        'personal_family' => 'Personal & Family Emergencies',
+        'tardiness_time' => 'Tardiness & Time Management',
+        'disciplinary_sanction' => 'Disciplinary Sanction',
+        'other' => 'Other',
+    ];
+
     protected $primaryKey = 'readmission_id';
 
     protected $fillable = [
@@ -23,6 +34,7 @@ class ReadmissionRequest extends Model
         'processed_by',
         'reason_code',
         'reason_details',
+        'policy_acknowledged_at',
         'channel',
         // 'pending' | 'approved' | 'rejected' — defaults to 'pending'
         'status',
@@ -35,7 +47,13 @@ class ReadmissionRequest extends Model
         return [
             'notice_sent_date' => 'date',
             'processed_date' => 'date',
+            'policy_acknowledged_at' => 'datetime',
         ];
+    }
+
+    public static function reasonLabel(string $reasonCode): string
+    {
+        return self::REASONS[$reasonCode] ?? ucfirst(str_replace('_', ' ', $reasonCode));
     }
 
     /** The drop event this request is responding to. */

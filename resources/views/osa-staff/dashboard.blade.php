@@ -85,7 +85,7 @@
                                     <div class="muted text-xs">{{ $request->course_name }}</div>
                                 </td>
 
-                                <td>{{ ucfirst(str_replace('_', ' ', (string) $request->reason_code)) }}</td>
+                                <td>{{ \App\Models\ReadmissionRequest::reasonLabel((string) $request->reason_code) }}</td>
 
                                 <td>
                                     <span class="badge {{ $badgeFor[$request->status] ?? 'badge-neutral' }}">

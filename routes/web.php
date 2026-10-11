@@ -4,6 +4,7 @@ use App\Http\Controllers\Faculty\FacultyController;
 use App\Http\Controllers\OsaStaff\OsaStaffController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\Student\StudentController;
+use App\Http\Controllers\Student\StudentReadmissionController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -26,6 +27,14 @@ Route::middleware(['auth', 'prevent-back-history'])->group(function () {
     Route::get('/student/dashboard', [StudentController::class, 'dashboard'])
         ->middleware('studentMiddleware')
         ->name('student.dashboard');
+
+    Route::get('/student/enrollments/{enrollment}/readmission-request', [StudentReadmissionController::class, 'create'])
+        ->middleware('studentMiddleware')
+        ->name('student.readmissions.create');
+
+    Route::post('/student/enrollments/{enrollment}/readmission-request', [StudentReadmissionController::class, 'store'])
+        ->middleware('studentMiddleware')
+        ->name('student.readmissions.store');
 
     Route::get('/faculty/dashboard', [FacultyController::class, 'dashboard'])
         ->middleware('facultyMiddleware')
@@ -61,43 +70,45 @@ Route::middleware(['auth', 'staffMiddleware'])->prefix('osa')->name('osa.')->gro
     // Dashboard
     Route::get('/dashboard', [
         OsaStaffController::class,
-        'dashboard'
+        'dashboard',
     ])->name('dashboard');
-
 
     // Readmission requests
     Route::get('/readmissions', [
         OsaStaffController::class,
-        'readmissions'
+        'readmissions',
     ])->name('readmissions');
 
     Route::get('/readmissions/{id}', [
         OsaStaffController::class,
-        'showReadmission'
+        'showReadmission',
     ])->name('readmissions.show');
 
+    Route::get('/readmissions/documents/{document}', [
+        OsaStaffController::class,
+        'downloadExcuseDocument',
+    ])->name('readmissions.documents.download');
 
     // Approve / reject
     Route::post('/readmissions/{id}/approve', [
         OsaStaffController::class,
-        'approveReadmission'
+        'approveReadmission',
     ])->name('readmissions.approve');
 
     Route::post('/readmissions/{id}/reject', [
         OsaStaffController::class,
-        'rejectReadmission'
+        'rejectReadmission',
     ])->name('readmissions.reject');
-
 
     // Archives
     Route::get('/archive/drops', [
         OsaStaffController::class,
-        'dropArchive'
+        'dropArchive',
     ])->name('archive.drops');
 
     Route::get('/archive/readmissions', [
         OsaStaffController::class,
-        'readmissionArchive'
+        'readmissionArchive',
     ])->name('archive.readmissions');
 });
 
