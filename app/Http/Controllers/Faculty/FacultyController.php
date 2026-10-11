@@ -168,6 +168,7 @@ class FacultyController extends Controller
         $validated = $request->validate([
             'course_id' => ['required', 'integer', 'exists:courses,course_id'],
             'session_date' => ['required', 'date'],
+            'grading_period' => ['required', 'in:first_grading,midterms,finals'],
             'attendance' => ['required', 'array'],
             'attendance.*.enrollment_id' => ['required', 'integer', 'exists:enrollments,enrollment_id'],
             'attendance.*.status' => ['required', 'in:present,late,absent'],
@@ -206,6 +207,7 @@ class FacultyController extends Controller
                     [
                         'recorded_by' => $faculty->faculty_id,
                         'status' => $entry['status'],
+                        'grading_period' => $validated['grading_period'],
                         'remarks' => $entry['remarks'] ?? null,
                         'is_out_of_schedule' => $isOutOfSchedule,
                     ]

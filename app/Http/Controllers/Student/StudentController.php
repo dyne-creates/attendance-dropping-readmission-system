@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Student;
 
 use App\Http\Controllers\Controller;
+use App\Services\AttendanceService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Http\Request;
@@ -16,7 +17,7 @@ class StudentController extends Controller
         'finals' => 'Finals',
     ];
 
-    public function dashboard(Request $request): View
+    public function dashboard(Request $request, AttendanceService $attendanceService): View
     {
         $student = $request->user()->student;
 
@@ -25,6 +26,7 @@ class StudentController extends Controller
             : $student->enrollments()
                 ->with([
                     'course.schoolYear',
+                    'course.schedules',
                     'attendanceRecords' => function (HasMany $query): void {
                         $query->orderBy('session_date');
                     },
@@ -65,10 +67,19 @@ class StudentController extends Controller
                     ->values(),
             );
 
-            $enrollment->setAttribute(
-                'unassigned_attendance_records',
-                $enrollment->attendanceRecords->whereNull('grading_period'),
+            $absenceHours = $attendanceService->calculateAbsenceHours(
+                $enrollment->course,
+                $enrollment->attendanceRecords->where('status', 'absent'),
             );
+            $maximumAbsenceHours = $attendanceService->maximumAllowableAbsenceHours($enrollment->course);
+            $warningThresholdHours = round($maximumAbsenceHours * 0.8, 2);
+            $absenceWarning = $absenceHours >= $maximumAbsenceHours
+                ? 'limit_reached'
+                : ($absenceHours >= $warningThresholdHours ? 'approaching_limit' : null);
+
+            $enrollment->setAttribute('absence_hours', $absenceHours);
+            $enrollment->setAttribute('maximum_absence_hours', $maximumAbsenceHours);
+            $enrollment->setAttribute('absence_warning', $absenceWarning);
         }
 
         return view('student.dashboard', compact('enrollments'));

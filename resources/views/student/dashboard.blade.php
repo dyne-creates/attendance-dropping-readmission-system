@@ -37,7 +37,6 @@
                         @php
                             $days = collect($enrollment->grading_periods)
                                 ->flatMap(fn ($period) => $period['attendance_records'])
-                                ->concat($enrollment->unassigned_attendance_records)
                                 ->sortBy('session_date')
                                 ->values();
                         @endphp
@@ -65,6 +64,21 @@
                                         <path stroke-linecap="round" stroke-linejoin="round" d="M6 9l6 6 6-6" />
                                     </svg>
                                 </div>
+
+                                @if ($enrollment->absence_warning === 'approaching_limit')
+                                    <p class="alert alert-warning mt-4" role="status">
+                                        Absence warning: {{ number_format($enrollment->absence_hours, 2) }} of
+                                        {{ number_format($enrollment->maximum_absence_hours, 2) }} allowable absence hours
+                                        used in this subject (80% warning level).
+                                    </p>
+                                @elseif ($enrollment->absence_warning === 'limit_reached')
+                                    <p class="alert alert-danger mt-4" role="alert">
+                                        Maximum absence limit reached:
+                                        {{ number_format($enrollment->absence_hours, 2) }} of
+                                        {{ number_format($enrollment->maximum_absence_hours, 2) }} allowable hours used.
+                                        Contact your instructor or the Office of Student Affairs.
+                                    </p>
+                                @endif
 
                                 @if ($days->isNotEmpty())
                                     <div class="strip mt-4" role="img"
@@ -142,47 +156,6 @@
                                     </details>
                                 @endforeach
 
-                                @if ($enrollment->unassigned_attendance_records->isNotEmpty())
-                                    <details class="disclosure border-t">
-
-                                        <summary class="flex items-center gap-2 px-5 py-3 text-sm font-medium">
-                                            <svg class="chevron muted h-4 w-4 shrink-0" fill="none" stroke="currentColor"
-                                                 stroke-width="1.8" viewBox="0 0 24 24" aria-hidden="true">
-                                                <path stroke-linecap="round" stroke-linejoin="round" d="M6 9l6 6 6-6" />
-                                            </svg>
-                                            <span class="text-warn">
-                                                Attendance without a grading period
-                                                ({{ $enrollment->unassigned_attendance_records->count() }}
-                                                {{ Str::plural('day', $enrollment->unassigned_attendance_records->count()) }})
-                                            </span>
-                                        </summary>
-
-                                        <div class="overflow-x-auto border-t">
-                                            <table class="data-table">
-                                                <thead>
-                                                    <tr>
-                                                        <th scope="col">Class day</th>
-                                                        <th scope="col">Status</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody>
-                                                    @foreach ($enrollment->unassigned_attendance_records as $record)
-                                                        <tr>
-                                                            <td class="whitespace-nowrap">
-                                                                {{ $record->session_date->format('l, M j, Y') }}
-                                                            </td>
-                                                            <td>
-                                                                <span class="badge {{ $badgeFor[$record->status] ?? 'badge-neutral' }}">
-                                                                    {{ ucfirst($record->status) }}
-                                                                </span>
-                                                            </td>
-                                                        </tr>
-                                                    @endforeach
-                                                </tbody>
-                                            </table>
-                                        </div>
-                                    </details>
-                                @endif
                             </div>
                         </details>
                     @endforeach

@@ -2,13 +2,19 @@
 
 namespace App\Services;
 
+use App\Models\AttendanceRecord;
 use App\Models\Course;
 use App\Models\Enrollment;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
+use Illuminate\Database\Eloquent\Collection;
 
 class AttendanceService
 {
+    private const SEMESTER_WEEKS = 18;
+
+    private const MAXIMUM_ABSENCE_PERCENTAGE = 0.20;
+
     /**
      * Determine the duration in hours for a class session on a given date.
      */
@@ -47,11 +53,24 @@ class AttendanceService
      */
     public function calculateStudentAbsenceHours(Enrollment $enrollment): float
     {
-        $absentRecords = $enrollment->attendanceRecords()
-            ->where('status', 'absent')
-            ->get();
+        $absentRecords = $enrollment->relationLoaded('attendanceRecords')
+            ? $enrollment->attendanceRecords->where('status', 'absent')
+            : $enrollment->attendanceRecords()->where('status', 'absent')->get();
 
-        $course = $enrollment->course;
+        $course = $enrollment->relationLoaded('course')
+            ? $enrollment->course
+            : $enrollment->course()->with('schedules')->firstOrFail();
+
+        return $this->calculateAbsenceHours($course, $absentRecords);
+    }
+
+    /**
+     * Calculate absence hours from records already loaded for an enrollment.
+     *
+     * @param  Collection<int, AttendanceRecord>  $absentRecords
+     */
+    public function calculateAbsenceHours(Course $course, iterable $absentRecords): float
+    {
         $totalHours = 0.0;
 
         foreach ($absentRecords as $record) {
@@ -61,4 +80,14 @@ class AttendanceService
         return round($totalHours, 2);
     }
 
+    /**
+     * Calculate the maximum absence hours allowed for a course in a semester.
+     */
+    public function maximumAllowableAbsenceHours(Course $course): float
+    {
+        return round(
+            $course->hours_per_week * self::SEMESTER_WEEKS * self::MAXIMUM_ABSENCE_PERCENTAGE,
+            2,
+        );
+    }
 }

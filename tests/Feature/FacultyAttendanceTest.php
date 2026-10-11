@@ -5,7 +5,6 @@ namespace Tests\Feature;
 use App\Models\AttendanceRecord;
 use App\Models\Course;
 use App\Models\CourseSchedule;
-use App\Models\DroppingTransaction;
 use App\Models\Enrollment;
 use App\Models\FacultyMember;
 use App\Models\SchoolYear;
@@ -134,6 +133,7 @@ class FacultyAttendanceTest extends TestCase
         $payload = [
             'course_id' => $this->course->course_id,
             'session_date' => $mondayDate,
+            'grading_period' => 'first_grading',
             'attendance' => [
                 [
                     'enrollment_id' => $this->enrollment->enrollment_id,
@@ -156,8 +156,30 @@ class FacultyAttendanceTest extends TestCase
         $this->assertNotNull($record);
         $this->assertEquals($this->faculty->faculty_id, $record->recorded_by);
         $this->assertEquals('present', $record->status);
+        $this->assertSame('first_grading', $record->grading_period);
         $this->assertEquals('On time and engaged', $record->remarks);
         $this->assertFalse((bool) $record->is_out_of_schedule);
+    }
+
+    public function test_grading_period_is_required_when_recording_attendance(): void
+    {
+        $response = $this->actingAs($this->facultyUser)
+            ->post(route('faculty.attendance.store'), [
+                'course_id' => $this->course->course_id,
+                'session_date' => '2026-10-05',
+                'attendance' => [
+                    [
+                        'enrollment_id' => $this->enrollment->enrollment_id,
+                        'status' => 'present',
+                    ],
+                ],
+            ]);
+
+        $response->assertSessionHasErrors('grading_period');
+        $this->assertDatabaseMissing('attendance_records', [
+            'enrollment_id' => $this->enrollment->enrollment_id,
+            'session_date' => '2026-10-05',
+        ]);
     }
 
     public function test_recording_attendance_on_unscheduled_day_marks_as_out_of_schedule(): void
@@ -168,6 +190,7 @@ class FacultyAttendanceTest extends TestCase
         $payload = [
             'course_id' => $this->course->course_id,
             'session_date' => $fridayDate,
+            'grading_period' => 'midterms',
             'attendance' => [
                 [
                     'enrollment_id' => $this->enrollment->enrollment_id,
@@ -211,6 +234,7 @@ class FacultyAttendanceTest extends TestCase
         $payload = [
             'course_id' => $this->course->course_id,
             'session_date' => $eighthDate,
+            'grading_period' => 'first_grading',
             'attendance' => [
                 [
                     'enrollment_id' => $this->enrollment->enrollment_id,
@@ -240,6 +264,7 @@ class FacultyAttendanceTest extends TestCase
         $payload = [
             'course_id' => $this->course->course_id,
             'session_date' => $futureDate,
+            'grading_period' => 'first_grading',
             'attendance' => [
                 [
                     'enrollment_id' => $this->enrollment->enrollment_id,

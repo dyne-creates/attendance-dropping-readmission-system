@@ -270,6 +270,14 @@
                         <div class="card overflow-hidden">
 
                             <div class="card-header flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                                <div class="w-full sm:w-64">
+                                    <label for="grading-period" class="field-label">Grading period</label>
+                                    <select id="grading-period" name="grading_period" class="field" required>
+                                        <option value="first_grading">First Grading</option>
+                                        <option value="midterms">Midterms</option>
+                                        <option value="finals">Finals</option>
+                                    </select>
+                                </div>
                                 <div class="flex flex-wrap items-center gap-2">
                                     <span class="muted text-sm">Mark everyone</span>
                                     <button type="button" class="btn btn-secondary btn-sm" @click="markAll('present')">Present</button>
