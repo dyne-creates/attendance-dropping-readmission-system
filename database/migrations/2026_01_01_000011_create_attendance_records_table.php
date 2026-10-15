@@ -20,7 +20,10 @@ return new class extends Migration
                 'present',
                 'absent',
                 'late',
+                'excused',
             ]);
+
+            $table->decimal('hours_absent', 4, 2)->nullable();
 
             $table->string('remarks', 255)->nullable();
 

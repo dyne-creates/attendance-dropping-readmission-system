@@ -3,6 +3,7 @@
         'present' => 'badge-success',
         'late'    => 'badge-warning',
         'absent'  => 'badge-danger',
+        'excused' => 'badge-neutral',
     ];
 
     $groups = $enrollments->groupBy(
@@ -41,10 +42,10 @@
                 <div class="space-y-3">
                     @foreach ($items as $enrollment)
                         @php
-                            $days = collect($enrollment->grading_periods)
-                                ->flatMap(fn ($period) => $period['attendance_records'])
-                                ->sortBy('session_date')
-                                ->values();
+                            $days = $enrollment->attendanceRecords->sortBy('session_date')->values();
+                            $score = $enrollment->overall_score ?? 100.0;
+                            $pillClass = $score >= 90 ? 'bb-pill-green' : ($score >= 80 ? 'bb-pill-lime' : ($score >= 70 ? 'bb-pill-yellow' : 'bb-pill-red'));
+                            $scoreText = ($score == 100) ? '100 / 100' : number_format($score, 2) . ' / 100';
                         @endphp
 
                         <details class="card disclosure overflow-hidden">
@@ -54,6 +55,8 @@
                                     <div class="min-w-0">
                                         <div class="flex flex-wrap items-center gap-2">
                                             <h3 class="font-semibold">{{ $enrollment->course->course_name }}</h3>
+
+                                            <span class="bb-pill {{ $pillClass }}">{{ $scoreText }}</span>
 
                                             @if ($enrollment->status === 'dropped')
                                                 <span class="badge badge-neutral">Dropped</span>
@@ -120,7 +123,8 @@
                                     :total="$enrollment->attendance_records_count"
                                     :present="$enrollment->present_count"
                                     :late="$enrollment->late_count"
-                                    :absent="$enrollment->absent_count" />
+                                    :absent="$enrollment->absent_count"
+                                    :excused="$enrollment->excused_count" />
                             </summary>
 
                             <div class="border-t">
@@ -140,7 +144,8 @@
                                                 :total="$gradingPeriod['attendance_records']->count()"
                                                 :present="$gradingPeriod['counts']['present']"
                                                 :late="$gradingPeriod['counts']['late']"
-                                                :absent="$gradingPeriod['counts']['absent']" />
+                                                :absent="$gradingPeriod['counts']['absent']"
+                                                :excused="$gradingPeriod['counts']['excused']" />
                                         </summary>
 
                                         <div class="overflow-x-auto border-t">
@@ -161,6 +166,9 @@
                                                             <td>
                                                                 <span class="badge {{ $badgeFor[$record->status] ?? 'badge-neutral' }}">
                                                                     {{ ucfirst($record->status) }}
+                                                                    @if ($record->status === 'absent' && $record->hours_absent !== null)
+                                                                        ({{ $record->hours_absent }}h)
+                                                                    @endif
                                                                 </span>
                                                             </td>
                                                             <td class="muted">{{ $record->remarks ?? '—' }}</td>

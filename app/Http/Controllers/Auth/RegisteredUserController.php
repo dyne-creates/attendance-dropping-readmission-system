@@ -3,7 +3,6 @@
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
-use App\Models\FacultyMember;
 use App\Models\Student;
 use App\Models\User;
 use Illuminate\Auth\Events\Registered;

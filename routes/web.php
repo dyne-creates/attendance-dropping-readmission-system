@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Faculty\FacultyController;
+use App\Http\Controllers\Faculty\FacultyCourseController;
 use App\Http\Controllers\OsaStaff\OsaStaffController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\Student\StudentController;
@@ -44,6 +45,10 @@ Route::middleware(['auth', 'prevent-back-history'])->group(function () {
         ->middleware('facultyMiddleware')
         ->name('faculty.attendance.store');
 
+    Route::post('/faculty/attendance/record', [FacultyController::class, 'recordSingleAttendance'])
+        ->middleware('facultyMiddleware')
+        ->name('faculty.attendance.record');
+
     Route::post('/faculty/enrollments/{enrollment}/drop', [FacultyController::class, 'dropStudent'])
         ->middleware('facultyMiddleware')
         ->name('faculty.enrollments.drop');
@@ -55,6 +60,15 @@ Route::middleware(['auth', 'prevent-back-history'])->group(function () {
     Route::get('/faculty/enrollments/{enrollment}/attendance-history', [FacultyController::class, 'studentAttendanceHistory'])
         ->middleware('facultyMiddleware')
         ->name('faculty.enrollments.history');
+
+    // Faculty Course CRUD
+    Route::middleware('facultyMiddleware')->prefix('faculty/courses')->name('faculty.courses.')->group(function () {
+        Route::get('/create', [FacultyCourseController::class, 'create'])->name('create');
+        Route::post('/', [FacultyCourseController::class, 'store'])->name('store');
+        Route::get('/{course}/edit', [FacultyCourseController::class, 'edit'])->name('edit');
+        Route::put('/{course}', [FacultyCourseController::class, 'update'])->name('update');
+        Route::delete('/{course}', [FacultyCourseController::class, 'destroy'])->name('destroy');
+    });
 
     Route::get('/osa-staff/dashboard', [OsaStaffController::class, 'dashboard'])
         ->middleware('staffMiddleware')

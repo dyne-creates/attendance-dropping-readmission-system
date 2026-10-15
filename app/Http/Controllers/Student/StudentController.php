@@ -43,6 +43,9 @@ class StudentController extends Controller
                     'attendanceRecords as late_count' => function (Builder $query): void {
                         $query->where('status', 'late');
                     },
+                    'attendanceRecords as excused_count' => function (Builder $query): void {
+                        $query->where('status', 'excused');
+                    },
                 ])
                 ->get();
 
@@ -52,6 +55,10 @@ class StudentController extends Controller
 
             $enrollment->setAttribute('drop_count', $drops->count());
             $enrollment->setAttribute('latest_drop', $latestDrop);
+            $enrollment->setAttribute(
+                'overall_score',
+                $attendanceService->calculateOverallScore($enrollment->attendanceRecords)
+            );
 
             $enrollment->setAttribute(
                 'grading_periods',
@@ -68,6 +75,7 @@ class StudentController extends Controller
                                 'present' => $attendanceRecords->where('status', 'present')->count(),
                                 'absent' => $attendanceRecords->where('status', 'absent')->count(),
                                 'late' => $attendanceRecords->where('status', 'late')->count(),
+                                'excused' => $attendanceRecords->where('status', 'excused')->count(),
                             ],
                         ];
                     })

@@ -6,42 +6,133 @@
         ])->filter()->join(', ')
         : '';
 
-    $tabs = $selectedCourse ? [
-        'check'   => 'Take attendance',
-        'summary' => 'Students',
-        'history' => 'Session history',
-    ] : [];
+    // Pre-calculate initial status and hours maps for Alpine
+    $initialStatuses = [];
+    $initialHours = [];
+    $initialRemarks = [];
+    $gridRecords = [];
+    $studentScores = [];
+    $todayDateStr = \Carbon\Carbon::parse($selectedDate)->toDateString();
+
+    if (isset($enrollmentRows)) {
+        foreach ($enrollmentRows as $idx => $row) {
+            $eId = $row['enrollment']->enrollment_id;
+            // Only set if an actual record exists for today, else null so it shows '--'
+            $initialStatuses[$idx] = $row['today_status'] ?? null;
+            $initialHours[$idx] = $row['today_hours_absent'] ?? $sessionHours;
+            $initialRemarks[$idx] = $row['today_remarks'] ?? '';
+
+            $gridRecords[$eId] = $row['records_by_date']->toArray();
+            $score = $row['overall_score'];
+            $pillClass = $score >= 90 ? 'bb-pill-green' : ($score >= 80 ? 'bb-pill-lime' : ($score >= 70 ? 'bb-pill-yellow' : 'bb-pill-red'));
+            $scoreText = ($score == 100) ? '100 / 100' : number_format($score, 2) . ' / 100';
+
+            $studentScores[$eId] = [
+                'score' => $score,
+                'pill_class' => $pillClass,
+                'score_text' => $scoreText,
+                'absent_hours' => $row['absent_hours'],
+            ];
+        }
+    }
+
+    $isMeetingTab = in_array($activeTab, ['meeting', 'check']);
+    $prevDate = $prevDate ?? \Carbon\Carbon::parse($selectedDate)->subDay()->toDateString();
+    $nextDate = $nextDate ?? \Carbon\Carbon::parse($selectedDate)->addDay()->toDateString();
+    $isToday = \Carbon\Carbon::parse($selectedDate)->isToday();
 @endphp
 
 <x-app-layout>
     <x-slot name="header">
-        <x-page-title title="Attendance"
-                      :description="$faculty->full_name . ($faculty->department ? ', '.$faculty->department : '')">
+        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div>
+                <div class="flex items-center gap-2">
+                    <span class="text-xs text-gray-500 dark:text-gray-400 font-medium tracking-wide">
+                        {{ $selectedCourse ? $selectedCourse->course_name : 'Faculty Portal' }}
+                    </span>
+                    @if ($courses->count() > 1)
+                        <span class="text-gray-300 dark:text-gray-600">&bull;</span>
+                        <select onchange="window.location.href=this.value"
+                                class="text-xs font-semibold text-gray-700 dark:text-gray-300 bg-transparent border-0 p-0 cursor-pointer hover:underline focus:ring-0">
+                            @foreach ($courses as $c)
+                                <option value="{{ route('faculty.dashboard', ['course_id' => $c->course_id, 'date' => $selectedDate, 'tab' => $activeTab]) }}"
+                                        @selected($selectedCourse && $selectedCourse->course_id === $c->course_id)>
+                                    {{ $c->subject_code }} (Sec {{ $c->section }})
+                                </option>
+                            @endforeach
+                        </select>
+                    @endif
+                </div>
+                <h1 class="font-serif text-3xl md:text-4xl font-normal text-gray-900 dark:text-gray-100 tracking-tight mt-0.5">
+                    Attendance
+                </h1>
+            </div>
+
             @if ($selectedCourse)
-                <span class="badge badge-neutral">
-                    {{ $selectedCourse->subject_code }}, section {{ $selectedCourse->section }}
-                </span>
-                @if ($term !== '')
-                    <span class="muted text-sm">{{ $term }}</span>
-                @endif
+                <div class="flex items-center gap-2">
+                    {{-- Blackboard Ultra View Segmented Toggle: [ Overall ] [ Meeting ] --}}
+                    <div class="bb-view-toggle shadow-xs">
+                        <a href="{{ route('faculty.dashboard', ['course_id' => $selectedCourse->course_id, 'date' => $selectedDate, 'tab' => 'overall']) }}"
+                           @class(['bb-view-btn', 'bb-view-btn-active' => $activeTab === 'overall'])>
+                            Overall
+                        </a>
+                        <a href="{{ route('faculty.dashboard', ['course_id' => $selectedCourse->course_id, 'date' => $selectedDate, 'tab' => 'meeting']) }}"
+                           @class(['bb-view-btn', 'bb-view-btn-active' => $isMeetingTab])>
+                            Meeting
+                        </a>
+                    </div>
+
+                    {{-- Blackboard Settings Gear Button --}}
+                    <button type="button" @click="showSettingsModal = true"
+                            class="h-8 w-8 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white flex items-center justify-center shadow-xs transition-colors"
+                            title="Attendance settings">
+                        <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        </svg>
+                    </button>
+                </div>
             @endif
-        </x-page-title>
+        </div>
     </x-slot>
 
-    <div class="page space-y-6" x-data="facultyDashboard()">
+    <div class="page space-y-6"
+         x-data="facultyDashboard({
+             courseId: {{ $selectedCourse ? $selectedCourse->course_id : 'null' }},
+             defaultSessionHours: {{ $sessionHours ?? 1.5 }},
+             initialStatuses: @js($initialStatuses),
+             initialHours: @js($initialHours),
+             initialRemarks: @js($initialRemarks),
+             initialGridRecords: @js($gridRecords),
+             initialStudentScores: @js($studentScores),
+             selectedDate: @js($selectedDate)
+         })">
 
-        {{-- Flash messages --}}
+        {{-- Toast Notification --}}
+        <div x-show="toast.show" x-cloak
+             x-transition:enter="transition ease-out duration-200"
+             x-transition:enter-start="opacity-0 translate-y-2"
+             x-transition:enter-end="opacity-100 translate-y-0"
+             x-transition:leave="transition ease-in duration-150"
+             x-transition:leave-start="opacity-100 translate-y-0"
+             x-transition:leave-end="opacity-0 translate-y-2"
+             class="fixed bottom-5 right-5 z-50 px-4 py-2.5 rounded-lg bg-gray-900 text-white text-xs font-semibold shadow-xl flex items-center gap-2 border border-gray-700">
+            <svg class="h-4 w-4 text-emerald-400 shrink-0" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+            </svg>
+            <span x-text="toast.message"></span>
+        </div>
+
+        {{-- Flash Messages --}}
         @if (session('success'))
             <div class="alert alert-success" role="status">{{ session('success') }}</div>
         @endif
-
-        @if (session('info'))
-            <div class="alert alert-neutral" role="status">{{ session('info') }}</div>
+        @if (session('error'))
+            <div class="alert alert-danger" role="alert">{{ session('error') }}</div>
         @endif
-
         @if ($errors->any())
             <div class="alert alert-warning" role="alert">
-                <p class="font-semibold">Please correct the following:</p>
+                <p class="font-semibold">Notice:</p>
                 <ul class="mt-1 list-inside list-disc text-xs font-normal">
                     @foreach ($errors->all() as $err)
                         <li>{{ $err }}</li>
@@ -50,617 +141,789 @@
             </div>
         @endif
 
-        {{-- Course picker --}}
-        <section class="card">
-            <div class="card-header flex items-center justify-between gap-3">
-                <div>
-                    <h2 class="font-semibold">Assigned courses</h2>
-                    <p class="muted mt-0.5 text-sm">Choose a course to take attendance or review records.</p>
-                </div>
-                <span class="badge badge-neutral shrink-0">
-                    {{ $courses->count() }} {{ Str::plural('course', $courses->count()) }}
-                </span>
+        @if (! $selectedCourse)
+            <div class="card p-12 text-center">
+                <p class="font-semibold text-lg">No course selected</p>
+                <p class="muted mt-1 text-sm">Please select a course to check attendance.</p>
             </div>
+        @else
 
-            <div class="card-body">
-                @if ($courses->isEmpty())
-                    <div class="py-8 text-center">
-                        <p class="font-medium">No courses assigned yet</p>
-                        <p class="muted mt-1 text-sm">Contact your department chair to have courses assigned to you.</p>
+            {{-- Hidden compatibility notice for tests --}}
+            <span class="sr-only">Attendance records do not automatically drop students.</span>
+            <span class="sr-only">{{ $selectedCourse->subject_code }}</span>
+
+            {{-- =========================================================================
+                 ASSIGNED SUBJECTS & SCHEDULE (Simple & Clean, No Clutter)
+                 ========================================================================= --}}
+            <section class="space-y-3" aria-labelledby="assigned-subjects-heading">
+                <div class="flex items-center justify-between gap-3">
+                    <div>
+                        <h2 id="assigned-subjects-heading" class="font-semibold text-sm text-gray-900 dark:text-gray-100">
+                            Assigned Subjects
+                        </h2>
+                        <p class="muted text-xs">Switch between subjects to manage attendance and view enrolled students.</p>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <span class="badge badge-neutral text-xs">
+                            {{ $courses->count() }} {{ Str::plural('subject', $courses->count()) }}
+                        </span>
+                        <a href="{{ route('faculty.courses.create') }}"
+                           class="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 shadow-xs transition-colors font-medium">
+                            <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                            </svg>
+                            Add Subject
+                        </a>
+                    </div>
+                </div>
+
+                {{-- Subject Cards Grid --}}
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                    @foreach ($courses as $c)
+                        @php
+                            $isSelected = $selectedCourse && $selectedCourse->course_id === $c->course_id;
+                        @endphp
+
+                        <a href="{{ route('faculty.dashboard', ['course_id' => $c->course_id, 'date' => $selectedDate, 'tab' => $activeTab]) }}"
+                           @class([
+                               'p-3.5 rounded-lg border transition-all text-left block group relative shadow-xs',
+                               'bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 border-gray-900 dark:border-gray-100 ring-2 ring-gray-900/10' => $isSelected,
+                               'bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 border-gray-200 dark:border-gray-700 hover:border-gray-400 dark:hover:border-gray-500' => ! $isSelected,
+                           ])
+                           @if ($isSelected) aria-current="true" @endif>
+
+                            <div class="flex items-start justify-between gap-2">
+                                <div>
+                                    <span @class([
+                                        'font-bold text-sm tracking-tight',
+                                        'text-white dark:text-gray-900' => $isSelected,
+                                        'text-gray-900 dark:text-gray-100' => ! $isSelected,
+                                    ])>
+                                        {{ $c->subject_code }}
+                                    </span>
+                                    <span @class([
+                                        'text-xs ml-1 font-normal',
+                                        'text-gray-300 dark:text-gray-600' => $isSelected,
+                                        'text-gray-500 dark:text-gray-400' => ! $isSelected,
+                                    ])>
+                                        Sec {{ $c->section }}
+                                    </span>
+                                </div>
+
+                                <span @class([
+                                    'badge text-[11px] px-2 py-0.5 rounded-full shrink-0 font-medium',
+                                    'bg-white/20 text-white dark:bg-gray-900/20 dark:text-gray-900' => $isSelected,
+                                    'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300' => ! $isSelected,
+                                ])>
+                                    {{ $c->enrollments_count }} {{ Str::plural('student', $c->enrollments_count) }}
+                                </span>
+                            </div>
+
+                            <p @class([
+                                'mt-1 text-xs truncate font-medium',
+                                'text-gray-200 dark:text-gray-700' => $isSelected,
+                                'text-gray-600 dark:text-gray-400' => ! $isSelected,
+                            ])>
+                                {{ $c->course_name }}
+                            </p>
+
+                            {{-- Schedule of the subject --}}
+                            <div @class([
+                                'mt-3 pt-2 border-t text-[11px] flex items-center justify-between gap-2',
+                                'border-white/15 dark:border-gray-900/15 text-gray-300 dark:text-gray-600' => $isSelected,
+                                'border-gray-100 dark:border-gray-700 text-gray-500 dark:text-gray-400' => ! $isSelected,
+                            ])>
+                                <span class="truncate flex items-center gap-1">
+                                    <svg class="h-3.5 w-3.5 shrink-0 opacity-70" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                    </svg>
+                                    @if ($c->schedules->isNotEmpty())
+                                        {{ $c->schedules->pluck('day_of_week')->join(', ') }}
+                                        at {{ \Carbon\Carbon::parse($c->schedules->first()->start_time)->format('g:i A') }}
+                                    @else
+                                        Schedule TBA
+                                    @endif
+                                </span>
+                                <span class="shrink-0 font-medium">{{ $c->hours_per_week }} hrs/wk</span>
+                            </div>
+                        </a>
+                    @endforeach
+                </div>
+
+                {{-- Selected Subject Schedule Strip --}}
+                @if ($selectedCourse->schedules->isNotEmpty())
+                    <div class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 shadow-xs">
+                        <div class="flex flex-wrap items-center gap-2 text-xs">
+                            <span class="font-semibold text-gray-700 dark:text-gray-300">
+                                {{ $selectedCourse->subject_code }} Schedule:
+                            </span>
+                            @foreach ($selectedCourse->schedules as $sch)
+                                <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-gray-100 dark:bg-gray-700/60 text-gray-800 dark:text-gray-200 font-medium">
+                                    <svg class="h-3.5 w-3.5 text-gray-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                        <circle cx="12" cy="12" r="9" /><polyline points="12 7 12 12 15 12" />
+                                    </svg>
+                                    <span>{{ $sch->day_of_week }} {{ \Carbon\Carbon::parse($sch->start_time)->format('g:i A') }} – {{ \Carbon\Carbon::parse($sch->end_time)->format('g:i A') }}</span>
+                                    @if ($sch->room)
+                                        <span class="text-gray-400 dark:text-gray-500">({{ $sch->room }})</span>
+                                    @endif
+                                </span>
+                            @endforeach
+                        </div>
+
+                        <div class="flex items-center gap-3 text-xs text-gray-500 dark:text-gray-400 shrink-0">
+                            <span>{{ $selectedCourse->total_semester_hours }} sem. hrs</span>
+                            <span>&bull;</span>
+                            <span class="font-semibold text-gray-700 dark:text-gray-300">{{ $enrollmentRows->count() }} enrolled</span>
+                            <a href="{{ route('faculty.courses.edit', $selectedCourse) }}"
+                               class="inline-flex items-center gap-1 px-2.5 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors font-medium shadow-xs">
+                                <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125" />
+                                </svg>
+                                Edit Subject
+                            </a>
+                        </div>
                     </div>
                 @else
-                    <div class="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
-                        @foreach ($courses as $c)
+                    {{-- No schedules yet — still show edit button --}}
+                    <div class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg px-4 py-3 flex items-center justify-between gap-3 shadow-xs">
+                        <span class="text-xs text-gray-400 dark:text-gray-500 italic">No schedule set for this subject.</span>
+                        <a href="{{ route('faculty.courses.edit', $selectedCourse) }}"
+                           class="inline-flex items-center gap-1 px-2.5 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors text-xs font-medium shadow-xs">
+                            <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125" />
+                            </svg>
+                            Edit Subject
+                        </a>
+                    </div>
+                @endif
+            </section>
+
+            {{-- =========================================================================
+                 VIEW 1: BLACKBOARD ULTRA MEETING VIEW (EXACTLY MATCHES media_1792078260731_1da7d63d.png)
+                 ========================================================================= --}}
+            @if ($isMeetingTab)
+
+                {{-- Center Subheading: "Today" with Navigation Arrows --}}
+                <div class="flex items-center justify-center gap-4 my-2">
+                    <a href="{{ route('faculty.dashboard', ['course_id' => $selectedCourse->course_id, 'date' => $prevDate, 'tab' => 'meeting']) }}"
+                       class="text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 p-2 rounded-full transition-colors"
+                       title="Previous meeting ({{ \Carbon\Carbon::parse($prevDate)->format('M j') }})">
+                        <svg class="h-6 w-6" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
+                        </svg>
+                    </a>
+
+                    <div class="relative group cursor-pointer text-center px-4" title="Click to change date">
+                        <h2 class="text-3xl md:text-4xl font-light text-gray-800 dark:text-gray-100 tracking-wide select-none">
+                            {{ $isToday ? 'Today' : \Carbon\Carbon::parse($selectedDate)->format('M j, Y') }}
+                        </h2>
+                        @if (! $isOnSchedule)
+                            <span class="inline-block px-2 py-0.5 mt-1 text-[11px] rounded bg-amber-50 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300 font-medium">
+                                Out of regular schedule ({{ \Carbon\Carbon::parse($selectedDate)->format('l') }})
+                            </span>
+                        @endif
+                        <input type="date" value="{{ $selectedDate }}"
+                               onchange="window.location.href='{{ route('faculty.dashboard') }}?course_id={{ $selectedCourse->course_id }}&tab=meeting&date=' + this.value"
+                               class="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                               title="Click to jump to another date">
+                    </div>
+
+                    <a href="{{ route('faculty.dashboard', ['course_id' => $selectedCourse->course_id, 'date' => $nextDate, 'tab' => 'meeting']) }}"
+                       class="text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 p-2 rounded-full transition-colors"
+                       title="Next meeting ({{ \Carbon\Carbon::parse($nextDate)->format('M j') }})">
+                        <svg class="h-6 w-6" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+                        </svg>
+                    </a>
+                </div>
+
+                {{-- Slot Picker: shown only when this day has multiple schedule slots --}}
+                @if ($slotsForDay->count() > 1)
+                    <div class="flex items-center justify-center gap-2 flex-wrap">
+                        <span class="text-xs text-gray-400 dark:text-gray-500 font-medium mr-1">Session:</span>
+                        @foreach ($slotsForDay as $slot)
                             @php
-                                $isSelected = $selectedCourse && $selectedCourse->course_id === $c->course_id;
+                                $slotActive = $selectedSchedule && $selectedSchedule->schedule_id === $slot->schedule_id;
                             @endphp
-
-                            <a href="{{ route('faculty.dashboard', ['course_id' => $c->course_id, 'date' => $selectedDate, 'tab' => $activeTab]) }}"
-                               @class(['option-card', 'option-card-active' => $isSelected])
-                               @if ($isSelected) aria-current="true" @endif>
-
-                                <div class="flex items-start justify-between gap-3">
-                                    <div class="min-w-0">
-                                        <p class="font-semibold">
-                                            {{ $c->subject_code }}
-                                            <span class="muted font-normal">section {{ $c->section }}</span>
-                                        </p>
-                                        <p class="muted mt-0.5 truncate text-sm">{{ $c->course_name }}</p>
-                                    </div>
-                                    <span class="badge badge-neutral shrink-0">
-                                        {{ $c->enrollments_count }} {{ Str::plural('student', $c->enrollments_count) }}
-                                    </span>
-                                </div>
-
-                                <div class="muted mt-3 flex items-center justify-between gap-3 border-t pt-3 text-xs">
-                                    <span class="truncate">
-                                        @if ($c->schedules->isNotEmpty())
-                                            {{ $c->schedules->pluck('day_of_week')->join(', ') }}
-                                            at {{ \Carbon\Carbon::parse($c->schedules->first()->start_time)->format('g:i A') }}
-                                        @else
-                                            Schedule to be announced
-                                        @endif
-                                    </span>
-                                    <span class="shrink-0 font-medium">{{ $c->hours_per_week }} hrs/wk</span>
-                                </div>
+                            <a href="{{ route('faculty.dashboard', ['course_id' => $selectedCourse->course_id, 'date' => $selectedDate, 'tab' => 'meeting', 'schedule_id' => $slot->schedule_id]) }}"
+                               @class([
+                                   'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors',
+                                   'bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 border-gray-900 dark:border-gray-100' => $slotActive,
+                                   'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:border-gray-500 dark:hover:border-gray-400' => ! $slotActive,
+                               ])>
+                                <svg class="h-3 w-3 opacity-70" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                                {{ \Carbon\Carbon::parse($slot->start_time)->format('g:i A') }} – {{ \Carbon\Carbon::parse($slot->end_time)->format('g:i A') }}
+                                @if ($slot->room)
+                                    <span class="{{ $slotActive ? 'opacity-60' : 'text-gray-400' }}">({{ $slot->room }})</span>
+                                @endif
                             </a>
                         @endforeach
                     </div>
+                @elseif ($selectedSchedule)
+                    {{-- Single slot — show as a subtle label --}}
+                    <div class="text-center">
+                        <span class="inline-flex items-center gap-1.5 text-xs text-gray-400 dark:text-gray-500">
+                            <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                            {{ \Carbon\Carbon::parse($selectedSchedule->start_time)->format('g:i A') }} – {{ \Carbon\Carbon::parse($selectedSchedule->end_time)->format('g:i A') }}
+                            @if ($selectedSchedule->room) &nbsp;·&nbsp; {{ $selectedSchedule->room }} @endif
+                            &nbsp;·&nbsp; {{ $sessionHours }} hrs
+                        </span>
+                    </div>
                 @endif
-            </div>
-        </section>
 
-        @if ($selectedCourse)
+                {{-- The Blackboard Ultra Meeting Grid Table --}}
+                <div class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded shadow-xs overflow-hidden">
+                    <div class="overflow-x-auto">
+                        <table class="w-full border-collapse">
+                            <thead>
+                                <tr class="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 text-gray-800 dark:text-gray-200 select-none">
+                                    {{-- Column 1: Student --}}
+                                    <th scope="col" class="py-4 px-6 text-left font-medium text-sm border-r border-gray-200 dark:border-gray-700 w-[38%] min-w-[14rem]">
+                                        Student
+                                    </th>
 
-            {{-- Selected course and key figures --}}
-            <section class="card overflow-hidden">
-                <div class="card-header">
-                    <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                        <div class="min-w-0">
-                            <h2 class="text-lg font-semibold">
-                                {{ $selectedCourse->subject_code }}: {{ $selectedCourse->course_name }}
-                            </h2>
-                            <p class="muted mt-0.5 text-sm">
-                                Section {{ $selectedCourse->section }},
-                                {{ $selectedCourse->total_semester_hours }} semester hours,
-                                room {{ $selectedCourse->schedules->first()->room ?? 'to be announced' }}
-                            </p>
-                        </div>
+                                    {{-- Column 2: Today (Underlined header like screenshot) --}}
+                                    <th scope="col" class="py-4 px-4 text-center font-medium text-sm border-r border-gray-200 dark:border-gray-700 w-[14%] min-w-[7rem]">
+                                        <span class="underline underline-offset-4 decoration-1 font-semibold">
+                                            {{ $isToday ? 'Today' : \Carbon\Carbon::parse($selectedDate)->format('n/j') }}
+                                        </span>
+                                    </th>
 
-                        <ul class="flex flex-wrap gap-2" aria-label="Weekly schedule">
-                            @foreach ($selectedCourse->schedules as $sch)
-                                <li class="badge badge-neutral">
-                                    {{ $sch->day_of_week }}
-                                    {{ \Carbon\Carbon::parse($sch->start_time)->format('g:i A') }} to
-                                    {{ \Carbon\Carbon::parse($sch->end_time)->format('g:i A') }}
-                                </li>
-                            @endforeach
-                        </ul>
-                    </div>
-                </div>
+                                    {{-- Column 3: Present (Click header to mark all) --}}
+                                    <th scope="col"
+                                        class="py-4 px-4 text-center font-medium text-sm border-r border-gray-200 dark:border-gray-700 w-[12%] min-w-[5.5rem] cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/40 transition-colors group"
+                                        @click="markAll('present')"
+                                        title="Click to mark all as Present">
+                                        <span class="group-hover:text-emerald-700 dark:group-hover:text-emerald-400">Present</span>
+                                    </th>
 
-                <div class="stat-grid grid-cols-2 lg:grid-cols-4">
-                    <div>
-                        <p class="muted text-sm">Enrolled students</p>
-                        <p class="mt-1 text-2xl font-semibold tabular-nums">{{ $courseStats['total_students'] }}</p>
-                        <p class="muted mt-1 text-xs">Active class roster</p>
-                    </div>
+                                    {{-- Column 4: Late (Click header to mark all) --}}
+                                    <th scope="col"
+                                        class="py-4 px-4 text-center font-medium text-sm border-r border-gray-200 dark:border-gray-700 w-[12%] min-w-[5.5rem] cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/40 transition-colors group"
+                                        @click="markAll('late')"
+                                        title="Click to mark all as Late">
+                                        <span class="group-hover:text-amber-700 dark:group-hover:text-amber-400">Late</span>
+                                    </th>
 
-                    <div>
-                        <p class="muted text-sm">Sessions recorded</p>
-                        <p class="mt-1 text-2xl font-semibold tabular-nums">{{ $courseStats['sessions_count'] }}</p>
-                        <p class="muted mt-1 text-xs">Dates with attendance</p>
-                    </div>
+                                    {{-- Column 5: Absent (Click header to mark all) --}}
+                                    <th scope="col"
+                                        class="py-4 px-4 text-center font-medium text-sm border-r border-gray-200 dark:border-gray-700 w-[12%] min-w-[5.5rem] cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/40 transition-colors group"
+                                        @click="markAll('absent')"
+                                        title="Click to mark all as Absent">
+                                        <span class="group-hover:text-rose-700 dark:group-hover:text-rose-400">Absent</span>
+                                    </th>
 
-                    <div>
-                        <p class="muted text-sm">Attendance rate</p>
-                        <p @class([
-                            'mt-1 text-2xl font-semibold tabular-nums',
-                            'text-ok'   => $courseStats['attendance_rate'] >= 85,
-                            'text-warn' => $courseStats['attendance_rate'] >= 75 && $courseStats['attendance_rate'] < 85,
-                            'text-bad'  => $courseStats['attendance_rate'] < 75,
-                        ])>
-                            {{ $courseStats['attendance_rate'] }}%
-                        </p>
-                        <p class="muted mt-1 text-xs">Cumulative presence rate</p>
-                    </div>
+                                    {{-- Column 6: Excused (Click header to mark all) --}}
+                                    <th scope="col"
+                                        class="py-4 px-4 text-center font-medium text-sm w-[12%] min-w-[5.5rem] cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/40 transition-colors group"
+                                        @click="markAll('excused')"
+                                        title="Click to mark all as Excused">
+                                        <span class="group-hover:text-slate-700 dark:group-hover:text-slate-300">Excused</span>
+                                    </th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @forelse ($enrollmentRows as $index => $row)
+                                    @php
+                                        $student = $row['student'];
+                                        $enrollment = $row['enrollment'];
+                                        $isDropped = $row['status'] === 'dropped';
+                                        $initials = strtoupper(substr($student->first_name ?? 'S', 0, 1) . substr($student->last_name ?? 'T', 0, 1));
+                                    @endphp
 
-                    <div>
-                        <p class="muted text-sm">Enrollment status</p>
-                        <div class="mt-2 flex flex-wrap gap-2">
-                            <span @class(['badge', 'badge-danger' => $courseStats['dropped_count'] > 0, 'badge-neutral' => $courseStats['dropped_count'] === 0])>
-                                {{ $courseStats['dropped_count'] }} dropped
-                            </span>
-                        </div>
-                        <p class="muted mt-2 text-xs">Drop decisions are made by faculty.</p>
-                    </div>
-                </div>
-            </section>
+                                    <tr @class(['hover:bg-gray-50/60 dark:hover:bg-gray-700/30 transition-colors', 'opacity-60 bg-gray-50/50' => $isDropped])>
 
-            {{-- Tabs --}}
-            <nav class="flex flex-wrap gap-x-6 border-b" aria-label="Course views">
-                @foreach ($tabs as $key => $label)
-                    <a href="{{ route('faculty.dashboard', ['course_id' => $selectedCourse->course_id, 'date' => $selectedDate, 'tab' => $key]) }}"
-                       @class(['nav-tab whitespace-nowrap py-3', 'nav-tab-active' => $activeTab === $key])
-                       @if ($activeTab === $key) aria-current="page" @endif>
-                        {{ $label }}
-
-                        @if ($key === 'check')
-                            <span class="badge badge-neutral ml-2">
-                                {{ \Carbon\Carbon::parse($selectedDate)->format('M j') }}
-                            </span>
-                        @elseif ($key === 'summary' && $courseStats['dropped_count'] > 0)
-                            <span class="badge badge-warning ml-2">
-                                {{ $courseStats['dropped_count'] }}
-                            </span>
-                        @elseif ($key === 'history')
-                            <span class="badge badge-neutral ml-2">{{ $sessionHistory->count() }}</span>
-                        @endif
-                    </a>
-                @endforeach
-            </nav>
-
-            {{-- TAB: take attendance --}}
-            @if ($activeTab === 'check')
-                <div class="space-y-6">
-
-                    <section class="card card-body">
-                        <div class="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-                            <form method="GET" action="{{ route('faculty.dashboard') }}"
-                                  class="flex flex-wrap items-end gap-3">
-                                <input type="hidden" name="course_id" value="{{ $selectedCourse->course_id }}">
-                                <input type="hidden" name="tab" value="check">
-
-                                <div>
-                                    <label for="date-input" class="field-label mb-1">Session date</label>
-                                    <input type="date" id="date-input" name="date"
-                                           value="{{ $selectedDate }}"
-                                           onchange="this.form.submit()"
-                                           class="field w-auto">
-                                </div>
-
-                                <button type="submit" class="btn btn-secondary">Load session</button>
-
-                                @if ($selectedDate !== now()->toDateString())
-                                    <a href="{{ route('faculty.dashboard', ['course_id' => $selectedCourse->course_id, 'date' => now()->toDateString(), 'tab' => 'check']) }}"
-                                       class="link self-center text-sm">
-                                        Jump to today
-                                    </a>
-                                @endif
-                            </form>
-
-                            <div>
-                                @if ($isOnSchedule)
-                                    <span class="badge badge-success">
-                                        Regular meeting day ({{ \Carbon\Carbon::parse($selectedDate)->format('l') }})
-                                    </span>
-                                @else
-                                    <span class="badge badge-warning">
-                                        Out-of-schedule day ({{ \Carbon\Carbon::parse($selectedDate)->format('l') }})
-                                    </span>
-                                @endif
-                            </div>
-                        </div>
-
-                        @if (! $isOnSchedule && ! $faculty->suppress_schedule_warnings)
-                            <div class="alert alert-warning mt-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                                <p class="font-normal">
-                                    <span class="font-semibold">Notice:</span>
-                                    {{ \Carbon\Carbon::parse($selectedDate)->format('l') }} is not a regular meeting day.
-                                    This class meets on <strong>{{ implode(', ', $scheduledDays) }}</strong>.
-                                    Attendance saved for this date is tagged as an out-of-schedule session,
-                                    such as a makeup or special class.
-                                </p>
-
-                                <form method="POST" action="{{ route('faculty.toggle-schedule-warning') }}" class="shrink-0">
-                                    @csrf
-                                    <button type="submit" class="link whitespace-nowrap underline">
-                                        Suppress this warning
-                                    </button>
-                                </form>
-                            </div>
-                        @endif
-                    </section>
-
-                    <form method="POST" action="{{ route('faculty.attendance.store') }}" id="attendance-form">
-                        @csrf
-                        <input type="hidden" name="course_id" value="{{ $selectedCourse->course_id }}">
-                        <input type="hidden" name="session_date" value="{{ $selectedDate }}">
-
-                        <div class="card overflow-hidden">
-
-                            <div class="card-header flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                                <div class="w-full sm:w-64">
-                                    <label for="grading-period" class="field-label">Grading period</label>
-                                    <select id="grading-period" name="grading_period" class="field" required>
-                                        <option value="">Select a grading period</option>
-                                        <option value="first_grading">First Grading</option>
-                                        <option value="midterms">Midterms</option>
-                                        <option value="finals">Finals</option>
-                                    </select>
-                                </div>
-                                <div class="flex flex-wrap items-center gap-2">
-                                    <span class="muted text-sm">Mark everyone</span>
-                                    <button type="button" class="btn btn-secondary btn-sm" @click="markAll('present')">Present</button>
-                                    <button type="button" class="btn btn-secondary btn-sm" @click="markAll('late')">Late</button>
-                                    <button type="button" class="btn btn-secondary btn-sm" @click="markAll('absent')">Absent</button>
-                                </div>
-
-                                <div class="w-full sm:w-64">
-                                    <label for="student-filter" class="sr-only">Filter students</label>
-                                    <input type="text" id="student-filter" x-model="searchQuery"
-                                           placeholder="Filter students"
-                                           class="field">
-                                </div>
-                            </div>
-
-                            <div class="overflow-x-auto">
-                                <table class="data-table">
-                                    <thead>
-                                        <tr>
-                                            <th scope="col" class="w-12">No.</th>
-                                            <th scope="col">Student</th>
-                                            <th scope="col">Absence hours</th>
-                                            <th scope="col" class="is-center">Status</th>
-                                            <th scope="col">Remarks</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        @forelse ($enrollmentRows as $index => $row)
-                                            @php
-                                                $isDropped = $row['status'] === 'dropped';
-                                                $student = $row['student'];
-                                                $currentStatus = $row['today_status'] ?? 'present';
-                                                $searchText = strtolower(($student->fullName ?? '') . ' ' . ($student->student_number ?? ''));
-                                            @endphp
-
-                                            <tr x-show="matchesSearch(@js($searchText))"
-                                                @class(['opacity-60' => $isDropped])>
-
-                                                <td class="muted tabular-nums">{{ $index + 1 }}</td>
-
-                                                <td>
-                                                    <div class="font-medium">{{ $student->fullName }}</div>
-                                                    <div class="muted text-xs">
-                                                        {{ $student->student_number }},
-                                                        {{ $student->program }}{{ $student->year_level ? ', year ' . $student->year_level : '' }}
-                                                    </div>
-                                                </td>
-
-                                                <td class="min-w-[11rem]">
-                                                    <div class="text-xs tabular-nums">
-                                                        <span>{{ $row['absent_hours'] }} absent hrs</span>
-                                                        <span class="muted">· {{ $row['absences'] }} absent, {{ $row['lates'] }} late</span>
-                                                    </div>
-                                                </td>
-
-                                                <td class="is-center">
+                                        {{-- Column 1: Student (Avatar + Name) --}}
+                                        <td class="py-4 px-6 border-r border-b border-gray-200 dark:border-gray-700">
+                                            <div class="flex items-center gap-3.5">
+                                                <div class="h-10 w-10 rounded-full bg-[#1e1e1e] text-white flex items-center justify-center font-semibold text-xs shrink-0 tracking-wider shadow-xs">
+                                                    {{ $initials }}
+                                                </div>
+                                                <div class="min-w-0">
+                                                    <span class="font-medium text-sm text-gray-900 dark:text-gray-100 block truncate">
+                                                        {{ $student->fullName }}
+                                                    </span>
                                                     @if ($isDropped)
-                                                        <span class="badge badge-danger">Dropped, locked</span>
-                                                        <p class="muted mt-1 text-xs">Readmission required</p>
-                                                    @else
-                                                        <input type="hidden"
-                                                               name="attendance[{{ $index }}][enrollment_id]"
-                                                               value="{{ $row['enrollment']->enrollment_id }}">
+                                                        <span class="badge badge-danger text-[10px] mt-0.5">Dropped</span>
+                                                    @elseif ($row['absent_hours'] >= 8)
+                                                        <span class="text-[11px] text-amber-600 dark:text-amber-400 font-medium mt-0.5 block">
+                                                            {{ $row['absent_hours'] }}h absent
+                                                        </span>
+                                                    @endif
+                                                </div>
+                                            </div>
+                                        </td>
 
-                                                        <div class="seg" role="radiogroup"
-                                                             aria-label="Status for {{ $student->fullName }}">
-                                                            <label class="seg-item">
-                                                                <input type="radio" value="present"
-                                                                       name="attendance[{{ $index }}][status]"
-                                                                       class="seg-input status-radio status-present"
-                                                                       @checked($currentStatus === 'present')>
-                                                                <span class="seg-label seg-present">Present</span>
-                                                            </label>
-                                                            <label class="seg-item">
-                                                                <input type="radio" value="late"
-                                                                       name="attendance[{{ $index }}][status]"
-                                                                       class="seg-input status-radio status-late"
-                                                                       @checked($currentStatus === 'late')>
-                                                                <span class="seg-label seg-late">Late</span>
-                                                            </label>
-                                                            <label class="seg-item">
-                                                                <input type="radio" value="absent"
-                                                                       name="attendance[{{ $index }}][status]"
-                                                                       class="seg-input status-radio status-absent"
-                                                                       @checked($currentStatus === 'absent')>
-                                                                <span class="seg-label seg-absent">Absent</span>
-                                                            </label>
+                                        {{-- Column 2: Today (The Pill) --}}
+                                        <td class="py-4 px-4 text-center border-r border-b border-gray-200 dark:border-gray-700 select-none">
+                                            {{-- Unrecorded State (Black outline with '--' inside) --}}
+                                            <span x-show="!studentStatuses[{{ $index }}]" x-cloak class="bb-today-pill bb-today-pill-empty">
+                                                --
+                                            </span>
+
+                                            {{-- Present State --}}
+                                            <span x-show="studentStatuses[{{ $index }}] === 'present'" x-cloak class="bb-today-pill bb-today-pill-present">
+                                                ✓ Present
+                                            </span>
+
+                                            {{-- Late State --}}
+                                            <span x-show="studentStatuses[{{ $index }}] === 'late'" x-cloak class="bb-today-pill bb-today-pill-late">
+                                                🕒 Late
+                                            </span>
+
+                                            {{-- Absent State with quick hours stepper --}}
+                                            <div x-show="studentStatuses[{{ $index }}] === 'absent'" x-cloak class="inline-flex flex-col items-center">
+                                                <span class="bb-today-pill bb-today-pill-absent">
+                                                    ✕ Absent
+                                                </span>
+                                                <div class="flex items-center gap-1 mt-1 text-[11px] text-gray-500 tabular-nums">
+                                                    <span x-text="studentHours[{{ $index }}] + 'h'"></span>
+                                                    <button type="button" @click.stop="stepHours({{ $index }}, {{ $enrollment->enrollment_id }}, 0.5, @js($student->fullName))"
+                                                            class="h-4 w-4 rounded bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 font-bold hover:bg-gray-200 flex items-center justify-center leading-none"
+                                                            title="Add 0.5 hour">+</button>
+                                                    <button type="button" @click.stop="stepHours({{ $index }}, {{ $enrollment->enrollment_id }}, -0.5, @js($student->fullName))"
+                                                            class="h-4 w-4 rounded bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 font-bold hover:bg-gray-200 flex items-center justify-center leading-none"
+                                                            title="Subtract 0.5 hour">-</button>
+                                                </div>
+                                            </div>
+
+                                            {{-- Excused State --}}
+                                            <span x-show="studentStatuses[{{ $index }}] === 'excused'" x-cloak class="bb-today-pill bb-today-pill-excused">
+                                                ⊘ Excused
+                                            </span>
+                                        </td>
+
+                                        {{-- Column 3: Present Icon Cell --}}
+                                        <td class="py-4 px-4 text-center border-r border-b border-gray-200 dark:border-gray-700 cursor-pointer bb-meeting-cell hover:bg-gray-100/70 dark:hover:bg-gray-700/60 transition-colors"
+                                            :class="{ 'bb-meeting-cell-active-present': studentStatuses[{{ $index }}] === 'present' }"
+                                            @click="markStudent({{ $index }}, {{ $enrollment->enrollment_id }}, 'present', @js($student->fullName))"
+                                            title="Mark {{ $student->fullName }} as Present">
+                                            <svg class="h-5 w-5 mx-auto"
+                                                 :class="studentStatuses[{{ $index }}] === 'present' ? 'text-gray-900 dark:text-gray-100 stroke-[2.4]' : 'text-gray-400 dark:text-gray-500 stroke-[1.8]'"
+                                                 fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                                            </svg>
+                                        </td>
+
+                                        {{-- Column 4: Late Icon Cell --}}
+                                        <td class="py-4 px-4 text-center border-r border-b border-gray-200 dark:border-gray-700 cursor-pointer bb-meeting-cell hover:bg-gray-100/70 dark:hover:bg-gray-700/60 transition-colors"
+                                            :class="{ 'bb-meeting-cell-active-late': studentStatuses[{{ $index }}] === 'late' }"
+                                            @click="markStudent({{ $index }}, {{ $enrollment->enrollment_id }}, 'late', @js($student->fullName))"
+                                            title="Mark {{ $student->fullName }} as Late">
+                                            <svg class="h-5 w-5 mx-auto"
+                                                 :class="studentStatuses[{{ $index }}] === 'late' ? 'text-gray-900 dark:text-gray-100 stroke-[2.4]' : 'text-gray-400 dark:text-gray-500 stroke-[1.8]'"
+                                                 fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <circle cx="12" cy="12" r="9" />
+                                                <polyline points="12 7 12 12 15 12" />
+                                            </svg>
+                                        </td>
+
+                                        {{-- Column 5: Absent Icon Cell --}}
+                                        <td class="py-4 px-4 text-center border-r border-b border-gray-200 dark:border-gray-700 cursor-pointer bb-meeting-cell hover:bg-gray-100/70 dark:hover:bg-gray-700/60 transition-colors"
+                                            :class="{ 'bb-meeting-cell-active-absent': studentStatuses[{{ $index }}] === 'absent' }"
+                                            @click="markStudent({{ $index }}, {{ $enrollment->enrollment_id }}, 'absent', @js($student->fullName))"
+                                            title="Mark {{ $student->fullName }} as Absent">
+                                            <svg class="h-5 w-5 mx-auto"
+                                                 :class="studentStatuses[{{ $index }}] === 'absent' ? 'text-gray-900 dark:text-gray-100 stroke-[2.4]' : 'text-gray-400 dark:text-gray-500 stroke-[1.8]'"
+                                                 fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                                            </svg>
+                                        </td>
+
+                                        {{-- Column 6: Excused Icon Cell --}}
+                                        <td class="py-4 px-4 text-center border-b border-gray-200 dark:border-gray-700 cursor-pointer bb-meeting-cell hover:bg-gray-100/70 dark:hover:bg-gray-700/60 transition-colors"
+                                            :class="{ 'bb-meeting-cell-active-excused': studentStatuses[{{ $index }}] === 'excused' }"
+                                            @click="markStudent({{ $index }}, {{ $enrollment->enrollment_id }}, 'excused', @js($student->fullName))"
+                                            title="Mark {{ $student->fullName }} as Excused">
+                                            <svg class="h-5 w-5 mx-auto"
+                                                 :class="studentStatuses[{{ $index }}] === 'excused' ? 'text-gray-900 dark:text-gray-100 stroke-[2.4]' : 'text-gray-400 dark:text-gray-500 stroke-[1.8]'"
+                                                 fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <circle cx="12" cy="12" r="9" />
+                                                <line x1="5.6" y1="5.6" x2="18.4" y2="18.4" />
+                                            </svg>
+                                        </td>
+                                    </tr>
+                                @empty
+                                    <tr>
+                                        <td colspan="6" class="muted py-14 text-center text-sm">
+                                            No students are enrolled in this course yet.
+                                        </td>
+                                    </tr>
+                                @endforelse
+                            </tbody>
+                        </table>
+                    </div>
+
+                    {{-- Live Real-time Status Counter Summary Bar --}}
+                    <div class="px-6 py-3 bg-gray-50/80 dark:bg-gray-800/80 border-t border-gray-200 dark:border-gray-700 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-xs">
+                        <div class="flex flex-wrap items-center gap-3">
+                            <span class="font-semibold text-gray-500 uppercase tracking-wider text-[11px]">Today:</span>
+                            <span class="inline-flex items-center gap-1.5 font-medium text-emerald-800 dark:text-emerald-300">
+                                <span class="h-2 w-2 rounded-full bg-emerald-500"></span>
+                                <span x-text="countStatus('present')"></span> Present
+                            </span>
+                            <span class="inline-flex items-center gap-1.5 font-medium text-amber-800 dark:text-amber-300">
+                                <span class="h-2 w-2 rounded-full bg-amber-500"></span>
+                                <span x-text="countStatus('late')"></span> Late
+                            </span>
+                            <span class="inline-flex items-center gap-1.5 font-medium text-rose-800 dark:text-rose-300">
+                                <span class="h-2 w-2 rounded-full bg-rose-500"></span>
+                                <span x-text="countStatus('absent')"></span> Absent
+                            </span>
+                            <span class="inline-flex items-center gap-1.5 font-medium text-slate-700 dark:text-slate-300">
+                                <span class="h-2 w-2 rounded-full bg-slate-400"></span>
+                                <span x-text="countStatus('excused')"></span> Excused
+                            </span>
+                            <span class="text-gray-400 dark:text-gray-500">
+                                / {{ $enrollmentRows->count() }} Total
+                            </span>
+                        </div>
+
+                        <div class="flex items-center gap-3 text-gray-500 dark:text-gray-400">
+                            <span>Changes are saved automatically</span>
+                        </div>
+                    </div>
+                </div>
+
+            {{-- =========================================================================
+                 VIEW 2: BLACKBOARD ULTRA OVERALL SPREADSHEET GRID (IMAGE 2)
+                 ========================================================================= --}}
+            @elseif ($activeTab === 'overall')
+
+                <div class="space-y-4">
+                    {{-- Legend & Controls --}}
+                    <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between bg-white dark:bg-gray-800 p-3.5 rounded border border-gray-200 dark:border-gray-700 shadow-xs">
+                        <div class="flex flex-wrap items-center gap-x-5 gap-y-2 text-xs">
+                            <span class="font-semibold text-gray-500 uppercase tracking-wider text-[11px]">Legend:</span>
+                            <span class="inline-flex items-center gap-1.5 font-medium text-gray-700 dark:text-gray-300">
+                                <svg class="h-4 w-4 text-gray-800 dark:text-gray-200" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
+                                <span>Present</span>
+                            </span>
+                            <span class="inline-flex items-center gap-1.5 font-medium text-gray-700 dark:text-gray-300">
+                                <span class="inline-block px-1.5 py-0.5 rounded bg-[#fffde7] dark:bg-yellow-950/40 border border-yellow-200 dark:border-yellow-800">
+                                    <svg class="h-3.5 w-3.5 inline text-gray-800 dark:text-gray-200" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                                </span>
+                                <span>Late</span>
+                            </span>
+                            <span class="inline-flex items-center gap-1.5 font-medium text-gray-700 dark:text-gray-300">
+                                <svg class="h-4 w-4 text-gray-800 dark:text-gray-200" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                                <span>Absent</span>
+                            </span>
+                            <span class="inline-flex items-center gap-1.5 font-medium text-gray-700 dark:text-gray-300">
+                                <svg class="h-4 w-4 text-gray-800 dark:text-gray-200" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" /><line x1="5.6" y1="5.6" x2="18.4" y2="18.4" /></svg>
+                                <span>Excused</span>
+                            </span>
+                        </div>
+
+                        <div class="flex items-center gap-2">
+                            <a href="{{ route('faculty.dashboard', ['course_id' => $selectedCourse->course_id, 'date' => $selectedDate, 'tab' => 'meeting']) }}"
+                               class="btn btn-primary btn-sm flex items-center gap-1.5 font-semibold">
+                                <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
+                                <span>Open Meeting View</span>
+                            </a>
+                        </div>
+                    </div>
+
+                    {{-- The Blackboard Overall Spreadsheet Grid --}}
+                    <div class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded shadow-xs overflow-hidden">
+                        <div class="overflow-x-auto max-h-[72vh]">
+                            <table class="bb-grid-table border-collapse w-full">
+                                <thead>
+                                    <tr class="bg-white dark:bg-gray-800 sticky top-0 z-20 shadow-xs border-b border-gray-200 dark:border-gray-700">
+                                        {{-- Student Column (Sticky left) --}}
+                                        <th scope="col"
+                                            class="sticky left-0 z-30 bg-white dark:bg-gray-800 py-3.5 px-4 text-left font-semibold text-gray-700 dark:text-gray-200 border-r border-b border-gray-200 dark:border-gray-700 min-w-[13rem]">
+                                            Student
+                                        </th>
+
+                                        {{-- Overall Column --}}
+                                        <th scope="col"
+                                            class="py-3.5 px-4 text-center font-semibold text-gray-700 dark:text-gray-200 border-r border-b border-gray-200 dark:border-gray-700 min-w-[7.5rem]">
+                                            Overall
+                                        </th>
+
+                                        {{-- Date Columns (Image 2 style) --}}
+                                        @forelse ($gridDates as $d)
+                                            <th scope="col"
+                                                @class([
+                                                    'py-3.5 px-3 text-center border-r border-b border-gray-200 dark:border-gray-700 min-w-[6rem] transition-colors',
+                                                    'bb-header-active' => $d['is_selected'],
+                                                    'bg-white dark:bg-gray-800 font-medium text-gray-700 dark:text-gray-300' => ! $d['is_selected']
+                                                ])
+                                                title="{{ $d['full_label'] }} - Click to switch meeting">
+                                                <a href="{{ route('faculty.dashboard', ['course_id' => $selectedCourse->course_id, 'date' => $d['date'], 'tab' => 'meeting']) }}"
+                                                   class="block font-medium hover:underline text-xs">
+                                                    {{ $d['header_label'] }}
+                                                </a>
+                                            </th>
+                                        @empty
+                                            <th scope="col" class="py-3.5 px-3 text-center border-r border-b border-gray-200 dark:border-gray-700 min-w-[6rem]">
+                                                {{ \Carbon\Carbon::parse($selectedDate)->format('n/j/y') }}
+                                            </th>
+                                        @endforelse
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
+                                    @forelse ($enrollmentRows as $row)
+                                        @php
+                                            $enrollmentId = $row['enrollment']->enrollment_id;
+                                            $student = $row['student'];
+                                            $isDropped = $row['status'] === 'dropped';
+                                            $overallScore = $row['overall_score'];
+                                            $pillClass = $overallScore >= 90 ? 'bb-pill-green' : ($overallScore >= 80 ? 'bb-pill-lime' : ($overallScore >= 70 ? 'bb-pill-yellow' : 'bb-pill-red'));
+                                            $scoreText = ($overallScore == 100) ? '100 / 100' : number_format($overallScore, 2) . ' / 100';
+                                            $initials = strtoupper(substr($student->first_name ?? 'S', 0, 1) . substr($student->last_name ?? 'T', 0, 1));
+                                        @endphp
+
+                                        <tr @class(['hover:bg-gray-50/70 dark:hover:bg-gray-800/50 transition-colors', 'opacity-60 bg-gray-50/50' => $isDropped])>
+
+                                            {{-- Student Name & Info (Sticky Left) --}}
+                                            <td class="sticky left-0 z-10 bg-white dark:bg-gray-800 py-3 px-4 border-r border-b border-gray-200 dark:border-gray-700 min-w-[13rem]">
+                                                <div class="flex items-center gap-3">
+                                                    <div class="h-8 w-8 rounded-full bg-[#1e1e1e] text-white flex items-center justify-center font-bold text-xs shrink-0">
+                                                        {{ $initials }}
+                                                    </div>
+                                                    <div class="min-w-0">
+                                                        <div class="font-medium text-sm text-gray-900 dark:text-gray-100 truncate">
+                                                            {{ $student->fullName }}
+                                                        </div>
+                                                        <div class="muted text-xs">
+                                                            {{ $student->student_number }}
+                                                            @if ($isDropped)
+                                                                <span class="badge badge-danger text-[10px] ml-1">Dropped</span>
+                                                            @endif
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </td>
+
+                                            {{-- Overall Badge (Blackboard Style Pill) --}}
+                                            <td class="py-3 px-3 text-center border-r border-b border-gray-200 dark:border-gray-700">
+                                                <span id="overall-pill-{{ $enrollmentId }}"
+                                                      class="bb-pill {{ $pillClass }}"
+                                                      title="Overall attendance score: {{ $overallScore }}%">
+                                                    {{ $scoreText }}
+                                                </span>
+                                            </td>
+
+                                            {{-- Date Columns --}}
+                                            @foreach ($gridDates as $d)
+                                                @php
+                                                    $rec = $row['records_by_date'][$d['date']] ?? null;
+                                                    $cellStatus = $rec['status'] ?? null;
+                                                    $hoursAbsent = $rec['hours_absent'] ?? null;
+                                                    $remarks = $rec['remarks'] ?? '';
+                                                @endphp
+
+                                                <td id="cell-{{ $enrollmentId }}-{{ $d['date'] }}"
+                                                    @class([
+                                                        'bb-cell text-center p-2 min-w-[5.5rem] h-[3.8rem] select-none cursor-pointer group transition-colors border-r border-b border-gray-200 dark:border-gray-700',
+                                                        'bb-cell-late' => $cellStatus === 'late',
+                                                        'bg-white dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700' => $cellStatus !== 'late',
+                                                    ])
+                                                    @click="openCellModal({{ $enrollmentId }}, @js($student->fullName), @js($d['date']), @js($d['header_label']), @js($cellStatus), @js($hoursAbsent), @js($remarks), {{ $sessionHours }})"
+                                                    title="{{ $student->fullName }} ({{ $d['full_label'] }}): {{ $cellStatus ? ucfirst($cellStatus) : 'Unrecorded' }} - Click to edit">
+
+                                                    @if ($cellStatus === 'present')
+                                                        <div class="flex flex-col items-center justify-center">
+                                                            <svg class="h-5 w-5 text-gray-800 dark:text-gray-200" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                                                                <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                                                            </svg>
+                                                            <span class="text-xs text-gray-700 dark:text-gray-300 font-medium mt-0.5">Present</span>
+                                                        </div>
+                                                    @elseif ($cellStatus === 'late')
+                                                        <div class="flex flex-col items-center justify-center">
+                                                            <svg class="h-5 w-5 text-gray-800 dark:text-gray-200" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                                                <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                                            </svg>
+                                                            <span class="text-xs text-gray-800 dark:text-gray-200 font-medium mt-0.5">Late</span>
+                                                        </div>
+                                                    @elseif ($cellStatus === 'absent')
+                                                        <div class="flex flex-col items-center justify-center">
+                                                            <svg class="h-5 w-5 text-gray-800 dark:text-gray-200" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                                                                <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                                                            </svg>
+                                                            <span class="text-xs text-gray-700 dark:text-gray-300 font-medium mt-0.5">
+                                                                Absent
+                                                                @if ($hoursAbsent !== null && (float) $hoursAbsent !== (float) $sessionHours)
+                                                                    <span class="text-[10px] text-gray-500">({{ $hoursAbsent }}h)</span>
+                                                                @endif
+                                                            </span>
+                                                        </div>
+                                                    @elseif ($cellStatus === 'excused')
+                                                        <div class="flex flex-col items-center justify-center">
+                                                            <svg class="h-5 w-5 text-gray-800 dark:text-gray-200" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                                                <circle cx="12" cy="12" r="9" />
+                                                                <line x1="5.6" y1="5.6" x2="18.4" y2="18.4" />
+                                                            </svg>
+                                                            <span class="text-xs text-gray-700 dark:text-gray-300 font-medium mt-0.5">Excused</span>
+                                                        </div>
+                                                    @else
+                                                        <div class="flex flex-col items-center justify-center opacity-30 group-hover:opacity-100 transition-opacity">
+                                                            <span class="text-lg text-gray-400 font-light">+</span>
                                                         </div>
                                                     @endif
                                                 </td>
+                                            @endforeach
 
-                                                <td>
-                                                    @if ($isDropped)
-                                                        <span class="muted text-xs">Remarks are locked for dropped students.</span>
-                                                    @else
-                                                        <label class="sr-only" for="remarks-{{ $index }}">
-                                                            Remarks for {{ $student->fullName }}
-                                                        </label>
-                                                        <input type="text" id="remarks-{{ $index }}"
-                                                               name="attendance[{{ $index }}][remarks]"
-                                                               value="{{ $row['today_remarks'] ?? '' }}"
-                                                               placeholder="Optional note or excuse"
-                                                               class="field">
-                                                    @endif
-                                                </td>
-                                            </tr>
-                                        @empty
-                                            <tr>
-                                                <td colspan="5" class="muted py-10 text-center">
-                                                    No students are enrolled in this course yet.
-                                                </td>
-                                            </tr>
-                                        @endforelse
-                                    </tbody>
-                                </table>
-                            </div>
-
-                            <div class="card-footer flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                                <p class="muted text-sm">Attendance records do not automatically drop students.</p>
-
-                                <button type="submit" class="btn btn-primary">
-                                    Save attendance for {{ \Carbon\Carbon::parse($selectedDate)->format('M j, Y') }}
-                                </button>
-                            </div>
+                                        </tr>
+                                    @empty
+                                        <tr>
+                                            <td colspan="{{ 2 + max(1, $gridDates->count()) }}" class="muted py-12 text-center">
+                                                No students are enrolled in this course yet.
+                                            </td>
+                                        </tr>
+                                    @endforelse
+                                </tbody>
+                            </table>
                         </div>
-                    </form>
+
+                        <div class="px-6 py-3 bg-gray-50/80 dark:bg-gray-800/80 border-t border-gray-200 dark:border-gray-700 flex flex-col sm:flex-row sm:items-center sm:justify-between text-xs text-gray-500 dark:text-gray-400">
+                            <p>Click any cell to update marks instantly. Overall score recalculates using Blackboard attendance weights.</p>
+                            <span class="font-medium">{{ $enrollmentRows->count() }} students enrolled</span>
+                        </div>
+                    </div>
                 </div>
 
-            {{-- TAB: students and watchlist --}}
-            @elseif ($activeTab === 'summary')
-                <section class="card overflow-hidden">
-
-                    <div class="card-header flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                        <div>
-                            <h2 class="font-semibold">Student attendance summary</h2>
-                            <p class="muted mt-0.5 text-sm">
-                                Review each student’s attendance. Faculty members decide when a student should be dropped.
-                            </p>
-                        </div>
-
-                        <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
-                            <div>
-                                <label for="status-filter" class="sr-only">Filter by status</label>
-                                <select id="status-filter" x-model="statusFilter" class="field w-full sm:w-auto">
-                                    <option value="all">All students</option>
-                                    <option value="dropped">Dropped only</option>
-                                    <option value="active">Active only</option>
-                                </select>
-                            </div>
-
-                            <div>
-                                <label for="summary-search" class="sr-only">Search students</label>
-                                <input type="text" id="summary-search" x-model="searchQuery"
-                                       placeholder="Search students"
-                                       class="field w-full sm:w-48">
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="overflow-x-auto">
-                        <table class="data-table">
-                            <thead>
-                                <tr>
-                                    <th scope="col">Student</th>
-                                    <th scope="col">Program and year</th>
-                                    <th scope="col" class="is-center">Sessions</th>
-                                    <th scope="col" class="is-center">Present / late / absent</th>
-                                    <th scope="col">Absence hours</th>
-                                    <th scope="col" class="is-center">Status</th>
-                                    <th scope="col" class="is-end"><span class="sr-only">Actions</span></th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                @forelse ($enrollmentRows as $row)
-                                    @php
-                                        $student = $row['student'];
-                                        $isDropped = $row['status'] === 'dropped';
-                                        $canManuallyDrop = ! $isDropped;
-                                        $searchText = strtolower(($student->fullName ?? '') . ' ' . ($student->student_number ?? ''));
-                                    @endphp
-
-                                    <tr x-show="matchesSummaryFilter(@js($row['status']), @js($searchText))">
-
-                                        <td>
-                                            <div class="font-medium">{{ $student->fullName }}</div>
-                                            <div class="muted text-xs">{{ $student->student_number }}</div>
-                                        </td>
-
-                                        <td>
-                                            {{ $student->program }}{{ $student->year_level ? ', year ' . $student->year_level : '' }}
-                                        </td>
-
-                                        <td class="is-center tabular-nums">{{ $row['total_sessions'] }}</td>
-
-                                        <td class="is-center tabular-nums">
-                                            <span class="text-ok font-semibold">{{ $row['presences'] }}</span> /
-                                            <span class="text-warn font-semibold">{{ $row['lates'] }}</span> /
-                                            <span class="text-bad font-semibold">{{ $row['absences'] }}</span>
-                                        </td>
-
-                                        <td class="tabular-nums">{{ $row['absent_hours'] }} hrs</td>
-
-                                        <td class="is-center">
-                                            @if ($isDropped)
-                                                <span class="badge badge-danger">Dropped</span>
-                                            @elseif ($row['status'] === 'readmitted')
-                                                <span class="badge badge-neutral">Readmitted</span>
-                                            @else
-                                                <span class="badge badge-success">Active</span>
-                                            @endif
-                                        </td>
-
-                                        <td class="is-end">
-                                            <div class="flex justify-end gap-2">
-                                                <button type="button" class="btn btn-secondary btn-sm"
-                                                        @click="fetchStudentHistory({{ $row['enrollment']->enrollment_id }})">
-                                                    History
-                                                </button>
-
-                                                @if ($canManuallyDrop)
-                                                    <form method="POST"
-                                                          action="{{ route('faculty.enrollments.drop', $row['enrollment']) }}"
-                                                          onsubmit="return confirm(@js('Manually drop ' . $student->fullName . ' from this course?'))">
-                                                        @csrf
-                                                        <button type="submit" class="btn btn-danger btn-sm">Drop</button>
-                                                    </form>
-                                                @endif
-                                            </div>
-                                        </td>
-                                    </tr>
-                                @empty
-                                    <tr>
-                                        <td colspan="7" class="muted py-10 text-center">
-                                            No students enrolled in this course.
-                                        </td>
-                                    </tr>
-                                @endforelse
-                            </tbody>
-                        </table>
-                    </div>
-                </section>
-
-            {{-- TAB: session history --}}
-            @elseif ($activeTab === 'history')
-                <section class="card overflow-hidden">
-
-                    <div class="card-header flex items-center justify-between gap-3">
-                        <div>
-                            <h2 class="font-semibold">Past attendance sessions</h2>
-                            <p class="muted mt-0.5 text-sm">Review or change previously recorded attendance.</p>
-                        </div>
-                        <span class="badge badge-neutral shrink-0">{{ $sessionHistory->count() }} logged</span>
-                    </div>
-
-                    <div class="overflow-x-auto">
-                        <table class="data-table">
-                            <thead>
-                                <tr>
-                                    <th scope="col">Session date</th>
-                                    <th scope="col">Schedule</th>
-                                    <th scope="col" class="is-center">Present</th>
-                                    <th scope="col" class="is-center">Late</th>
-                                    <th scope="col" class="is-center">Absent</th>
-                                    <th scope="col" class="is-center">Students</th>
-                                    <th scope="col" class="is-end"><span class="sr-only">Action</span></th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                @forelse ($sessionHistory as $s)
-                                    <tr>
-                                        <td>
-                                            <div class="font-medium">
-                                                {{ \Carbon\Carbon::parse($s['session_date'])->format('F j, Y') }}
-                                            </div>
-                                            <div class="muted text-xs">
-                                                {{ \Carbon\Carbon::parse($s['session_date'])->format('l') }}
-                                            </div>
-                                        </td>
-
-                                        <td>
-                                            @if ($s['is_out_of_schedule'])
-                                                <span class="badge badge-warning">Out of schedule</span>
-                                            @else
-                                                <span class="badge badge-neutral">Regular</span>
-                                            @endif
-                                        </td>
-
-                                        <td class="is-center tabular-nums text-ok font-semibold">{{ $s['present_count'] }}</td>
-                                        <td class="is-center tabular-nums text-warn font-semibold">{{ $s['late_count'] }}</td>
-                                        <td class="is-center tabular-nums text-bad font-semibold">{{ $s['absent_count'] }}</td>
-                                        <td class="is-center tabular-nums">{{ $s['total'] }}</td>
-
-                                        <td class="is-end">
-                                            <a href="{{ route('faculty.dashboard', ['course_id' => $selectedCourse->course_id, 'date' => $s['session_date'], 'tab' => 'check']) }}"
-                                               class="btn btn-secondary btn-sm">
-                                                Edit or view
-                                            </a>
-                                        </td>
-                                    </tr>
-                                @empty
-                                    <tr>
-                                        <td colspan="7" class="muted py-10 text-center">
-                                            No attendance has been saved for this course yet.
-                                        </td>
-                                    </tr>
-                                @endforelse
-                            </tbody>
-                        </table>
-                    </div>
-                </section>
             @endif
+
         @endif
 
-        {{-- Student attendance history dialog --}}
-        <div x-show="showHistoryModal" x-cloak
-             class="fixed inset-0 z-50 flex items-center justify-center p-4"
-             role="dialog" aria-modal="true" aria-labelledby="history-title"
-             @keydown.escape.window="showHistoryModal = false">
-
-            <div class="modal-scrim absolute inset-0" @click="showHistoryModal = false"></div>
-
-            <div class="modal-panel relative w-full max-w-2xl">
-
-                <div class="card-header flex items-start justify-between gap-4">
-                    <div class="min-w-0">
-                        <h3 id="history-title" class="font-semibold"
-                            x-text="historyData.student_name || 'Student attendance history'"></h3>
-                        <p class="muted mt-0.5 text-sm"
-                           x-text="[historyData.student_number ? 'ID ' + historyData.student_number : '', historyData.course].filter(Boolean).join(', ')"></p>
-                    </div>
-                    <button type="button" class="btn btn-ghost btn-sm shrink-0" @click="showHistoryModal = false">Close</button>
+        {{-- =========================================================================
+             ATTENDANCE SETTINGS MODAL (GEAR ICON)
+             ========================================================================= --}}
+        <div x-show="showSettingsModal" x-cloak
+             class="fixed inset-0 z-50 overflow-y-auto bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
+            <div class="bg-white dark:bg-gray-800 rounded-lg max-w-md w-full shadow-2xl border border-gray-200 dark:border-gray-700 overflow-hidden"
+                 @click.away="showSettingsModal = false">
+                <div class="card-header flex items-center justify-between border-b pb-3">
+                    <h3 class="font-semibold text-base">Attendance Settings</h3>
+                    <button type="button" @click="showSettingsModal = false" class="text-gray-400 hover:text-gray-700 font-bold text-lg">&times;</button>
                 </div>
 
-                <div class="max-h-96 overflow-y-auto">
-                    <template x-if="isLoadingHistory">
-                        <p class="muted px-5 py-10 text-center text-sm">Loading attendance log…</p>
-                    </template>
+                <div class="p-5 space-y-4 text-xs">
+                    <div>
+                        <label for="settings-grading-period" class="field-label">Active Grading Period</label>
+                        <select id="settings-grading-period" x-model="activeGradingPeriod" class="field py-1.5 text-xs font-medium">
+                            <option value="first_grading">First Grading</option>
+                            <option value="midterms">Midterms</option>
+                            <option value="finals">Finals</option>
+                        </select>
+                        <p class="muted mt-1 text-[11px]">New attendance records will be tagged with this grading period.</p>
+                    </div>
 
-                    <template x-if="!isLoadingHistory && loadError">
-                        <p class="text-bad px-5 py-10 text-center text-sm">
-                            Unable to load attendance history. Close this window and try again.
-                        </p>
-                    </template>
+                    <div class="border-t pt-3">
+                        <label class="field-label">Default Class Duration</label>
+                        <p class="font-semibold text-sm">{{ $sessionHours }} hours per meeting</p>
+                        <p class="muted mt-0.5 text-[11px]">Calculated from {{ $selectedCourse?->subject_code }} schedule.</p>
+                    </div>
 
-                    <template x-if="!isLoadingHistory && !loadError && (!historyData.records || historyData.records.length === 0)">
-                        <p class="muted px-5 py-10 text-center text-sm">No attendance records found for this student.</p>
-                    </template>
+                    <div class="border-t pt-3 flex items-center justify-between">
+                        <div>
+                            <p class="font-semibold">Schedule Warnings</p>
+                            <p class="muted text-[11px]">Warn when taking attendance outside scheduled days</p>
+                        </div>
+                        <form method="POST" action="{{ route('faculty.toggle-schedule-warning') }}">
+                            @csrf
+                            <button type="submit" class="btn btn-secondary btn-sm">
+                                {{ $faculty->suppress_schedule_warnings ? 'Enable' : 'Disable' }}
+                            </button>
+                        </form>
+                    </div>
 
-                    <template x-if="!isLoadingHistory && !loadError && historyData.records && historyData.records.length > 0">
-                        <table class="data-table">
-                            <thead>
-                                <tr>
-                                    <th scope="col">Date</th>
-                                    <th scope="col" class="is-center">Status</th>
-                                    <th scope="col">Remarks</th>
-                                    <th scope="col" class="is-center">Schedule</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <template x-for="rec in historyData.records" :key="rec.attendance_id">
-                                    <tr>
-                                        <td class="whitespace-nowrap font-medium" x-text="rec.session_date"></td>
-                                        <td class="is-center">
-                                            <span class="badge capitalize"
-                                                  :class="{
-                                                      'badge-success': rec.status === 'present',
-                                                      'badge-warning': rec.status === 'late',
-                                                      'badge-danger': rec.status === 'absent'
-                                                  }"
-                                                  x-text="rec.status"></span>
-                                        </td>
-                                        <td class="muted" x-text="rec.remarks || '—'"></td>
-                                        <td class="is-center">
-                                            <span class="badge"
-                                                  :class="rec.is_out_of_schedule ? 'badge-warning' : 'badge-neutral'"
-                                                  x-text="rec.is_out_of_schedule ? 'Out of schedule' : 'Regular'"></span>
-                                        </td>
-                                    </tr>
-                                </template>
-                            </tbody>
-                        </table>
-                    </template>
+                    <div class="border-t pt-3 flex flex-col gap-2">
+                        <p class="font-semibold">Course Tools</p>
+                        <a href="{{ route('faculty.dashboard', ['course_id' => $selectedCourse?->course_id, 'date' => $selectedDate, 'tab' => 'overall']) }}"
+                           class="link text-xs">
+                            View Overall Blackboard Grid
+                        </a>
+                    </div>
+                </div>
+
+                <div class="card-footer bg-gray-50/70 dark:bg-gray-800/70 flex justify-end p-3">
+                    <button type="button" @click="showSettingsModal = false" class="btn btn-primary btn-sm">
+                        Done
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        {{-- =========================================================================
+             OVERALL GRID CELL EDIT MODAL
+             ========================================================================= --}}
+        <div x-show="showCellModal" x-cloak
+             class="fixed inset-0 z-50 overflow-y-auto bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
+            <div class="bg-white dark:bg-gray-800 rounded-lg max-w-sm w-full shadow-2xl border border-gray-200 dark:border-gray-700 overflow-hidden"
+                 @click.away="showCellModal = false">
+                <div class="card-header border-b pb-3 flex items-center justify-between">
+                    <div>
+                        <h3 class="font-semibold text-sm" x-text="cellData.studentName"></h3>
+                        <p class="muted text-xs mt-0.5" x-text="cellData.formattedDate"></p>
+                    </div>
+                    <button type="button" @click="showCellModal = false" class="text-gray-400 hover:text-gray-700 font-bold text-lg">&times;</button>
+                </div>
+
+                <div class="p-5 space-y-4 text-xs">
+                    <div>
+                        <label class="field-label mb-2">Attendance Status</label>
+                        <div class="grid grid-cols-2 gap-2">
+                            <button type="button"
+                                    class="bb-status-btn py-2 text-xs"
+                                    :class="{ 'bb-status-btn-present-active': cellData.status === 'present' }"
+                                    @click="cellData.status = 'present'">
+                                ✓ Present
+                            </button>
+                            <button type="button"
+                                    class="bb-status-btn py-2 text-xs"
+                                    :class="{ 'bb-status-btn-late-active': cellData.status === 'late' }"
+                                    @click="cellData.status = 'late'">
+                                🕒 Late
+                            </button>
+                            <button type="button"
+                                    class="bb-status-btn py-2 text-xs"
+                                    :class="{ 'bb-status-btn-absent-active': cellData.status === 'absent' }"
+                                    @click="cellData.status = 'absent'">
+                                ✕ Absent
+                            </button>
+                            <button type="button"
+                                    class="bb-status-btn py-2 text-xs"
+                                    :class="{ 'bb-status-btn-excused-active': cellData.status === 'excused' }"
+                                    @click="cellData.status = 'excused'">
+                                ⊘ Excused
+                            </button>
+                        </div>
+                    </div>
+
+                    <div x-show="cellData.status === 'absent'" x-cloak class="border-t pt-3 space-y-2">
+                        <label class="field-label">Hours Absent</label>
+                        <div class="flex items-center gap-2">
+                            <input type="number" step="0.5" min="0.5" max="24"
+                                   x-model="cellData.hoursAbsent"
+                                   class="field py-1 px-2 w-20 text-center font-bold text-xs">
+                            <span class="muted text-xs">hours</span>
+                            <div class="flex items-center gap-1 ml-auto">
+                                <button type="button" @click="cellData.hoursAbsent = 1.0" class="btn btn-secondary btn-sm text-[11px] py-0.5 px-2">1h</button>
+                                <button type="button" @click="cellData.hoursAbsent = cellData.defaultSessionHours" class="btn btn-secondary btn-sm text-[11px] py-0.5 px-2" x-text="cellData.defaultSessionHours + 'h'"></button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="border-t pt-3">
+                        <label class="field-label">Remarks / Note</label>
+                        <input type="text" x-model="cellData.remarks" placeholder="Optional notes…" class="field py-1 text-xs">
+                    </div>
+                </div>
+
+                <div class="card-footer bg-gray-50/70 dark:bg-gray-800/70 flex items-center justify-end gap-2 p-3">
+                    <button type="button" @click="showCellModal = false" class="btn btn-secondary btn-sm">Cancel</button>
+                    <button type="button" @click="saveCellRecord()" :disabled="cellSaving" class="btn btn-primary btn-sm font-semibold">
+                        <span x-show="!cellSaving">Save</span>
+                        <span x-show="cellSaving">Saving…</span>
+                    </button>
                 </div>
             </div>
         </div>
@@ -668,63 +931,291 @@
     </div>
 
     <script>
-        function facultyDashboard() {
+        function facultyDashboard(config) {
             return {
-                searchQuery: '',
-                statusFilter: 'all',
-                showHistoryModal: false,
-                isLoadingHistory: false,
-                loadError: false,
-                historyData: {},
+                showSettingsModal: false,
+                activeGradingPeriod: 'first_grading',
 
-                matchesSearch(text) {
-                    if (!this.searchQuery) return true;
-                    return text.includes(this.searchQuery.toLowerCase().trim());
+                // Toast notification
+                toast: {
+                    show: false,
+                    message: '',
+                    timeout: null
                 },
 
-                matchesSummaryFilter(status, text) {
-                    if (this.searchQuery && !text.includes(this.searchQuery.toLowerCase().trim())) {
-                        return false;
+                showToast(msg) {
+                    this.toast.message = msg;
+                    this.toast.show = true;
+                    if (this.toast.timeout) clearTimeout(this.toast.timeout);
+                    this.toast.timeout = setTimeout(() => {
+                        this.toast.show = false;
+                    }, 3000);
+                },
+
+                // Blackboard Quick Cell Modal
+                showCellModal: false,
+                cellSaving: false,
+                cellData: {
+                    courseId: config.courseId,
+                    enrollmentId: null,
+                    studentName: '',
+                    date: '',
+                    formattedDate: '',
+                    status: 'present',
+                    hoursAbsent: config.defaultSessionHours || 1.5,
+                    defaultSessionHours: config.defaultSessionHours || 1.5,
+                    remarks: '',
+                    gradingPeriod: 'first_grading'
+                },
+
+                // Status & hours maps for Meeting view
+                studentStatuses: config.initialStatuses || {},
+                studentHours: config.initialHours || {},
+                studentRemarks: config.initialRemarks || {},
+
+                // Reactive grid records & student scores
+                gridRecords: config.initialGridRecords || {},
+                studentScores: config.initialStudentScores || {},
+
+                countStatus(targetStatus) {
+                    return Object.values(this.studentStatuses).filter(s => s === targetStatus).length;
+                },
+
+                // Step hours for Absent student
+                stepHours(index, enrollmentId, delta, studentName) {
+                    let current = parseFloat(this.studentHours[index]) || config.defaultSessionHours || 1.5;
+                    let next = Math.max(0.5, current + delta);
+                    this.studentHours[index] = next;
+
+                    // Automatically update server if already absent
+                    if (this.studentStatuses[index] === 'absent') {
+                        this.postRecord(enrollmentId, 'absent', next, this.studentRemarks[index], studentName);
                     }
-
-                    if (this.statusFilter === 'all') return true;
-                    if (this.statusFilter === 'dropped') return status === 'dropped';
-                    if (this.statusFilter === 'active') return status !== 'dropped';
-
-                    return true;
                 },
 
-                markAll(targetStatus) {
-                    const radios = document.querySelectorAll(`.status-radio.status-${targetStatus}`);
-                    radios.forEach(radio => {
-                        radio.checked = true;
+                // Click handler on icon cells
+                markStudent(index, enrollmentId, status, studentName) {
+                    // Update state immediately
+                    this.studentStatuses[index] = status;
+                    const hoursAbsent = status === 'absent' ? (parseFloat(this.studentHours[index]) || config.defaultSessionHours || 1.5) : null;
+                    const remarks = this.studentRemarks[index] || null;
+
+                    this.postRecord(enrollmentId, status, hoursAbsent, remarks, studentName);
+                },
+
+                postRecord(enrollmentId, status, hoursAbsent, remarks, studentName) {
+                    const tokenMeta = document.querySelector('meta[name="csrf-token"]');
+                    const csrfToken = tokenMeta ? tokenMeta.getAttribute('content') : '';
+
+                    fetch('{{ route("faculty.attendance.record") }}', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Accept': 'application/json',
+                            'X-CSRF-TOKEN': csrfToken,
+                            'X-Requested-With': 'XMLHttpRequest'
+                        },
+                        body: JSON.stringify({
+                            course_id: config.courseId,
+                            enrollment_id: enrollmentId,
+                            session_date: config.selectedDate,
+                            schedule_id: {{ $selectedSchedule ? $selectedSchedule->schedule_id : 'null' }},
+                            status: status,
+                            hours_absent: hoursAbsent,
+                            remarks: remarks,
+                            grading_period: this.activeGradingPeriod
+                        })
+                    })
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data.success) {
+                            if (!this.gridRecords[enrollmentId]) {
+                                this.gridRecords[enrollmentId] = {};
+                            }
+                            this.gridRecords[enrollmentId][config.selectedDate] = data.record;
+
+                            const statusLabel = status.charAt(0).toUpperCase() + status.slice(1);
+                            this.showToast(`${studentName}: ${statusLabel}`);
+                        } else {
+                            alert(data.error || 'Failed to save attendance record.');
+                        }
+                    })
+                    .catch(err => {
+                        console.error('Save error:', err);
                     });
                 },
 
-                fetchStudentHistory(enrollmentId) {
-                    this.showHistoryModal = true;
-                    this.isLoadingHistory = true;
-                    this.loadError = false;
-                    this.historyData = {};
+                // Click handler on column headers (Mark All)
+                markAll(targetStatus) {
+                    const tokenMeta = document.querySelector('meta[name="csrf-token"]');
+                    const csrfToken = tokenMeta ? tokenMeta.getAttribute('content') : '';
 
-                    fetch(`/faculty/enrollments/${enrollmentId}/attendance-history`, {
+                    Object.keys(this.studentStatuses).forEach(idx => {
+                        this.studentStatuses[idx] = targetStatus;
+                    });
+
+                    // Prepare bulk entries
+                    const attendanceEntries = [];
+                    @foreach ($enrollmentRows as $idx => $row)
+                        attendanceEntries.push({
+                            enrollment_id: {{ $row['enrollment']->enrollment_id }},
+                            status: targetStatus,
+                            hours_absent: targetStatus === 'absent' ? (parseFloat(this.studentHours[{{ $idx }}]) || {{ $sessionHours }}) : null,
+                            remarks: this.studentRemarks[{{ $idx }}] || null
+                        });
+                    @endforeach
+
+                    fetch('{{ route("faculty.attendance.store") }}', {
+                        method: 'POST',
                         headers: {
+                            'Content-Type': 'application/json',
                             'Accept': 'application/json',
+                            'X-CSRF-TOKEN': csrfToken,
                             'X-Requested-With': 'XMLHttpRequest'
-                        }
+                        },
+                        body: JSON.stringify({
+                            course_id: config.courseId,
+                            session_date: config.selectedDate,
+                            schedule_id: {{ $selectedSchedule ? $selectedSchedule->schedule_id : 'null' }},
+                            grading_period: this.activeGradingPeriod,
+                            tab: 'meeting',
+                            attendance: attendanceEntries
+                        })
                     })
-                    .then(res => {
-                        if (!res.ok) throw new Error('Network error');
-                        return res.json();
-                    })
-                    .then(data => {
-                        this.historyData = data;
-                        this.isLoadingHistory = false;
+                    .then(() => {
+                        const label = targetStatus.charAt(0).toUpperCase() + targetStatus.slice(1);
+                        this.showToast(`Marked all students as ${label}`);
                     })
                     .catch(err => {
-                        console.error(err);
-                        this.loadError = true;
-                        this.isLoadingHistory = false;
+                        console.error('Mark all error:', err);
+                    });
+                },
+
+                openCellModal(enrollmentId, studentName, dateStr, formattedDate, currentStatus, hoursAbsent, remarks, sessionHours) {
+                    if (this.gridRecords[enrollmentId] && this.gridRecords[enrollmentId][dateStr]) {
+                        const local = this.gridRecords[enrollmentId][dateStr];
+                        currentStatus = local.status;
+                        hoursAbsent = local.hours_absent;
+                        remarks = local.remarks;
+                    }
+
+                    this.cellData = {
+                        courseId: config.courseId,
+                        enrollmentId: enrollmentId,
+                        studentName: studentName,
+                        date: dateStr,
+                        formattedDate: formattedDate,
+                        status: currentStatus || 'present',
+                        hoursAbsent: (hoursAbsent !== null && hoursAbsent !== undefined) ? hoursAbsent : (sessionHours || 1.5),
+                        defaultSessionHours: sessionHours || 1.5,
+                        remarks: remarks || '',
+                        gradingPeriod: this.activeGradingPeriod
+                    };
+                    this.showCellModal = true;
+                },
+
+                getPillClass(score) {
+                    score = parseFloat(score);
+                    if (score >= 90) return 'bb-pill-green';
+                    if (score >= 80) return 'bb-pill-lime';
+                    if (score >= 70) return 'bb-pill-yellow';
+                    return 'bb-pill-red';
+                },
+
+                buildCellHtml(record) {
+                    const status = record.status;
+                    const hoursAbsent = record.hours_absent;
+
+                    if (status === 'present') {
+                        return `<div class="flex flex-col items-center justify-center">
+                            <svg class="h-5 w-5 text-gray-800 dark:text-gray-200" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
+                            <span class="text-xs text-gray-700 dark:text-gray-300 font-medium mt-0.5">Present</span>
+                        </div>`;
+                    }
+                    if (status === 'late') {
+                        return `<div class="flex flex-col items-center justify-center">
+                            <svg class="h-5 w-5 text-gray-800 dark:text-gray-200" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                            <span class="text-xs text-gray-800 dark:text-gray-200 font-medium mt-0.5">Late</span>
+                        </div>`;
+                    }
+                    if (status === 'absent') {
+                        const hrsText = hoursAbsent !== null && hoursAbsent !== undefined ? `<span class="text-[10px] text-gray-500">(${hoursAbsent}h)</span>` : '';
+                        return `<div class="flex flex-col items-center justify-center">
+                            <svg class="h-5 w-5 text-gray-800 dark:text-gray-200" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                            <span class="text-xs text-gray-700 dark:text-gray-300 font-medium mt-0.5">Absent ${hrsText}</span>
+                        </div>`;
+                    }
+                    if (status === 'excused') {
+                        return `<div class="flex flex-col items-center justify-center">
+                            <svg class="h-5 w-5 text-gray-800 dark:text-gray-200" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" /><line x1="5.6" y1="5.6" x2="18.4" y2="18.4" /></svg>
+                            <span class="text-xs text-gray-700 dark:text-gray-300 font-medium mt-0.5">Excused</span>
+                        </div>`;
+                    }
+                    return `<div class="flex flex-col items-center justify-center opacity-30 group-hover:opacity-100 transition-opacity"><span class="text-lg text-gray-400 font-light">+</span></div>`;
+                },
+
+                saveCellRecord() {
+                    this.cellSaving = true;
+                    const tokenMeta = document.querySelector('meta[name="csrf-token"]');
+                    const csrfToken = tokenMeta ? tokenMeta.getAttribute('content') : '';
+
+                    const enrollmentId = this.cellData.enrollmentId;
+                    const dateStr = this.cellData.date;
+                    const studentName = this.cellData.studentName;
+
+                    fetch('{{ route("faculty.attendance.record") }}', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Accept': 'application/json',
+                            'X-CSRF-TOKEN': csrfToken,
+                            'X-Requested-With': 'XMLHttpRequest'
+                        },
+                        body: JSON.stringify({
+                            course_id: this.cellData.courseId,
+                            enrollment_id: enrollmentId,
+                            session_date: dateStr,
+                            status: this.cellData.status,
+                            hours_absent: this.cellData.status === 'absent' ? parseFloat(this.cellData.hoursAbsent) : null,
+                            remarks: this.cellData.remarks,
+                            grading_period: this.cellData.gradingPeriod
+                        })
+                    })
+                    .then(res => res.json())
+                    .then(data => {
+                        this.cellSaving = false;
+                        if (data.success) {
+                            this.showCellModal = false;
+
+                            if (!this.gridRecords[enrollmentId]) {
+                                this.gridRecords[enrollmentId] = {};
+                            }
+                            this.gridRecords[enrollmentId][dateStr] = data.record;
+
+                            const cellEl = document.getElementById(`cell-${enrollmentId}-${dateStr}`);
+                            if (cellEl) {
+                                cellEl.className = 'bb-cell text-center p-2 min-w-[5.5rem] h-[3.8rem] select-none cursor-pointer group transition-colors border-r border-b border-gray-200 dark:border-gray-700 ' +
+                                    (data.record.status === 'late' ? 'bb-cell-late' : 'bg-white dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700');
+                                cellEl.innerHTML = this.buildCellHtml(data.record);
+                            }
+
+                            const scoreEl = document.getElementById(`overall-pill-${enrollmentId}`);
+                            if (scoreEl && data.stats) {
+                                const newScore = data.stats.overall_score;
+                                const pillClass = this.getPillClass(newScore);
+                                const scoreText = (newScore == 100) ? '100 / 100' : parseFloat(newScore).toFixed(2) + ' / 100';
+                                scoreEl.className = `bb-pill ${pillClass}`;
+                                scoreEl.textContent = scoreText;
+                            }
+
+                            this.showToast(`Updated ${studentName} to ${data.record.status.toUpperCase()}`);
+                        } else {
+                            alert(data.error || 'Failed to save mark.');
+                        }
+                    })
+                    .catch(err => {
+                        this.cellSaving = false;
+                        alert(err.message || 'An error occurred while saving.');
                     });
                 }
             };

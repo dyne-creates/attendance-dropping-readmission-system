@@ -14,10 +14,12 @@ class AttendanceRecord extends Model
 
     protected $fillable = [
         'enrollment_id',
+        'schedule_id',
         'recorded_by',
         'session_date',
         'grading_period',
         'status',
+        'hours_absent',
         'remarks',
         'is_out_of_schedule',
     ];
@@ -27,6 +29,7 @@ class AttendanceRecord extends Model
         return [
             'session_date' => 'date',
             'is_out_of_schedule' => 'boolean',
+            'hours_absent' => 'float',
         ];
     }
 
@@ -34,6 +37,12 @@ class AttendanceRecord extends Model
     public function enrollment(): BelongsTo
     {
         return $this->belongsTo(Enrollment::class, 'enrollment_id', 'enrollment_id');
+    }
+
+    /** The specific schedule slot this record was taken for (nullable for legacy records). */
+    public function schedule(): BelongsTo
+    {
+        return $this->belongsTo(CourseSchedule::class, 'schedule_id', 'schedule_id');
     }
 
     /** The faculty member who recorded this mark. */

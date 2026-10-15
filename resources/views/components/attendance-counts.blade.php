@@ -1,4 +1,4 @@
-@props(['present' => 0, 'late' => 0, 'absent' => 0, 'total' => null])
+@props(['present' => 0, 'late' => 0, 'absent' => 0, 'excused' => 0, 'total' => null])
 
 <dl {{ $attributes->class(['flex flex-wrap items-center gap-x-5 gap-y-1 text-sm tabular-nums']) }}>
     @unless (is_null($total))
@@ -30,5 +30,13 @@
             Absent
         </dt>
         <dd class="font-medium">{{ $absent }}</dd>
+    </div>
+
+    <div class="flex items-center gap-1.5">
+        <dt class="muted flex items-center gap-1.5">
+            <span class="tick-key tick-excused" aria-hidden="true"></span>
+            Excused
+        </dt>
+        <dd class="font-medium">{{ $excused }}</dd>
     </div>
 </dl>

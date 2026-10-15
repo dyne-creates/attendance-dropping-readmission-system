@@ -49,7 +49,12 @@ class FacultyController extends Controller
         $course = $courses->firstWhere('course_id', (int) $selectedCourseId) ?? $courses->first();
 
         $selectedDate = $request->query('date', now()->toDateString());
-        $activeTab = $request->query('tab', 'check');
+        $activeTab = $request->query('tab', 'meeting');
+        if ($activeTab === 'check') {
+            $activeTab = 'meeting';
+        }
+        $prevDate = Carbon::parse($selectedDate)->subDay()->toDateString();
+        $nextDate = Carbon::parse($selectedDate)->addDay()->toDateString();
 
         $enrollmentRows = collect();
         $isOnSchedule = true;
@@ -62,10 +67,31 @@ class FacultyController extends Controller
             'attendance_rate' => 0,
         ];
         $sessionHistory = collect();
+        $gridDates = collect();
+        $sessionHours = 1.5;
+        $slotsForDay = collect();
+        $selectedSchedule = null;
 
         if ($course) {
             $scheduledDays = $course->schedules->pluck('day_of_week')->toArray();
             $isOnSchedule = $this->attendanceService->isDateOnSchedule($course, $selectedDate);
+
+            // Find all schedule slots that fall on the selected day of week
+            $slotsForDay = $course->schedules->filter(
+                fn (mixed $s): bool => $s->day_of_week === $scheduleDay
+            )->values();
+
+            // Determine the active slot: prefer query param, otherwise first for the day
+            $selectedScheduleId = (int) $request->query('schedule_id', 0);
+            $selectedSchedule = $slotsForDay->firstWhere('schedule_id', $selectedScheduleId)
+                ?? $slotsForDay->first();
+
+            $sessionHours = ($selectedSchedule && $selectedSchedule->start_time && $selectedSchedule->end_time)
+                ? round(
+                    Carbon::parse($selectedSchedule->start_time)->diffInMinutes(Carbon::parse($selectedSchedule->end_time)) / 60.0,
+                    2
+                )
+                : $this->attendanceService->calculateSessionHours($course, $selectedDate);
 
             // Load enrollments with student and attendance records
             $enrollments = Enrollment::with(['student.user', 'attendanceRecords'])
@@ -85,13 +111,40 @@ class FacultyController extends Controller
                 $presences = $enrollment->attendanceRecords->where('status', 'present')->count();
                 $lates = $enrollment->attendanceRecords->where('status', 'late')->count();
                 $absences = $enrollment->attendanceRecords->where('status', 'absent')->count();
+                $excusedCount = $enrollment->attendanceRecords->where('status', 'excused')->count();
                 $entriesCount = $enrollment->attendanceRecords->count();
 
                 $totalPresences += $presences;
                 $totalRecordedEntries += $entriesCount;
 
                 $todayRecord = $enrollment->attendanceRecords
-                    ->first(fn (AttendanceRecord $r) => Carbon::parse($r->session_date)->isSameDay($selectedDate));
+                    ->first(function (AttendanceRecord $r) use ($selectedDate, $selectedSchedule): bool {
+                        $dateMatch = Carbon::parse($r->session_date)->isSameDay($selectedDate);
+                        if (! $dateMatch) {
+                            return false;
+                        }
+                        // If the schedule has multiple slots today, match by schedule_id when available
+                        if ($selectedSchedule && $r->schedule_id !== null) {
+                            return $r->schedule_id === $selectedSchedule->schedule_id;
+                        }
+
+                        return true;
+                    });
+
+                $overallScore = $this->attendanceService->calculateOverallScore($enrollment->attendanceRecords);
+
+                // Key records by "date|scheduleId" so the overall grid can distinguish multi-slot days
+                $recordsByDate = $enrollment->attendanceRecords
+                    ->keyBy(fn (AttendanceRecord $r): string => Carbon::parse($r->session_date)->toDateString().'|'.($r->schedule_id ?? ''))
+                    ->map(fn (AttendanceRecord $r): array => [
+                        'attendance_id' => $r->attendance_id,
+                        'status' => $r->status,
+                        'hours_absent' => $r->hours_absent,
+                        'remarks' => $r->remarks,
+                        'is_out_of_schedule' => (bool) $r->is_out_of_schedule,
+                        'grading_period' => $r->grading_period,
+                        'schedule_id' => $r->schedule_id,
+                    ]);
 
                 $enrollmentRows->push([
                     'enrollment' => $enrollment,
@@ -101,10 +154,15 @@ class FacultyController extends Controller
                     'presences' => $presences,
                     'lates' => $lates,
                     'absences' => $absences,
+                    'excused' => $excusedCount,
                     'total_sessions' => $entriesCount,
+                    'overall_score' => $overallScore,
                     'today_status' => $todayRecord?->status,
+                    'today_hours_absent' => $todayRecord?->hours_absent ?? $sessionHours,
                     'today_remarks' => $todayRecord?->remarks,
                     'today_record_id' => $todayRecord?->attendance_id,
+                    'today_grading_period' => $todayRecord?->grading_period,
+                    'records_by_date' => $recordsByDate,
                 ]);
             }
 
@@ -113,10 +171,31 @@ class FacultyController extends Controller
             $distinctDates = AttendanceRecord::whereIn('enrollment_id', $enrollmentIds)
                 ->select('session_date', 'is_out_of_schedule')
                 ->distinct()
-                ->orderBy('session_date', 'desc')
+                ->orderBy('session_date', 'asc')
                 ->get();
 
-            foreach ($distinctDates as $dateItem) {
+            $dateStrings = $distinctDates->pluck('session_date')
+                ->map(fn ($d) => Carbon::parse($d)->toDateString())
+                ->unique();
+
+            if (! $dateStrings->contains($selectedDate)) {
+                $dateStrings->push($selectedDate);
+            }
+
+            $gridDates = $dateStrings->sort()->values()->map(function (string $dateStr) use ($selectedDate, $course): array {
+                $carbon = Carbon::parse($dateStr);
+
+                return [
+                    'date' => $dateStr,
+                    'header_label' => $carbon->format('n/j/y'), // Blackboard format: 1/6/20
+                    'full_label' => $carbon->format('M j, Y (D)'),
+                    'is_selected' => $dateStr === $selectedDate,
+                    'is_today' => $carbon->isToday(),
+                    'is_on_schedule' => $this->attendanceService->isDateOnSchedule($course, $dateStr),
+                ];
+            });
+
+            foreach ($distinctDates->sortByDesc('session_date') as $dateItem) {
                 $sessionDate = Carbon::parse($dateItem->session_date)->toDateString();
                 $recordsForDate = AttendanceRecord::whereIn('enrollment_id', $enrollmentIds)
                     ->whereDate('session_date', $sessionDate)
@@ -129,6 +208,7 @@ class FacultyController extends Controller
                     'present_count' => $recordsForDate->where('status', 'present')->count(),
                     'late_count' => $recordsForDate->where('status', 'late')->count(),
                     'absent_count' => $recordsForDate->where('status', 'absent')->count(),
+                    'excused_count' => $recordsForDate->where('status', 'excused')->count(),
                     'total' => $recordsForDate->count(),
                 ]);
             }
@@ -150,28 +230,36 @@ class FacultyController extends Controller
             'courses' => $courses,
             'selectedCourse' => $course,
             'selectedDate' => $selectedDate,
+            'sessionHours' => $sessionHours,
             'scheduleDay' => $scheduleDay,
             'scheduledDays' => $scheduledDays,
             'isOnSchedule' => $isOnSchedule,
             'enrollmentRows' => $enrollmentRows,
             'courseStats' => $courseStats,
             'sessionHistory' => $sessionHistory,
+            'gridDates' => $gridDates,
             'activeTab' => $activeTab,
+            'prevDate' => $prevDate,
+            'nextDate' => $nextDate,
+            'slotsForDay' => $slotsForDay,
+            'selectedSchedule' => $selectedSchedule,
         ]);
     }
 
     /**
      * Store or update attendance records for a class session.
      */
-    public function storeAttendance(Request $request): RedirectResponse
+    public function storeAttendance(Request $request): JsonResponse|RedirectResponse
     {
         $validated = $request->validate([
             'course_id' => ['required', 'integer', 'exists:courses,course_id'],
             'session_date' => ['required', 'date'],
+            'schedule_id' => ['nullable', 'integer', 'exists:course_schedules,schedule_id'],
             'grading_period' => ['required', 'in:first_grading,midterms,finals'],
             'attendance' => ['required', 'array'],
             'attendance.*.enrollment_id' => ['required', 'integer', 'exists:enrollments,enrollment_id'],
-            'attendance.*.status' => ['required', 'in:present,late,absent'],
+            'attendance.*.status' => ['required', 'in:present,late,absent,excused'],
+            'attendance.*.hours_absent' => ['nullable', 'numeric', 'min:0', 'max:24'],
             'attendance.*.remarks' => ['nullable', 'string', 'max:255'],
         ]);
 
@@ -184,9 +272,10 @@ class FacultyController extends Controller
         }
 
         $sessionDate = Carbon::parse($validated['session_date'])->toDateString();
+        $scheduleId = $validated['schedule_id'] ?? null;
         $isOutOfSchedule = ! $this->attendanceService->isDateOnSchedule($course, $sessionDate);
 
-        DB::transaction(function () use ($validated, $faculty, $sessionDate, $isOutOfSchedule): void {
+        DB::transaction(function () use ($validated, $faculty, $sessionDate, $scheduleId, $isOutOfSchedule): void {
             foreach ($validated['attendance'] as $entry) {
                 $enrollment = Enrollment::with('student', 'course')->find($entry['enrollment_id']);
 
@@ -199,30 +288,141 @@ class FacultyController extends Controller
                     continue;
                 }
 
+                $hoursAbsent = ($entry['status'] === 'absent' && isset($entry['hours_absent']) && is_numeric($entry['hours_absent']))
+                    ? (float) $entry['hours_absent']
+                    : null;
+
                 AttendanceRecord::updateOrCreate(
                     [
                         'enrollment_id' => $enrollment->enrollment_id,
                         'session_date' => $sessionDate,
+                        'schedule_id' => $scheduleId,
                     ],
                     [
                         'recorded_by' => $faculty->faculty_id,
                         'status' => $entry['status'],
                         'grading_period' => $validated['grading_period'],
+                        'hours_absent' => $hoursAbsent,
                         'remarks' => $entry['remarks'] ?? null,
                         'is_out_of_schedule' => $isOutOfSchedule,
                     ]
                 );
-
             }
         });
 
         $message = "Attendance records successfully saved for {$sessionDate}.";
 
+        if ($request->wantsJson()) {
+            return response()->json(['success' => true, 'message' => $message]);
+        }
+
         return redirect()->route('faculty.dashboard', [
             'course_id' => $course->course_id,
             'date' => $sessionDate,
-            'tab' => 'check',
+            'schedule_id' => $scheduleId,
+            'tab' => $request->input('tab', 'check'),
         ])->with('success', $message);
+    }
+
+    /**
+     * Record or update attendance for a single student on a given date (used by Blackboard grid).
+     */
+    public function recordSingleAttendance(Request $request): JsonResponse|RedirectResponse
+    {
+        $validated = $request->validate([
+            'course_id' => ['required', 'integer', 'exists:courses,course_id'],
+            'enrollment_id' => ['required', 'integer', 'exists:enrollments,enrollment_id'],
+            'session_date' => ['required', 'date'],
+            'status' => ['required', 'in:present,late,absent,excused'],
+            'hours_absent' => ['nullable', 'numeric', 'min:0', 'max:24'],
+            'remarks' => ['nullable', 'string', 'max:255'],
+            'grading_period' => ['nullable', 'in:first_grading,midterms,finals'],
+            'schedule_id' => ['nullable', 'integer', 'exists:course_schedules,schedule_id'],
+        ]);
+
+        /** @var FacultyMember $faculty */
+        $faculty = $request->user()->facultyMember;
+        $course = Course::with('schedules')->where('course_id', $validated['course_id'])->firstOrFail();
+
+        if ($course->faculty_id !== $faculty->faculty_id) {
+            abort(403, 'Unauthorized access to this course.');
+        }
+
+        $enrollment = Enrollment::with('student', 'attendanceRecords')->where('course_id', $course->course_id)
+            ->where('enrollment_id', $validated['enrollment_id'])
+            ->firstOrFail();
+
+        if ($enrollment->status === 'dropped') {
+            if ($request->wantsJson()) {
+                return response()->json(['error' => 'Cannot record attendance for a dropped student.'], 422);
+            }
+
+            return back()->with('error', 'Cannot record attendance for a dropped student.');
+        }
+
+        $sessionDate = Carbon::parse($validated['session_date'])->toDateString();
+        $scheduleId = $validated['schedule_id'] ?? null;
+        $isOutOfSchedule = ! $this->attendanceService->isDateOnSchedule($course, $sessionDate);
+
+        $existingRecord = $enrollment->attendanceRecords->first(function ($r) use ($sessionDate, $scheduleId): bool {
+            $dateMatch = Carbon::parse($r->session_date)->isSameDay($sessionDate);
+            if (! $dateMatch) {
+                return false;
+            }
+
+            return $scheduleId === null || $r->schedule_id === $scheduleId;
+        });
+
+        $gradingPeriod = $validated['grading_period'] ?? $existingRecord?->grading_period ?? 'first_grading';
+
+        $hoursAbsent = ($validated['status'] === 'absent' && isset($validated['hours_absent']) && is_numeric($validated['hours_absent']))
+            ? (float) $validated['hours_absent']
+            : null;
+
+        $record = AttendanceRecord::updateOrCreate(
+            [
+                'enrollment_id' => $enrollment->enrollment_id,
+                'session_date' => $sessionDate,
+                'schedule_id' => $scheduleId,
+            ],
+            [
+                'recorded_by' => $faculty->faculty_id,
+                'status' => $validated['status'],
+                'grading_period' => $gradingPeriod,
+                'hours_absent' => $hoursAbsent,
+                'remarks' => $validated['remarks'] ?? null,
+                'is_out_of_schedule' => $isOutOfSchedule,
+            ]
+        );
+
+        $enrollment->load('attendanceRecords');
+        $absentHours = $this->attendanceService->calculateStudentAbsenceHours($enrollment);
+        $overallScore = $this->attendanceService->calculateOverallScore($enrollment->attendanceRecords);
+
+        if ($request->wantsJson()) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Attendance saved.',
+                'record' => [
+                    'attendance_id' => $record->attendance_id,
+                    'status' => $record->status,
+                    'hours_absent' => $record->hours_absent,
+                    'remarks' => $record->remarks,
+                    'session_date' => $record->session_date->toDateString(),
+                    'schedule_id' => $record->schedule_id,
+                ],
+                'stats' => [
+                    'overall_score' => $overallScore,
+                    'absent_hours' => $absentHours,
+                    'presences' => $enrollment->attendanceRecords->where('status', 'present')->count(),
+                    'lates' => $enrollment->attendanceRecords->where('status', 'late')->count(),
+                    'absences' => $enrollment->attendanceRecords->where('status', 'absent')->count(),
+                    'excused' => $enrollment->attendanceRecords->where('status', 'excused')->count(),
+                ],
+            ]);
+        }
+
+        return back()->with('success', 'Attendance record updated.');
     }
 
     /**
@@ -300,7 +500,7 @@ class FacultyController extends Controller
 
         $records = $enrollment->attendanceRecords()
             ->orderBy('session_date', 'desc')
-            ->get(['attendance_id', 'session_date', 'status', 'remarks', 'is_out_of_schedule']);
+            ->get(['attendance_id', 'session_date', 'status', 'hours_absent', 'remarks', 'is_out_of_schedule']);
 
         return response()->json([
             'student_name' => $enrollment->student->fullName,

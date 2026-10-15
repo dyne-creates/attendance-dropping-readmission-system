@@ -10,6 +10,7 @@ use App\Models\FacultyMember;
 use App\Models\SchoolYear;
 use App\Models\Student;
 use App\Models\User;
+use App\Services\AttendanceService;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -330,5 +331,166 @@ class FacultyAttendanceTest extends TestCase
             'status' => 'present',
             'remarks' => 'Active participation',
         ]);
+    }
+
+    public function test_faculty_can_record_excused_attendance_and_it_does_not_count_towards_absences(): void
+    {
+        $payload = [
+            'course_id' => $this->course->course_id,
+            'session_date' => '2026-10-05',
+            'grading_period' => 'first_grading',
+            'attendance' => [
+                [
+                    'enrollment_id' => $this->enrollment->enrollment_id,
+                    'status' => 'excused',
+                    'remarks' => 'Doctor consultation with medical cert',
+                ],
+            ],
+        ];
+
+        $response = $this->actingAs($this->facultyUser)
+            ->post(route('faculty.attendance.store'), $payload);
+
+        $response->assertRedirect();
+        $response->assertSessionHas('success');
+
+        $record = AttendanceRecord::where('enrollment_id', $this->enrollment->enrollment_id)
+            ->whereDate('session_date', '2026-10-05')
+            ->first();
+
+        $this->assertNotNull($record);
+        $this->assertEquals('excused', $record->status);
+        $this->assertEquals('Doctor consultation with medical cert', $record->remarks);
+
+        // Excused attendance does NOT contribute to absence hours
+        $service = app(AttendanceService::class);
+        $absenceHours = $service->calculateStudentAbsenceHours($this->enrollment->fresh());
+        $this->assertEquals(0.0, $absenceHours);
+    }
+
+    public function test_faculty_can_record_absent_attendance_with_custom_hours_absent(): void
+    {
+        $payload = [
+            'course_id' => $this->course->course_id,
+            'session_date' => '2026-10-05',
+            'grading_period' => 'first_grading',
+            'attendance' => [
+                [
+                    'enrollment_id' => $this->enrollment->enrollment_id,
+                    'status' => 'absent',
+                    'hours_absent' => 2.5,
+                    'remarks' => 'Left early after 30 mins',
+                ],
+            ],
+        ];
+
+        $response = $this->actingAs($this->facultyUser)
+            ->post(route('faculty.attendance.store'), $payload);
+
+        $response->assertRedirect();
+
+        $record = AttendanceRecord::where('enrollment_id', $this->enrollment->enrollment_id)
+            ->whereDate('session_date', '2026-10-05')
+            ->first();
+
+        $this->assertNotNull($record);
+        $this->assertEquals('absent', $record->status);
+        $this->assertEquals(2.5, $record->hours_absent);
+
+        // Service uses the custom hours_absent
+        $service = app(AttendanceService::class);
+        $absenceHours = $service->calculateStudentAbsenceHours($this->enrollment->fresh());
+        $this->assertEquals(2.5, $absenceHours);
+    }
+
+    public function test_faculty_can_record_single_attendance_via_json_endpoint(): void
+    {
+        $payload = [
+            'course_id' => $this->course->course_id,
+            'enrollment_id' => $this->enrollment->enrollment_id,
+            'session_date' => '2026-10-05',
+            'status' => 'absent',
+            'hours_absent' => 1.0,
+            'remarks' => 'Partial absence',
+            'grading_period' => 'first_grading',
+        ];
+
+        $response = $this->actingAs($this->facultyUser)
+            ->postJson(route('faculty.attendance.record'), $payload);
+
+        $response->assertStatus(200);
+        $response->assertJson([
+            'success' => true,
+            'record' => [
+                'status' => 'absent',
+                'hours_absent' => 1.0,
+                'remarks' => 'Partial absence',
+            ],
+        ]);
+
+        $record = AttendanceRecord::where('enrollment_id', $this->enrollment->enrollment_id)
+            ->whereDate('session_date', '2026-10-05')
+            ->first();
+
+        $this->assertNotNull($record);
+        $this->assertEquals('absent', $record->status);
+        $this->assertEquals(1.0, $record->hours_absent);
+    }
+
+    public function test_blackboard_overall_attendance_score_calculation(): void
+    {
+        $service = app(AttendanceService::class);
+
+        // Case 1: All present -> 100
+        $records = collect([
+            new AttendanceRecord(['status' => 'present']),
+            new AttendanceRecord(['status' => 'present']),
+        ]);
+        $this->assertEquals(100.0, $service->calculateOverallScore($records));
+
+        // Case 2: 6 present, 1 absent -> 6 / 7 = 85.71 (Matches row 3 in Blackboard Image 2!)
+        $records = collect([
+            new AttendanceRecord(['status' => 'present']),
+            new AttendanceRecord(['status' => 'absent']),
+            new AttendanceRecord(['status' => 'present']),
+            new AttendanceRecord(['status' => 'present']),
+            new AttendanceRecord(['status' => 'present']),
+            new AttendanceRecord(['status' => 'present']),
+            new AttendanceRecord(['status' => 'present']),
+        ]);
+        $this->assertEquals(85.71, $service->calculateOverallScore($records));
+
+        // Case 3: 5 present, 1 late, 1 excused -> 5.5 / 6 = 91.67 (Excused is exempt!)
+        $records = collect([
+            new AttendanceRecord(['status' => 'present']),
+            new AttendanceRecord(['status' => 'present']),
+            new AttendanceRecord(['status' => 'present']),
+            new AttendanceRecord(['status' => 'late']),
+            new AttendanceRecord(['status' => 'excused']),
+            new AttendanceRecord(['status' => 'present']),
+            new AttendanceRecord(['status' => 'present']),
+        ]);
+        $this->assertEquals(91.67, $service->calculateOverallScore($records));
+    }
+
+    public function test_dashboard_displays_blackboard_overall_grid_and_pills(): void
+    {
+        AttendanceRecord::create([
+            'enrollment_id' => $this->enrollment->enrollment_id,
+            'recorded_by' => $this->faculty->faculty_id,
+            'session_date' => '2026-10-05',
+            'status' => 'present',
+            'grading_period' => 'first_grading',
+            'is_out_of_schedule' => false,
+        ]);
+
+        $response = $this->actingAs($this->facultyUser)
+            ->get(route('faculty.dashboard', ['course_id' => $this->course->course_id, 'tab' => 'overall']));
+
+        $response->assertStatus(200);
+        $response->assertSee('Overall');
+        $response->assertSee('100 / 100');
+        $response->assertSee('Present');
+        $response->assertSee('bb-grid-table', false);
     }
 }

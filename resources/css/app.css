@@ -505,6 +505,7 @@
     .seg-input:checked + .seg-present { position: relative; background-color: var(--ok);   border-color: var(--ok);   color: #ffffff; }
     .seg-input:checked + .seg-late    { position: relative; background-color: var(--warn); border-color: var(--warn); color: #ffffff; }
     .seg-input:checked + .seg-absent  { position: relative; background-color: var(--bad);  border-color: var(--bad);  color: #ffffff; }
+    .seg-input:checked + .seg-excused { position: relative; background-color: #475569; border-color: #475569; color: #ffffff; }
 }
 
 /* ==========================================================================
@@ -555,6 +556,7 @@
     .tick-present { background-color: var(--ok); }
     .tick-late    { background-color: var(--warn); }
     .tick-absent  { background-color: var(--bad); }
+    .tick-excused { background-color: #64748b; }
     .tick-key {
         display: inline-block;
         width: 0.625rem;
@@ -596,4 +598,262 @@
     /* Centered table column (beats .data-table th/td alignment) */
     .data-table th.is-center,
     .data-table td.is-center { text-align: center; }
+
+    /* ----- Blackboard Attendance Grid Styles ------------------------------ */
+    .bb-grid-table {
+        border-collapse: collapse;
+        width: 100%;
+        font-size: 0.8125rem;
+    }
+
+    .bb-cell {
+        border: 1px solid var(--border);
+        transition: background-color 150ms ease;
+    }
+
+    .bb-cell-late {
+        background-color: #fffde7;
+    }
+    .dark .bb-cell-late {
+        background-color: rgb(234 179 8 / 0.12);
+    }
+
+    .bb-header-active {
+        background-color: #faf5ff;
+        border-color: #e9d5ff !important;
+        color: #6b21a8;
+    }
+    .dark .bb-header-active {
+        background-color: rgb(168 85 247 / 0.12);
+        border-color: rgb(168 85 247 / 0.3) !important;
+        color: #d8b4fe;
+    }
+
+    .bb-pill {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0.25rem 0.75rem;
+        border-radius: 9999px;
+        font-size: 0.75rem;
+        line-height: 1rem;
+        font-weight: 700;
+        letter-spacing: -0.01em;
+        min-width: 5.5rem;
+    }
+
+    .bb-pill-green {
+        background-color: #22c55e;
+        color: #052e16;
+    }
+    .bb-pill-lime {
+        background-color: #bef264;
+        color: #1a2e05;
+    }
+    .bb-pill-yellow {
+        background-color: #fde047;
+        color: #422006;
+    }
+    .bb-pill-red {
+        background-color: #f87171;
+        color: #450a0a;
+    }
+
+    /* Blackboard Meeting Status Buttons */
+    .bb-status-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.375rem;
+        padding: 0.4rem 0.75rem;
+        border: 1px solid var(--border-input);
+        border-radius: 0.375rem;
+        background-color: var(--surface);
+        color: var(--text-muted);
+        font-size: 0.75rem;
+        line-height: 1rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 150ms ease;
+    }
+    .bb-status-btn:hover {
+        background-color: var(--bg-alt);
+        color: var(--text);
+        border-color: var(--text-muted);
+    }
+
+    .bb-status-btn-present-active {
+        background-color: #15803d !important;
+        border-color: #15803d !important;
+        color: #ffffff !important;
+        box-shadow: 0 0 0 2px rgba(21, 128, 61, 0.25);
+    }
+    .bb-status-btn-late-active {
+        background-color: #d97706 !important;
+        border-color: #d97706 !important;
+        color: #ffffff !important;
+        box-shadow: 0 0 0 2px rgba(217, 119, 6, 0.25);
+    }
+    .bb-status-btn-absent-active {
+        background-color: #dc2626 !important;
+        border-color: #dc2626 !important;
+        color: #ffffff !important;
+        box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.25);
+    }
+    .bb-status-btn-excused-active {
+        background-color: #475569 !important;
+        border-color: #475569 !important;
+        color: #ffffff !important;
+        box-shadow: 0 0 0 2px rgba(71, 85, 105, 0.25);
+    }
+
+    /* Blackboard View Segmented Toggle */
+    .bb-view-toggle {
+        display: inline-flex;
+        border: 1px solid var(--border-input);
+        border-radius: 0.25rem;
+        overflow: hidden;
+        background-color: var(--surface);
+    }
+
+    .bb-view-btn {
+        padding: 0.4rem 1.15rem;
+        font-size: 0.8125rem;
+        font-weight: 500;
+        color: var(--text);
+        text-decoration: none;
+        background-color: var(--surface);
+        border-right: 1px solid var(--border-input);
+        transition: background-color 150ms ease, color 150ms ease;
+    }
+
+    .bb-view-btn:last-child {
+        border-right: none;
+    }
+
+    .bb-view-btn:hover {
+        background-color: var(--bg-alt);
+    }
+
+    .bb-view-btn-active {
+        background-color: #1e1e1e !important;
+        color: #ffffff !important;
+        font-weight: 600;
+    }
+    .dark .bb-view-btn-active {
+        background-color: #f3f4f6 !important;
+        color: #111827 !important;
+    }
+
+    /* Blackboard Meeting Today Pill */
+    .bb-today-pill {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 4.25rem;
+        padding: 0.2rem 0.75rem;
+        border-radius: 9999px;
+        font-size: 0.75rem;
+        line-height: 1.125rem;
+        font-weight: 600;
+        letter-spacing: -0.01em;
+        transition: all 150ms ease;
+    }
+
+    .bb-today-pill-empty {
+        border: 1.5px solid #1f2937;
+        background-color: transparent;
+        color: #1f2937;
+    }
+    .dark .bb-today-pill-empty {
+        border-color: #d1d5db;
+        color: #f3f4f6;
+    }
+
+    .bb-today-pill-present {
+        border: 1.5px solid #16a34a;
+        background-color: #f0fdf4;
+        color: #15803d;
+    }
+    .dark .bb-today-pill-present {
+        border-color: #22c55e;
+        background-color: rgba(34, 197, 94, 0.15);
+        color: #86efac;
+    }
+
+    .bb-today-pill-late {
+        border: 1.5px solid #eab308;
+        background-color: #fffde7;
+        color: #854d0e;
+    }
+    .dark .bb-today-pill-late {
+        border-color: #facc15;
+        background-color: rgba(250, 204, 21, 0.15);
+        color: #fef08a;
+    }
+
+    .bb-today-pill-absent {
+        border: 1.5px solid #ef4444;
+        background-color: #fef2f2;
+        color: #b91c1c;
+    }
+    .dark .bb-today-pill-absent {
+        border-color: #f87171;
+        background-color: rgba(248, 113, 113, 0.15);
+        color: #fca5a5;
+    }
+
+    .bb-today-pill-excused {
+        border: 1.5px solid #64748b;
+        background-color: #f8fafc;
+        color: #334155;
+    }
+    .dark .bb-today-pill-excused {
+        border-color: #94a3b8;
+        background-color: rgba(148, 163, 184, 0.15);
+        color: #cbd5e1;
+    }
+
+    /* Blackboard Meeting Grid Cell Interactive States */
+    .bb-meeting-cell {
+        border: 1px solid var(--border);
+        transition: background-color 120ms ease, color 120ms ease;
+        user-select: none;
+    }
+
+    .bb-meeting-cell-active-present {
+        background-color: #f0fdf4 !important;
+        color: #15803d !important;
+    }
+    .dark .bb-meeting-cell-active-present {
+        background-color: rgba(34, 197, 94, 0.18) !important;
+        color: #86efac !important;
+    }
+
+    .bb-meeting-cell-active-late {
+        background-color: #fffde7 !important;
+        color: #854d0e !important;
+    }
+    .dark .bb-meeting-cell-active-late {
+        background-color: rgba(234, 179, 8, 0.18) !important;
+        color: #fef08a !important;
+    }
+
+    .bb-meeting-cell-active-absent {
+        background-color: #fef2f2 !important;
+        color: #b91c1c !important;
+    }
+    .dark .bb-meeting-cell-active-absent {
+        background-color: rgba(239, 68, 68, 0.18) !important;
+        color: #fca5a5 !important;
+    }
+
+    .bb-meeting-cell-active-excused {
+        background-color: #f1f5f9 !important;
+        color: #334155 !important;
+    }
+    .dark .bb-meeting-cell-active-excused {
+        background-color: rgba(100, 116, 139, 0.18) !important;
+        color: #cbd5e1 !important;
+    }
 }

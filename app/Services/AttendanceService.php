@@ -74,10 +74,49 @@ class AttendanceService
         $totalHours = 0.0;
 
         foreach ($absentRecords as $record) {
-            $totalHours += $this->calculateSessionHours($course, $record->session_date);
+            if ($record->status === 'absent') {
+                $hours = $record->hours_absent !== null
+                    ? (float) $record->hours_absent
+                    : $this->calculateSessionHours($course, $record->session_date);
+                $totalHours += $hours;
+            }
         }
 
         return round($totalHours, 2);
+    }
+
+    /**
+     * Calculate the Blackboard-style overall attendance score percentage (0 to 100).
+     * Formula:
+     * - Present = 1.0
+     * - Late = 0.5
+     * - Absent = 0.0
+     * - Excused = exempt (excluded from points earned and points possible)
+     */
+    public function calculateOverallScore(iterable $attendanceRecords): float
+    {
+        $earned = 0.0;
+        $possible = 0.0;
+
+        foreach ($attendanceRecords as $record) {
+            if ($record->status === 'present') {
+                $earned += 1.0;
+                $possible += 1.0;
+            } elseif ($record->status === 'late') {
+                $earned += 0.5;
+                $possible += 1.0;
+            } elseif ($record->status === 'absent') {
+                $earned += 0.0;
+                $possible += 1.0;
+            }
+            // 'excused' is excluded from both earned and possible
+        }
+
+        if ($possible === 0.0) {
+            return 100.0;
+        }
+
+        return round(($earned / $possible) * 100, 2);
     }
 
     /**
