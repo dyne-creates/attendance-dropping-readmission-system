@@ -20,6 +20,14 @@ class CourseSchedule extends Model
         'room',
     ];
 
+    public function setRoomAttribute(?string $room): void
+    {
+        $normalizedRoom = trim((string) $room);
+
+        $this->attributes['room'] = $normalizedRoom === '' ? null : $normalizedRoom;
+        $this->attributes['room_key'] = $normalizedRoom === '' ? null : mb_strtolower($normalizedRoom);
+    }
+
     /** The course this meeting slot belongs to. */
     public function course(): BelongsTo
     {

@@ -25,6 +25,7 @@
                             <th scope="col">Channel</th>
                             <th scope="col">Status</th>
                             <th scope="col">Processed</th>
+                            <th scope="col">Form</th>
                         </tr>
                     </thead>
 
@@ -56,10 +57,16 @@
                                 </td>
 
                                 <td>{{ $record->processed_date ? Carbon\Carbon::parse($record->processed_date)->format('M d, Y') : '—' }}</td>
+                                <td>
+                                    <a href="{{ route('osa.readmissions.show', $record->readmission_id) }}"
+                                       class="btn btn-secondary btn-sm">
+                                        View attempt {{ $record->attempt_number }}
+                                    </a>
+                                </td>
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="6" class="py-12 text-center muted">
+                                <td colspan="7" class="py-12 text-center muted">
                                     No processed readmission requests found.
                                 </td>
                             </tr>

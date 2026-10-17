@@ -31,9 +31,11 @@ class ReadmissionRequest extends Model
 
     protected $fillable = [
         'drop_id',
+        'attempt_number',
         'processed_by',
         'reason_code',
         'reason_details',
+        'rejection_reason',
         'policy_acknowledged_at',
         'channel',
         // 'pending' | 'approved' | 'rejected' — defaults to 'pending'
@@ -45,6 +47,7 @@ class ReadmissionRequest extends Model
     protected function casts(): array
     {
         return [
+            'attempt_number' => 'integer',
             'notice_sent_date' => 'date',
             'processed_date' => 'date',
             'policy_acknowledged_at' => 'datetime',

@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\AttendanceRecord;
 use App\Models\Course;
 use App\Models\CourseSchedule;
+use App\Models\DroppingTransaction;
 use App\Models\Enrollment;
 use App\Models\FacultyMember;
 use App\Models\SchoolYear;
@@ -12,6 +13,7 @@ use App\Models\Student;
 use App\Models\User;
 use App\Services\AttendanceService;
 use Carbon\Carbon;
+use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -114,6 +116,383 @@ class FacultyAttendanceTest extends TestCase
         $response->assertSee('CS 101');
         $response->assertSee('John Doe');
         $response->assertSee('Attendance records do not automatically drop students.');
+        $response->assertSee('Add Schedule Slot');
+        $response->assertSee('Attendance settings');
+        $response->assertSee('Attendance Settings');
+        $response->assertSee('settings-grading-period');
+        $response->assertSee('View Overall Blackboard Grid');
+    }
+
+    public function test_faculty_can_create_a_subject_with_a_schedule_slot(): void
+    {
+        $this->actingAs($this->facultyUser)
+            ->get(route('faculty.courses.create'))
+            ->assertSee('text-gray-900 dark:text-gray-900')
+            ->assertSee("day_of_week: 'Mon'", false);
+
+        $response = $this->actingAs($this->facultyUser)
+            ->post(route('faculty.courses.store'), [
+                'course_name' => 'New Subject',
+                'subject_code' => 'CS 202',
+                'section' => 'CS2A',
+                'hours_per_week' => 3,
+                'total_semester_hours' => 54,
+                'school_year_id' => $this->course->school_year_id,
+                'schedules' => [
+                    [
+                        'day_of_week' => 'Mon',
+                        'start_time' => '08:30',
+                        'end_time' => '10:00',
+                        'room' => 'CS-201',
+                    ],
+                ],
+            ]);
+
+        $response->assertRedirect(route('faculty.dashboard'));
+        $createdCourse = Course::where('subject_code', 'CS 202')->firstOrFail();
+        $schedule = $createdCourse->schedules()->firstOrFail();
+
+        $this->assertSame('Mon', $schedule->day_of_week);
+        $this->assertSame('08:30', Carbon::parse($schedule->start_time)->format('H:i'));
+        $this->assertSame('10:00', Carbon::parse($schedule->end_time)->format('H:i'));
+        $this->assertSame('CS-201', $schedule->room);
+    }
+
+    public function test_subject_creation_rejects_duplicate_schedule_slots_but_allows_another_subject_to_share_a_time(): void
+    {
+        $duplicateSchedule = [
+            'day_of_week' => 'Mon',
+            'start_time' => '08:30',
+            'end_time' => '10:00',
+        ];
+
+        $response = $this->actingAs($this->facultyUser)
+            ->from(route('faculty.courses.create'))
+            ->post(route('faculty.courses.store'), [
+                'course_name' => 'Duplicate Subject',
+                'subject_code' => 'CS 202',
+                'section' => 'CS2A',
+                'hours_per_week' => 3,
+                'total_semester_hours' => 54,
+                'school_year_id' => $this->course->school_year_id,
+                'schedules' => [
+                    $duplicateSchedule + ['room' => 'CS-201'],
+                    $duplicateSchedule + ['room' => 'CS-202'],
+                ],
+            ]);
+
+        $response->assertRedirect(route('faculty.courses.create'));
+        $response->assertSessionHasErrors('schedules.1.start_time');
+        $this->assertDatabaseMissing('courses', ['subject_code' => 'CS 202']);
+        $this->assertDatabaseCount('course_schedules', 2);
+
+        $validResponse = $this->actingAs($this->facultyUser)
+            ->post(route('faculty.courses.store'), [
+                'course_name' => 'Another Subject',
+                'subject_code' => 'CS 203',
+                'section' => 'CS2B',
+                'hours_per_week' => 3,
+                'total_semester_hours' => 54,
+                'school_year_id' => $this->course->school_year_id,
+                'schedules' => [$duplicateSchedule],
+            ]);
+
+        $validResponse->assertRedirect(route('faculty.dashboard'));
+        $this->assertDatabaseHas('course_schedules', [
+            'course_id' => Course::where('subject_code', 'CS 203')->firstOrFail()->course_id,
+            'day_of_week' => 'Mon',
+        ]);
+        $sharedTimeSchedule = Course::where('subject_code', 'CS 203')->firstOrFail()->schedules()->firstOrFail();
+        $this->assertSame('08:30', Carbon::parse($sharedTimeSchedule->start_time)->format('H:i'));
+        $this->assertSame('10:00', Carbon::parse($sharedTimeSchedule->end_time)->format('H:i'));
+    }
+
+    public function test_subject_creation_rejects_a_room_already_reserved_by_another_subject(): void
+    {
+        $response = $this->actingAs($this->facultyUser)
+            ->from(route('faculty.courses.create'))
+            ->post(route('faculty.courses.store'), [
+                'course_name' => 'Room Conflict',
+                'subject_code' => 'CS 204',
+                'section' => 'CS2C',
+                'hours_per_week' => 3,
+                'total_semester_hours' => 54,
+                'school_year_id' => $this->course->school_year_id,
+                'schedules' => [[
+                    'day_of_week' => 'Mon',
+                    'start_time' => '08:30',
+                    'end_time' => '10:00',
+                    'room' => ' f-401 ',
+                ]],
+            ]);
+
+        $response->assertRedirect(route('faculty.courses.create'));
+        $response->assertSessionHasErrors('schedules.0.room');
+        $this->assertDatabaseMissing('courses', ['subject_code' => 'CS 204']);
+        $this->assertDatabaseCount('course_schedules', 2);
+    }
+
+    public function test_subject_creation_allows_a_different_room_or_a_different_day_or_time(): void
+    {
+        $response = $this->actingAs($this->facultyUser)
+            ->post(route('faculty.courses.store'), [
+                'course_name' => 'Available Room Slots',
+                'subject_code' => 'CS 205',
+                'section' => 'CS2D',
+                'hours_per_week' => 3,
+                'total_semester_hours' => 54,
+                'school_year_id' => $this->course->school_year_id,
+                'schedules' => [
+                    [
+                        'day_of_week' => 'Mon',
+                        'start_time' => '08:30',
+                        'end_time' => '10:00',
+                        'room' => 'F-402',
+                    ],
+                    [
+                        'day_of_week' => 'Tue',
+                        'start_time' => '08:30',
+                        'end_time' => '10:00',
+                        'room' => 'F-401',
+                    ],
+                    [
+                        'day_of_week' => 'Mon',
+                        'start_time' => '13:00',
+                        'end_time' => '14:00',
+                        'room' => 'F-401',
+                    ],
+                ],
+            ]);
+
+        $response->assertRedirect(route('faculty.dashboard'));
+        $this->assertSame(3, Course::where('subject_code', 'CS 205')->firstOrFail()->schedules()->count());
+    }
+
+    public function test_subject_update_rejects_duplicate_schedule_slots(): void
+    {
+        $duplicateSchedule = [
+            'day_of_week' => 'Tue',
+            'start_time' => '08:30',
+            'end_time' => '10:00',
+        ];
+
+        $response = $this->actingAs($this->facultyUser)
+            ->from(route('faculty.courses.edit', $this->course))
+            ->put(route('faculty.courses.update', $this->course), [
+                'course_name' => $this->course->course_name,
+                'subject_code' => $this->course->subject_code,
+                'section' => $this->course->section,
+                'hours_per_week' => $this->course->hours_per_week,
+                'total_semester_hours' => $this->course->total_semester_hours,
+                'school_year_id' => $this->course->school_year_id,
+                'schedules' => [$duplicateSchedule, $duplicateSchedule],
+            ]);
+
+        $response->assertRedirect(route('faculty.courses.edit', $this->course));
+        $response->assertSessionHasErrors('schedules.1.start_time');
+        $this->assertSame(2, $this->course->schedules()->count());
+        $this->assertDatabaseHas('course_schedules', [
+            'course_id' => $this->course->course_id,
+            'day_of_week' => 'Mon',
+        ]);
+    }
+
+    public function test_subject_update_rejects_a_room_reserved_by_another_subject(): void
+    {
+        $otherCourse = Course::create([
+            'faculty_id' => $this->faculty->faculty_id,
+            'school_year_id' => $this->course->school_year_id,
+            'subject_code' => 'CS 206',
+            'course_name' => 'Existing Room Reservation',
+            'section' => 'CS2E',
+            'hours_per_week' => 3,
+            'total_semester_hours' => 54,
+        ]);
+
+        CourseSchedule::create([
+            'course_id' => $otherCourse->course_id,
+            'day_of_week' => 'Tue',
+            'start_time' => '08:30:00',
+            'end_time' => '10:00:00',
+            'room' => 'F-401',
+        ]);
+
+        $response = $this->actingAs($this->facultyUser)
+            ->from(route('faculty.courses.edit', $this->course))
+            ->put(route('faculty.courses.update', $this->course), [
+                'course_name' => $this->course->course_name,
+                'subject_code' => $this->course->subject_code,
+                'section' => $this->course->section,
+                'hours_per_week' => $this->course->hours_per_week,
+                'total_semester_hours' => $this->course->total_semester_hours,
+                'school_year_id' => $this->course->school_year_id,
+                'schedules' => [[
+                    'day_of_week' => 'Tue',
+                    'start_time' => '08:30',
+                    'end_time' => '10:00',
+                    'room' => 'F-401',
+                ]],
+            ]);
+
+        $response->assertRedirect(route('faculty.courses.edit', $this->course));
+        $response->assertSessionHasErrors('schedules.0.room');
+        $this->assertSame(2, $this->course->schedules()->count());
+    }
+
+    public function test_faculty_can_add_a_schedule_slot_without_replacing_existing_slots(): void
+    {
+        $this->actingAs($this->facultyUser)
+            ->get(route('faculty.courses.schedules.create', $this->course))
+            ->assertSee('Add Schedule Slot')
+            ->assertSee('Existing slots will be preserved.');
+
+        $response = $this->actingAs($this->facultyUser)
+            ->post(route('faculty.courses.schedules.store', $this->course), [
+                'day_of_week' => 'Fri',
+                'start_time' => '13:00',
+                'end_time' => '14:30',
+                'room' => 'F-402',
+            ]);
+
+        $response->assertRedirect(route('faculty.dashboard', [
+            'course_id' => $this->course->course_id,
+            'tab' => 'meeting',
+        ]));
+        $this->assertDatabaseHas('course_schedules', [
+            'course_id' => $this->course->course_id,
+            'day_of_week' => 'Fri',
+            'room' => 'F-402',
+        ]);
+        $addedSchedule = $this->course->schedules()->where('day_of_week', 'Fri')->firstOrFail();
+        $this->assertSame('13:00', Carbon::parse($addedSchedule->start_time)->format('H:i'));
+        $this->assertSame('14:30', Carbon::parse($addedSchedule->end_time)->format('H:i'));
+        $this->assertSame(3, $this->course->schedules()->count());
+    }
+
+    public function test_faculty_cannot_add_a_schedule_slot_to_another_facultys_subject(): void
+    {
+        $otherFacultyUser = User::factory()->faculty()->create();
+        $otherFaculty = FacultyMember::create([
+            'user_id' => $otherFacultyUser->user_id,
+            'full_name' => 'Another Professor',
+            'department' => 'School of Information Technology',
+            'suppress_schedule_warnings' => false,
+        ]);
+        $otherCourse = Course::create([
+            'faculty_id' => $otherFaculty->faculty_id,
+            'school_year_id' => $this->course->school_year_id,
+            'subject_code' => 'CS 303',
+            'course_name' => 'Another Subject',
+            'section' => 'CS3A',
+            'hours_per_week' => 3,
+            'total_semester_hours' => 54,
+        ]);
+
+        $response = $this->actingAs($this->facultyUser)
+            ->post(route('faculty.courses.schedules.store', $otherCourse), [
+                'day_of_week' => 'Fri',
+                'start_time' => '13:00',
+                'end_time' => '14:30',
+            ]);
+
+        $response->assertForbidden();
+        $this->assertDatabaseMissing('course_schedules', [
+            'course_id' => $otherCourse->course_id,
+            'day_of_week' => 'Fri',
+        ]);
+    }
+
+    public function test_schedule_slot_rejects_a_full_day_name_instead_of_the_supported_abbreviation(): void
+    {
+        $response = $this->actingAs($this->facultyUser)
+            ->from(route('faculty.courses.schedules.create', $this->course))
+            ->post(route('faculty.courses.schedules.store', $this->course), [
+                'day_of_week' => 'Friday',
+                'start_time' => '13:00',
+                'end_time' => '14:30',
+            ]);
+
+        $response->assertRedirect(route('faculty.courses.schedules.create', $this->course));
+        $response->assertSessionHasErrors('day_of_week');
+        $this->assertSame(2, $this->course->schedules()->count());
+    }
+
+    public function test_schedule_slot_cannot_duplicate_an_existing_day_and_time_for_the_same_subject(): void
+    {
+        $response = $this->actingAs($this->facultyUser)
+            ->from(route('faculty.courses.schedules.create', $this->course))
+            ->post(route('faculty.courses.schedules.store', $this->course), [
+                'day_of_week' => 'Mon',
+                'start_time' => '08:30',
+                'end_time' => '10:00',
+                'room' => 'Different room does not make a different slot',
+            ]);
+
+        $response->assertRedirect(route('faculty.courses.schedules.create', $this->course));
+        $response->assertSessionHasErrors('start_time');
+        $this->assertSame(2, $this->course->schedules()->count());
+    }
+
+    public function test_schedule_slot_rejects_a_room_reserved_by_another_subject(): void
+    {
+        $otherCourse = Course::create([
+            'faculty_id' => $this->faculty->faculty_id,
+            'school_year_id' => $this->course->school_year_id,
+            'subject_code' => 'CS 207',
+            'course_name' => 'Another Subject',
+            'section' => 'CS2F',
+            'hours_per_week' => 3,
+            'total_semester_hours' => 54,
+        ]);
+
+        $response = $this->actingAs($this->facultyUser)
+            ->from(route('faculty.courses.schedules.create', $otherCourse))
+            ->post(route('faculty.courses.schedules.store', $otherCourse), [
+                'day_of_week' => 'Mon',
+                'start_time' => '08:30',
+                'end_time' => '10:00',
+                'room' => 'F-401',
+            ]);
+
+        $response->assertRedirect(route('faculty.courses.schedules.create', $otherCourse));
+        $response->assertSessionHasErrors('room');
+        $this->assertSame(0, $otherCourse->schedules()->count());
+    }
+
+    public function test_database_rejects_duplicate_schedule_slots_for_the_same_subject(): void
+    {
+        $this->expectException(QueryException::class);
+
+        CourseSchedule::create([
+            'course_id' => $this->course->course_id,
+            'day_of_week' => 'Mon',
+            'start_time' => '08:30:00',
+            'end_time' => '10:00:00',
+            'room' => 'Different room',
+        ]);
+    }
+
+    public function test_database_rejects_an_exact_room_and_time_reservation_for_another_subject(): void
+    {
+        $otherCourse = Course::create([
+            'faculty_id' => $this->faculty->faculty_id,
+            'school_year_id' => $this->course->school_year_id,
+            'subject_code' => 'CS 208',
+            'course_name' => 'Another Subject',
+            'section' => 'CS2G',
+            'hours_per_week' => 3,
+            'total_semester_hours' => 54,
+        ]);
+
+        $this->expectException(QueryException::class);
+
+        CourseSchedule::create([
+            'course_id' => $otherCourse->course_id,
+            'day_of_week' => 'Mon',
+            'start_time' => '08:30:00',
+            'end_time' => '10:00:00',
+            'room' => ' f-401 ',
+        ]);
     }
 
     public function test_student_cannot_access_faculty_dashboard(): void
@@ -284,9 +663,92 @@ class FacultyAttendanceTest extends TestCase
         ]);
     }
 
-    public function test_faculty_can_manually_drop_student(): void
+    public function test_faculty_cannot_drop_student_before_the_absence_limit(): void
     {
-        // The faculty can make the decision before any absence threshold is reached.
+        AttendanceRecord::create([
+            'enrollment_id' => $this->enrollment->enrollment_id,
+            'recorded_by' => $this->faculty->faculty_id,
+            'session_date' => '2026-10-05',
+            'status' => 'absent',
+            'hours_absent' => 10.79,
+            'is_out_of_schedule' => false,
+        ]);
+
+        $response = $this->actingAs($this->facultyUser)
+            ->get(route('faculty.dashboard', ['course_id' => $this->course->course_id]))
+            ->assertViewHas('enrollmentRows', fn ($rows): bool => $rows->first()['is_drop_eligible'] === false);
+
+        $response = $this->actingAs($this->facultyUser)
+            ->post(route('faculty.enrollments.drop', $this->enrollment));
+
+        $response->assertRedirect();
+        $response->assertSessionHas('error', 'This student can be dropped after reaching 10.80 absent hours; current total is 10.79 hours.');
+        $this->assertSame('enrolled', $this->enrollment->fresh()->status);
+        $this->assertDatabaseMissing('dropping_transactions', [
+            'enrollment_id' => $this->enrollment->enrollment_id,
+        ]);
+        $this->assertDatabaseMissing('notifications', [
+            'student_id' => $this->student->student_id,
+            'notification_type' => 'student_dropped',
+        ]);
+    }
+
+    public function test_zero_overall_score_does_not_replace_the_twenty_percent_absence_threshold(): void
+    {
+        AttendanceRecord::create([
+            'enrollment_id' => $this->enrollment->enrollment_id,
+            'recorded_by' => $this->faculty->faculty_id,
+            'session_date' => '2026-10-05',
+            'status' => 'absent',
+            'hours_absent' => 1.5,
+            'is_out_of_schedule' => false,
+        ]);
+
+        $response = $this->actingAs($this->facultyUser)
+            ->get(route('faculty.dashboard', ['course_id' => $this->course->course_id]));
+
+        $response->assertViewHas('enrollmentRows', fn ($rows): bool => $rows->first()['is_drop_eligible'] === false);
+        $response->assertSeeText('Absence threshold:');
+        $response->assertSee('2.78', false);
+        $response->assertSee('20.00%', false);
+        $response->assertSee('0 / 100');
+        $this->assertSame('enrolled', $this->enrollment->fresh()->status);
+    }
+
+    public function test_ajax_attendance_update_reports_drop_eligibility_at_the_twenty_percent_threshold(): void
+    {
+        $response = $this->actingAs($this->facultyUser)
+            ->postJson(route('faculty.attendance.record'), [
+                'course_id' => $this->course->course_id,
+                'enrollment_id' => $this->enrollment->enrollment_id,
+                'session_date' => '2026-10-05',
+                'status' => 'absent',
+                'hours_absent' => 10.8,
+                'grading_period' => 'first_grading',
+            ]);
+
+        $response->assertOk()
+            ->assertJsonPath('stats.absence_percentage', 20)
+            ->assertJsonPath('stats.maximum_absence_percentage', 20)
+            ->assertJsonPath('stats.is_drop_eligible', true);
+        $this->assertSame('enrolled', $this->enrollment->fresh()->status);
+    }
+
+    public function test_faculty_can_drop_student_after_the_absence_limit_is_reached(): void
+    {
+        AttendanceRecord::create([
+            'enrollment_id' => $this->enrollment->enrollment_id,
+            'recorded_by' => $this->faculty->faculty_id,
+            'session_date' => '2026-10-05',
+            'status' => 'absent',
+            'hours_absent' => 10.8,
+            'is_out_of_schedule' => false,
+        ]);
+
+        $this->actingAs($this->facultyUser)
+            ->get(route('faculty.dashboard', ['course_id' => $this->course->course_id]))
+            ->assertSee('Drop student');
+
         $response = $this->actingAs($this->facultyUser)
             ->post(route('faculty.enrollments.drop', $this->enrollment));
 
@@ -302,6 +764,197 @@ class FacultyAttendanceTest extends TestCase
             'student_id' => $this->student->student_id,
             'notification_type' => 'student_dropped',
         ]);
+    }
+
+    public function test_overall_and_meeting_views_share_attendance_per_schedule_slot(): void
+    {
+        $secondSlot = CourseSchedule::create([
+            'course_id' => $this->course->course_id,
+            'day_of_week' => 'Mon',
+            'start_time' => '10:30:00',
+            'end_time' => '12:00:00',
+            'room' => 'F-402',
+        ]);
+        $firstSlot = $this->course->schedules()->where('start_time', '08:30:00')->firstOrFail();
+        $sessionDate = '2026-10-05';
+
+        $this->actingAs($this->facultyUser)
+            ->postJson(route('faculty.attendance.record'), [
+                'course_id' => $this->course->course_id,
+                'enrollment_id' => $this->enrollment->enrollment_id,
+                'session_date' => $sessionDate,
+                'schedule_id' => $firstSlot->schedule_id,
+                'status' => 'present',
+                'grading_period' => 'first_grading',
+            ])
+            ->assertOk();
+
+        $this->actingAs($this->facultyUser)
+            ->postJson(route('faculty.attendance.record'), [
+                'course_id' => $this->course->course_id,
+                'enrollment_id' => $this->enrollment->enrollment_id,
+                'session_date' => $sessionDate,
+                'schedule_id' => $firstSlot->schedule_id,
+                'status' => 'late',
+                'grading_period' => 'first_grading',
+            ])
+            ->assertOk()
+            ->assertJsonPath('record.status', 'late');
+
+        $this->actingAs($this->facultyUser)
+            ->postJson(route('faculty.attendance.record'), [
+                'course_id' => $this->course->course_id,
+                'enrollment_id' => $this->enrollment->enrollment_id,
+                'session_date' => $sessionDate,
+                'schedule_id' => $secondSlot->schedule_id,
+                'status' => 'absent',
+                'hours_absent' => 1.5,
+                'grading_period' => 'first_grading',
+            ])
+            ->assertOk()
+            ->assertJsonPath('record.status', 'absent');
+
+        $this->assertSame(2, AttendanceRecord::where('enrollment_id', $this->enrollment->enrollment_id)
+            ->whereDate('session_date', $sessionDate)
+            ->count());
+        $this->assertSame('late', AttendanceRecord::where('enrollment_id', $this->enrollment->enrollment_id)
+            ->whereDate('session_date', $sessionDate)
+            ->where('schedule_id', $firstSlot->schedule_id)
+            ->firstOrFail()
+            ->status);
+
+        $overallResponse = $this->actingAs($this->facultyUser)
+            ->get(route('faculty.dashboard', [
+                'course_id' => $this->course->course_id,
+                'date' => $sessionDate,
+                'tab' => 'overall',
+            ]));
+        $overallResponse->assertSee('bb-cell-late');
+        $overallResponse->assertSee('cell-'.$this->enrollment->enrollment_id.'-'.$sessionDate.'-'.$firstSlot->schedule_id);
+        $overallResponse->assertSee('cell-'.$this->enrollment->enrollment_id.'-'.$sessionDate.'-'.$secondSlot->schedule_id);
+
+        $meetingResponse = $this->actingAs($this->facultyUser)
+            ->get(route('faculty.dashboard', [
+                'course_id' => $this->course->course_id,
+                'date' => $sessionDate,
+                'schedule_id' => $firstSlot->schedule_id,
+                'tab' => 'meeting',
+            ]));
+        $meetingResponse->assertViewHas('enrollmentRows', fn ($rows): bool => $rows->first()['today_status'] === 'late');
+
+        $secondMeetingResponse = $this->actingAs($this->facultyUser)
+            ->get(route('faculty.dashboard', [
+                'course_id' => $this->course->course_id,
+                'date' => $sessionDate,
+                'schedule_id' => $secondSlot->schedule_id,
+                'tab' => 'meeting',
+            ]));
+        $secondMeetingResponse->assertViewHas('enrollmentRows', fn ($rows): bool => $rows->first()['today_status'] === 'absent');
+    }
+
+    public function test_overall_view_shows_drop_count_and_selected_meeting_actions(): void
+    {
+        DroppingTransaction::create([
+            'enrollment_id' => $this->enrollment->enrollment_id,
+            'dropped_by' => $this->faculty->faculty_id,
+            'absence_hours_at_drop' => 2,
+            'sequence_in_cycle' => 1,
+            'drop_date' => '2026-10-01',
+        ]);
+
+        $this->actingAs($this->facultyUser)
+            ->get(route('faculty.dashboard', [
+                'course_id' => $this->course->course_id,
+                'date' => '2026-10-05',
+                'tab' => 'overall',
+            ]))
+            ->assertViewHas('enrollmentRows', fn ($rows): bool => $rows->first()['drop_count'] === 1)
+            ->assertSee('Drops')
+            ->assertSee('Mark all present')
+            ->assertSee('Mark all absent')
+            ->assertSee('Clear marks')
+            ->assertSee('Exempt meeting')
+            ->assertSee('Delete meeting');
+    }
+
+    public function test_faculty_can_clear_only_the_selected_dated_meeting_marks(): void
+    {
+        $mondaySchedule = $this->course->schedules()->where('day_of_week', 'Mon')->firstOrFail();
+        $wednesdaySchedule = $this->course->schedules()->where('day_of_week', 'Wed')->firstOrFail();
+        $mondayRecord = AttendanceRecord::create([
+            'enrollment_id' => $this->enrollment->enrollment_id,
+            'recorded_by' => $this->faculty->faculty_id,
+            'session_date' => '2026-10-05',
+            'schedule_id' => $mondaySchedule->schedule_id,
+            'grading_period' => 'first_grading',
+            'status' => 'present',
+        ]);
+        $wednesdayRecord = AttendanceRecord::create([
+            'enrollment_id' => $this->enrollment->enrollment_id,
+            'recorded_by' => $this->faculty->faculty_id,
+            'session_date' => '2026-10-07',
+            'schedule_id' => $wednesdaySchedule->schedule_id,
+            'grading_period' => 'first_grading',
+            'status' => 'absent',
+            'hours_absent' => 1.5,
+        ]);
+
+        $this->actingAs($this->facultyUser)
+            ->delete(route('faculty.attendance.meeting.clear'), [
+                'course_id' => $this->course->course_id,
+                'session_date' => '2026-10-05',
+                'schedule_id' => $mondaySchedule->schedule_id,
+            ])
+            ->assertRedirect();
+
+        $this->assertDatabaseMissing('attendance_records', ['attendance_id' => $mondayRecord->attendance_id]);
+        $this->assertDatabaseHas('attendance_records', ['attendance_id' => $wednesdayRecord->attendance_id]);
+        $this->assertDatabaseMissing('course_schedule_cancellations', [
+            'schedule_id' => $mondaySchedule->schedule_id,
+            'session_date' => '2026-10-05',
+        ]);
+    }
+
+    public function test_deleting_a_dated_meeting_cancels_only_that_occurrence(): void
+    {
+        $schedule = $this->course->schedules()->where('day_of_week', 'Mon')->firstOrFail();
+        $record = AttendanceRecord::create([
+            'enrollment_id' => $this->enrollment->enrollment_id,
+            'recorded_by' => $this->faculty->faculty_id,
+            'session_date' => '2026-10-05',
+            'schedule_id' => $schedule->schedule_id,
+            'grading_period' => 'first_grading',
+            'status' => 'present',
+        ]);
+
+        $this->actingAs($this->facultyUser)
+            ->delete(route('faculty.attendance.meeting.delete'), [
+                'course_id' => $this->course->course_id,
+                'session_date' => '2026-10-05',
+                'schedule_id' => $schedule->schedule_id,
+            ])
+            ->assertRedirect();
+
+        $this->assertDatabaseMissing('attendance_records', ['attendance_id' => $record->attendance_id]);
+        $this->assertDatabaseHas('course_schedule_cancellations', [
+            'schedule_id' => $schedule->schedule_id,
+            'session_date' => '2026-10-05',
+            'cancelled_by' => $this->faculty->faculty_id,
+        ]);
+        $this->assertDatabaseCount('course_schedules', 2);
+
+        $this->actingAs($this->facultyUser)
+            ->postJson(route('faculty.attendance.record'), [
+                'course_id' => $this->course->course_id,
+                'enrollment_id' => $this->enrollment->enrollment_id,
+                'session_date' => '2026-10-05',
+                'schedule_id' => $schedule->schedule_id,
+                'status' => 'present',
+                'grading_period' => 'first_grading',
+            ])
+            ->assertUnprocessable();
+
+        $this->assertDatabaseCount('attendance_records', 0);
     }
 
     public function test_student_attendance_history_endpoint_returns_json(): void

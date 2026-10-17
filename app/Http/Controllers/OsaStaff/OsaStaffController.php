@@ -5,10 +5,12 @@ namespace App\Http\Controllers\OsaStaff;
 use App\Http\Controllers\Controller;
 use App\Mail\ReadmissionDecisionMail;
 use App\Models\ExcuseDocument;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class OsaStaffController extends Controller
@@ -220,6 +222,16 @@ class OsaStaffController extends Controller
         return Storage::disk('local')->download($document->file_path);
     }
 
+    public function previewExcuseDocument(ExcuseDocument $document): BinaryFileResponse
+    {
+        abort_unless(Storage::disk('local')->exists($document->file_path), 404);
+
+        return response()->file(Storage::disk('local')->path($document->file_path), [
+            'Content-Type' => Storage::disk('local')->mimeType($document->file_path) ?? 'application/octet-stream',
+            'X-Content-Type-Options' => 'nosniff',
+        ]);
+    }
+
     public function approveReadmission(Request $request, int $id)
     {
         DB::beginTransaction();
@@ -373,7 +385,11 @@ class OsaStaffController extends Controller
     public function rejectReadmission(
         Request $request,
         int $id
-    ) {
+    ): RedirectResponse {
+        $validated = $request->validate([
+            'rejection_reason' => ['required', 'string', 'max:2000'],
+        ]);
+
         DB::beginTransaction();
 
         try {
@@ -443,6 +459,7 @@ class OsaStaffController extends Controller
                 ->where('readmission_id', $id)
                 ->update([
                     'status' => 'rejected',
+                    'rejection_reason' => $validated['rejection_reason'],
                     'processed_by' => $osaStaff->getKey(),
                     'processed_date' => now()->toDateString(),
                     'notice_sent_date' => now()->toDateString(),
@@ -455,13 +472,14 @@ class OsaStaffController extends Controller
                 'guardian_id' => null,
                 'notification_type' => 'readmission_rejected',
                 'channel' => 'email',
-                'message' => 'Your readmission request has been rejected by the OSA.',
+                'message' => 'Your readmission request has been rejected. OSA feedback: '.$validated['rejection_reason'],
                 'sent_at' => now(),
             ]);
 
             DB::commit();
 
             try {
+                $readmission->rejection_reason = $validated['rejection_reason'];
                 Mail::to($readmission->student_email)
                     ->send(new ReadmissionDecisionMail($readmission, 'rejected'));
             } catch (\Throwable $exception) {

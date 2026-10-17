@@ -120,43 +120,73 @@
             </dl>
         </section>
 
+        @if ($previousAttempts->isNotEmpty())
+            <section class="card p-5 sm:p-6" aria-labelledby="previous-attempts-heading">
+                <h2 id="previous-attempts-heading" class="text-lg font-semibold">Previous readmission attempts</h2>
+                <ol class="mt-4 space-y-3">
+                    @foreach ($previousAttempts as $previousAttempt)
+                        <li class="rounded-lg border p-4">
+                            <div class="flex flex-wrap items-center gap-2">
+                                <span class="font-medium">Attempt {{ $previousAttempt->attempt_number }}</span>
+                                <span class="badge {{ $previousAttempt->status === 'rejected' ? 'badge-danger' : 'badge-neutral' }}">
+                                    {{ ucfirst($previousAttempt->status) }}
+                                </span>
+                            </div>
+                            @if ($previousAttempt->rejection_reason)
+                                <p class="mt-2 whitespace-pre-line text-sm">
+                                    <span class="font-medium">OSA feedback:</span> {{ $previousAttempt->rejection_reason }}
+                                </p>
+                            @endif
+                        </li>
+                    @endforeach
+                </ol>
+            </section>
+        @endif
+
         <section class="card p-5 sm:p-6" aria-labelledby="absence-heading">
             <h2 id="absence-heading" class="text-lg font-semibold">Section 4: Absence and reason information</h2>
             <p class="muted mt-1 text-sm">
                 Absence dates below are taken from recorded attendance and grouped by grading period.
             </p>
 
-            <div class="mt-5 grid grid-cols-1 gap-4 md:grid-cols-3">
+            <div class="mt-5 space-y-2">
                 @foreach ($absenceDates as $period)
-                    <div class="rounded-lg border p-4">
-                        <h3 class="font-medium">{{ $period['label'] }}</h3>
+                    <details class="disclosure rounded-lg border">
+                        <summary class="flex cursor-pointer items-center justify-between gap-3 p-4">
+                            <span class="font-medium">{{ $period['label'] }}</span>
+                            <span class="badge badge-neutral">{{ $period['dates']->count() }} absent</span>
+                        </summary>
                         @if ($period['dates']->isNotEmpty())
-                            <ul class="mt-2 list-inside list-disc space-y-1 text-sm">
+                            <ul class="space-y-1 border-t px-4 py-3 text-sm">
                                 @foreach ($period['dates'] as $absence)
                                     <li>{{ $absence->session_date->format('F j, Y') }}</li>
                                 @endforeach
                             </ul>
                         @else
-                            <p class="muted mt-2 text-sm">No absences assigned to this period.</p>
+                            <p class="muted border-t px-4 py-3 text-sm">No absences assigned to this period.</p>
                         @endif
-                    </div>
+                    </details>
                 @endforeach
             </div>
 
             <p class="alert alert-warning mt-4" role="note">
                 Only absences assigned to a grading period are listed. Ask your instructor to assign a grading period
-                if an absence is missing. For additional dates, submit another request after this request is processed.
+                if an absence is missing. If a previous attempt was rejected, you may submit a revised request.
             </p>
 
             <form method="POST"
                   action="{{ route('student.readmissions.store', $enrollment) }}"
                   enctype="multipart/form-data"
-                  class="mt-6 space-y-5">
+                  class="mt-6 space-y-5"
+                  x-data="{ imagePreview: null, selectedFileName: '', attachmentRequired: @js(in_array(old('reason_code'), ['dental_medical', 'personal_family'], true)) }">
                 @csrf
+
+                <p class="muted text-sm">Submitting attempt {{ $attemptNumber }}.</p>
 
                 <div>
                     <label for="reason_code" class="field-label mb-1">Reason for absences <span aria-hidden="true">*</span></label>
-                    <select id="reason_code" name="reason_code" class="field" required>
+                    <select id="reason_code" name="reason_code" class="field" required
+                            @change="attachmentRequired = ['dental_medical', 'personal_family'].includes($event.target.value)">
                         <option value="">Select a reason</option>
                         @foreach ($reasons as $code => $label)
                             <option value="{{ $code }}" @selected(old('reason_code') === $code)>{{ $label }}</option>
@@ -176,8 +206,20 @@
                 </div>
 
                 <div>
-                    <label for="attachment" class="field-label mb-1">Supporting document <span class="muted">(optional, JPEG or PNG only)</span></label>
-                    <input id="attachment" name="attachment" type="file" accept=".jpg,.jpeg,.png,image/jpeg,image/png" class="field">
+                    <label for="attachment" class="field-label mb-1">
+                        Supporting document
+                        <span class="muted">(required for dental/medical and personal/family emergencies; JPEG or PNG only)</span>
+                    </label>
+                    <input id="attachment" name="attachment" type="file" accept=".jpg,.jpeg,.png,image/jpeg,image/png"
+                           class="field" :required="attachmentRequired"
+                           @change="
+                               const file = $event.target.files[0];
+                               selectedFileName = file ? file.name : '';
+                               imagePreview = file ? URL.createObjectURL(file) : null;
+                           ">
+                    <p class="muted mt-1 text-sm" x-text="selectedFileName || 'No image selected.'"></p>
+                    <img x-show="imagePreview" x-cloak :src="imagePreview" alt="Selected supporting document preview"
+                         class="mt-3 max-h-72 rounded-lg border object-contain">
                     @error('attachment')
                         <p class="field-error mt-1">{{ $message }}</p>
                     @enderror

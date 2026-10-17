@@ -32,6 +32,10 @@
                 'pill_class' => $pillClass,
                 'score_text' => $scoreText,
                 'absent_hours' => $row['absent_hours'],
+                'maximum_absence_hours' => $row['maximum_absence_hours'],
+                'absence_percentage' => $row['absence_percentage'],
+                'maximum_absence_percentage' => $row['maximum_absence_percentage'],
+                'is_drop_eligible' => $row['is_drop_eligible'],
             ];
         }
     }
@@ -105,7 +109,10 @@
              initialRemarks: @js($initialRemarks),
              initialGridRecords: @js($gridRecords),
              initialStudentScores: @js($studentScores),
-             selectedDate: @js($selectedDate)
+             meetingHoursByKey: @js($meetingHoursByKey),
+             selectedDate: @js($selectedDate),
+             selectedMeetingKey: @js($selectedDate.'|'.($selectedSchedule?->schedule_id ?? '')),
+             activeTab: @js($activeTab)
          })">
 
         {{-- Toast Notification --}}
@@ -274,6 +281,10 @@
                             <span>{{ $selectedCourse->total_semester_hours }} sem. hrs</span>
                             <span>&bull;</span>
                             <span class="font-semibold text-gray-700 dark:text-gray-300">{{ $enrollmentRows->count() }} enrolled</span>
+                            <a href="{{ route('faculty.courses.schedules.create', $selectedCourse) }}"
+                               class="inline-flex items-center gap-1 px-2.5 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors font-medium shadow-xs">
+                                + Add Schedule Slot
+                            </a>
                             <a href="{{ route('faculty.courses.edit', $selectedCourse) }}"
                                class="inline-flex items-center gap-1 px-2.5 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors font-medium shadow-xs">
                                 <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
@@ -287,13 +298,16 @@
                     {{-- No schedules yet — still show edit button --}}
                     <div class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg px-4 py-3 flex items-center justify-between gap-3 shadow-xs">
                         <span class="text-xs text-gray-400 dark:text-gray-500 italic">No schedule set for this subject.</span>
-                        <a href="{{ route('faculty.courses.edit', $selectedCourse) }}"
-                           class="inline-flex items-center gap-1 px-2.5 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors text-xs font-medium shadow-xs">
-                            <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125" />
-                            </svg>
-                            Edit Subject
-                        </a>
+                        <div class="flex items-center gap-2">
+                            <a href="{{ route('faculty.courses.schedules.create', $selectedCourse) }}"
+                               class="inline-flex items-center gap-1 px-2.5 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors text-xs font-medium shadow-xs">
+                                + Add Schedule Slot
+                            </a>
+                            <a href="{{ route('faculty.courses.edit', $selectedCourse) }}"
+                               class="inline-flex items-center gap-1 px-2.5 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors text-xs font-medium shadow-xs">
+                                Edit Subject
+                            </a>
+                        </div>
                     </div>
                 @endif
             </section>
@@ -449,10 +463,26 @@
                                                     </span>
                                                     @if ($isDropped)
                                                         <span class="badge badge-danger text-[10px] mt-0.5">Dropped</span>
-                                                    @elseif ($row['absent_hours'] >= 8)
-                                                        <span class="text-[11px] text-amber-600 dark:text-amber-400 font-medium mt-0.5 block">
-                                                            {{ $row['absent_hours'] }}h absent
+                                                    @else
+                                                        <span class="text-[11px] text-gray-500 dark:text-gray-400 font-medium mt-0.5 block">
+                                                            Absence threshold:
+                                                            <span x-text="Number(studentScores[{{ $enrollment->enrollment_id }}].absence_percentage).toFixed(2)">{{ number_format($row['absence_percentage'], 2) }}</span>% /
+                                                            {{ number_format($row['maximum_absence_percentage'], 2) }}%
                                                         </span>
+                                                        <div x-show="studentScores[{{ $enrollment->enrollment_id }}].is_drop_eligible" x-cloak>
+                                                            <span class="text-[11px] text-rose-600 dark:text-rose-400 font-medium mt-0.5 block">
+                                                                Drop limit reached:
+                                                                <span x-text="Number(studentScores[{{ $enrollment->enrollment_id }}].absent_hours).toFixed(2)"></span> /
+                                                                {{ number_format($row['maximum_absence_hours'], 2) }}h
+                                                            </span>
+                                                            <form method="POST" action="{{ route('faculty.enrollments.drop', $enrollment) }}"
+                                                                  onsubmit="return confirm('Drop this student from this subject?')">
+                                                                @csrf
+                                                                <button type="submit" class="mt-1 text-[11px] font-semibold text-rose-700 dark:text-rose-400 underline underline-offset-2 hover:text-rose-900 dark:hover:text-rose-300">
+                                                                    Drop student
+                                                                </button>
+                                                            </form>
+                                                        </div>
                                                     @endif
                                                 </div>
                                             </div>
@@ -628,6 +658,53 @@
                         </div>
                     </div>
 
+                    @if ($isSelectedDateCancelled)
+                        <p class="alert alert-warning" role="status">
+                            All scheduled meetings on this date have been cancelled. Attendance cannot be changed for this date.
+                        </p>
+                    @else
+                    <section class="card p-4" aria-label="Selected meeting actions">
+                        <div class="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+                            <div class="min-w-0 flex-1">
+                                <label for="overall-meeting" class="field-label mb-1">Selected dated meeting</label>
+                                <select id="overall-meeting" class="field"
+                                        x-model="selectedMeetingKey">
+                                    @foreach ($gridDates as $meeting)
+                                        <option value="{{ $meeting['date'].'|'.($meeting['schedule_id'] ?? '') }}">
+                                            {{ $meeting['header_label'] }}{{ $meeting['schedule_label'] ? ' · '.$meeting['schedule_label'] : ' · Unscheduled' }}
+                                        </option>
+                                    @endforeach
+                                </select>
+                            </div>
+                            <div class="flex flex-wrap gap-2">
+                                <button type="button" class="btn btn-secondary btn-sm" @click="markAll('present')">Mark all present</button>
+                                <button type="button" class="btn btn-secondary btn-sm" @click="markAll('absent')">Mark all absent</button>
+                                <button type="button" class="btn btn-secondary btn-sm" @click="clearSelectedMeeting()">Clear marks</button>
+                                <button type="button" class="btn btn-secondary btn-sm" @click="markAll('excused')">Exempt meeting</button>
+                                <button type="button" class="btn btn-danger btn-sm"
+                                        x-show="selectedMeetingScheduleId"
+                                        @click="deleteSelectedMeeting()">Delete meeting</button>
+                            </div>
+                        </div>
+                        <form x-ref="clearMeetingForm" method="POST"
+                              action="{{ route('faculty.attendance.meeting.clear') }}" class="hidden">
+                            @csrf
+                            @method('DELETE')
+                            <input type="hidden" name="course_id" value="{{ $selectedCourse->course_id }}">
+                            <input type="hidden" name="session_date" :value="selectedMeetingDate">
+                            <input type="hidden" name="schedule_id" :value="selectedMeetingScheduleId">
+                        </form>
+                        <form x-ref="deleteMeetingForm" method="POST"
+                              action="{{ route('faculty.attendance.meeting.delete') }}" class="hidden">
+                            @csrf
+                            @method('DELETE')
+                            <input type="hidden" name="course_id" value="{{ $selectedCourse->course_id }}">
+                            <input type="hidden" name="session_date" :value="selectedMeetingDate">
+                            <input type="hidden" name="schedule_id" :value="selectedMeetingScheduleId">
+                        </form>
+                    </section>
+                    @endif
+
                     {{-- The Blackboard Overall Spreadsheet Grid --}}
                     <div class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded shadow-xs overflow-hidden">
                         <div class="overflow-x-auto max-h-[72vh]">
@@ -638,6 +715,11 @@
                                         <th scope="col"
                                             class="sticky left-0 z-30 bg-white dark:bg-gray-800 py-3.5 px-4 text-left font-semibold text-gray-700 dark:text-gray-200 border-r border-b border-gray-200 dark:border-gray-700 min-w-[13rem]">
                                             Student
+                                        </th>
+
+                                        <th scope="col"
+                                            class="py-3.5 px-3 text-center font-semibold text-gray-700 dark:text-gray-200 border-r border-b border-gray-200 dark:border-gray-700 min-w-[5rem]">
+                                            Drops
                                         </th>
 
                                         {{-- Overall Column --}}
@@ -655,10 +737,20 @@
                                                     'bg-white dark:bg-gray-800 font-medium text-gray-700 dark:text-gray-300' => ! $d['is_selected']
                                                 ])
                                                 title="{{ $d['full_label'] }} - Click to switch meeting">
-                                                <a href="{{ route('faculty.dashboard', ['course_id' => $selectedCourse->course_id, 'date' => $d['date'], 'tab' => 'meeting']) }}"
-                                                   class="block font-medium hover:underline text-xs">
-                                                    {{ $d['header_label'] }}
-                                                </a>
+                                                <a href="{{ route('faculty.dashboard', [
+                                                        'course_id' => $selectedCourse->course_id,
+                                                        'date' => $d['date'],
+                                                        'tab' => 'meeting',
+                                                        'schedule_id' => $d['schedule_id'],
+                                                    ]) }}"
+                                                       class="block font-medium hover:underline text-xs">
+                                                        {{ $d['header_label'] }}
+                                                        @if ($d['schedule_label'])
+                                                            <span class="block mt-1 text-[10px] font-normal text-gray-500 dark:text-gray-400">
+                                                                {{ $d['schedule_label'] }}
+                                                            </span>
+                                                        @endif
+                                                    </a>
                                             </th>
                                         @empty
                                             <th scope="col" class="py-3.5 px-3 text-center border-r border-b border-gray-200 dark:border-gray-700 min-w-[6rem]">
@@ -695,10 +787,36 @@
                                                             {{ $student->student_number }}
                                                             @if ($isDropped)
                                                                 <span class="badge badge-danger text-[10px] ml-1">Dropped</span>
+                                                            @else
+                                                                <span class="block text-[11px] text-gray-500 dark:text-gray-400 font-medium mt-0.5">
+                                                                    Absence threshold:
+                                                                    <span x-text="Number(studentScores[{{ $enrollmentId }}].absence_percentage).toFixed(2)">{{ number_format($row['absence_percentage'], 2) }}</span>% /
+                                                                    {{ number_format($row['maximum_absence_percentage'], 2) }}%
+                                                                </span>
+                                                            @endif
+                                                            @if (! $isDropped)
+                                                                <div x-show="studentScores[{{ $enrollmentId }}].is_drop_eligible" x-cloak>
+                                                                <span class="block text-[11px] text-rose-600 dark:text-rose-400 font-medium mt-0.5">
+                                                                    Drop limit reached:
+                                                                    <span x-text="Number(studentScores[{{ $enrollmentId }}].absent_hours).toFixed(2)"></span> /
+                                                                    {{ number_format($row['maximum_absence_hours'], 2) }}h
+                                                                </span>
+                                                                <form method="POST" action="{{ route('faculty.enrollments.drop', $row['enrollment']) }}"
+                                                                      onsubmit="return confirm('Drop this student from this subject?')">
+                                                                    @csrf
+                                                                    <button type="submit" class="mt-1 text-[11px] font-semibold text-rose-700 dark:text-rose-400 underline underline-offset-2 hover:text-rose-900 dark:hover:text-rose-300">
+                                                                        Drop student
+                                                                    </button>
+                                                                </form>
+                                                                </div>
                                                             @endif
                                                         </div>
                                                     </div>
                                                 </div>
+                                            </td>
+
+                                            <td class="py-3 px-3 text-center border-r border-b border-gray-200 dark:border-gray-700 tabular-nums">
+                                                {{ $row['drop_count'] }}
                                             </td>
 
                                             {{-- Overall Badge (Blackboard Style Pill) --}}
@@ -713,20 +831,20 @@
                                             {{-- Date Columns --}}
                                             @foreach ($gridDates as $d)
                                                 @php
-                                                    $rec = $row['records_by_date'][$d['date']] ?? null;
+                                                    $rec = $row['records_by_date'][$d['column_key']] ?? null;
                                                     $cellStatus = $rec['status'] ?? null;
                                                     $hoursAbsent = $rec['hours_absent'] ?? null;
                                                     $remarks = $rec['remarks'] ?? '';
                                                 @endphp
 
-                                                <td id="cell-{{ $enrollmentId }}-{{ $d['date'] }}"
+                                                <td id="cell-{{ $enrollmentId }}-{{ $d['date'] }}-{{ $d['schedule_id'] ?? 'none' }}"
                                                     @class([
                                                         'bb-cell text-center p-2 min-w-[5.5rem] h-[3.8rem] select-none cursor-pointer group transition-colors border-r border-b border-gray-200 dark:border-gray-700',
                                                         'bb-cell-late' => $cellStatus === 'late',
                                                         'bg-white dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700' => $cellStatus !== 'late',
                                                     ])
-                                                    @click="openCellModal({{ $enrollmentId }}, @js($student->fullName), @js($d['date']), @js($d['header_label']), @js($cellStatus), @js($hoursAbsent), @js($remarks), {{ $sessionHours }})"
-                                                    title="{{ $student->fullName }} ({{ $d['full_label'] }}): {{ $cellStatus ? ucfirst($cellStatus) : 'Unrecorded' }} - Click to edit">
+                                                    @click="openCellModal({{ $enrollmentId }}, @js($student->fullName), @js($d['date']), @js($d['header_label']), @js($d['schedule_id']), @js($cellStatus), @js($hoursAbsent), @js($remarks), {{ $d['session_hours'] }})"
+                                                    title="{{ $student->fullName }} ({{ $d['full_label'] }}{{ $d['schedule_label'] ? ' · '.$d['schedule_label'] : '' }}): {{ $cellStatus ? ucfirst($cellStatus) : 'Unrecorded' }} - Click to edit">
 
                                                     @if ($cellStatus === 'present')
                                                         <div class="flex flex-col items-center justify-center">
@@ -773,7 +891,7 @@
                                         </tr>
                                     @empty
                                         <tr>
-                                            <td colspan="{{ 2 + max(1, $gridDates->count()) }}" class="muted py-12 text-center">
+                                            <td colspan="{{ 3 + max(1, $gridDates->count()) }}" class="muted py-12 text-center">
                                                 No students are enrolled in this course yet.
                                             </td>
                                         </tr>
@@ -960,6 +1078,7 @@
                     enrollmentId: null,
                     studentName: '',
                     date: '',
+                    scheduleId: null,
                     formattedDate: '',
                     status: 'present',
                     hoursAbsent: config.defaultSessionHours || 1.5,
@@ -972,6 +1091,20 @@
                 studentStatuses: config.initialStatuses || {},
                 studentHours: config.initialHours || {},
                 studentRemarks: config.initialRemarks || {},
+                selectedMeetingKey: config.selectedMeetingKey || '',
+
+                get selectedMeetingDate() {
+                    return this.selectedMeetingKey.split('|')[0] || config.selectedDate;
+                },
+
+                get selectedMeetingScheduleId() {
+                    const scheduleId = this.selectedMeetingKey.split('|')[1] || '';
+                    return scheduleId === '' ? '' : Number(scheduleId);
+                },
+
+                get selectedMeetingSessionHours() {
+                    return config.meetingHoursByKey[this.selectedMeetingKey] || config.defaultSessionHours || 1.5;
+                },
 
                 // Reactive grid records & student scores
                 gridRecords: config.initialGridRecords || {},
@@ -979,6 +1112,30 @@
 
                 countStatus(targetStatus) {
                     return Object.values(this.studentStatuses).filter(s => s === targetStatus).length;
+                },
+
+                applyAttendanceStats(enrollmentId, stats) {
+                    if (!stats) {
+                        return;
+                    }
+
+                    this.studentScores[enrollmentId] = {
+                        ...this.studentScores[enrollmentId],
+                        score: stats.overall_score,
+                        pill_class: this.getPillClass(stats.overall_score),
+                        score_text: stats.overall_score == 100 ? '100 / 100' : parseFloat(stats.overall_score).toFixed(2) + ' / 100',
+                        absent_hours: stats.absent_hours,
+                        maximum_absence_hours: stats.maximum_absence_hours,
+                        absence_percentage: stats.absence_percentage,
+                        maximum_absence_percentage: stats.maximum_absence_percentage,
+                        is_drop_eligible: stats.is_drop_eligible,
+                    };
+
+                    const scoreEl = document.getElementById(`overall-pill-${enrollmentId}`);
+                    if (scoreEl) {
+                        scoreEl.className = `bb-pill ${this.studentScores[enrollmentId].pill_class}`;
+                        scoreEl.textContent = this.studentScores[enrollmentId].score_text;
+                    }
                 },
 
                 // Step hours for Absent student
@@ -1032,7 +1189,8 @@
                             if (!this.gridRecords[enrollmentId]) {
                                 this.gridRecords[enrollmentId] = {};
                             }
-                            this.gridRecords[enrollmentId][config.selectedDate] = data.record;
+                            this.gridRecords[enrollmentId][`${config.selectedDate}|${data.record.schedule_id ?? ''}`] = data.record;
+                            this.applyAttendanceStats(enrollmentId, data.stats);
 
                             const statusLabel = status.charAt(0).toUpperCase() + status.slice(1);
                             this.showToast(`${studentName}: ${statusLabel}`);
@@ -1060,7 +1218,7 @@
                         attendanceEntries.push({
                             enrollment_id: {{ $row['enrollment']->enrollment_id }},
                             status: targetStatus,
-                            hours_absent: targetStatus === 'absent' ? (parseFloat(this.studentHours[{{ $idx }}]) || {{ $sessionHours }}) : null,
+                            hours_absent: targetStatus === 'absent' ? this.selectedMeetingSessionHours : null,
                             remarks: this.studentRemarks[{{ $idx }}] || null
                         });
                     @endforeach
@@ -1075,25 +1233,59 @@
                         },
                         body: JSON.stringify({
                             course_id: config.courseId,
-                            session_date: config.selectedDate,
-                            schedule_id: {{ $selectedSchedule ? $selectedSchedule->schedule_id : 'null' }},
+                            session_date: this.selectedMeetingDate,
+                            schedule_id: this.selectedMeetingScheduleId || null,
                             grading_period: this.activeGradingPeriod,
-                            tab: 'meeting',
+                            tab: config.activeTab,
                             attendance: attendanceEntries
                         })
                     })
-                    .then(() => {
+                    .then(res => {
+                        if (!res.ok) {
+                            throw new Error('Failed to save attendance records.');
+                        }
+
+                        return res.json();
+                    })
+                    .then(data => {
+                        if (!data.success) {
+                            throw new Error(data.message || 'Failed to save attendance records.');
+                        }
+
                         const label = targetStatus.charAt(0).toUpperCase() + targetStatus.slice(1);
                         this.showToast(`Marked all students as ${label}`);
+                        const url = new URL(window.location.href);
+                        url.searchParams.set('date', this.selectedMeetingDate);
+                        url.searchParams.set('tab', config.activeTab);
+                        if (this.selectedMeetingScheduleId) {
+                            url.searchParams.set('schedule_id', this.selectedMeetingScheduleId);
+                        } else {
+                            url.searchParams.delete('schedule_id');
+                        }
+                        window.location.assign(url.toString());
                     })
                     .catch(err => {
                         console.error('Mark all error:', err);
                     });
                 },
 
-                openCellModal(enrollmentId, studentName, dateStr, formattedDate, currentStatus, hoursAbsent, remarks, sessionHours) {
-                    if (this.gridRecords[enrollmentId] && this.gridRecords[enrollmentId][dateStr]) {
-                        const local = this.gridRecords[enrollmentId][dateStr];
+                clearSelectedMeeting() {
+                    if (window.confirm('Clear attendance marks for this dated meeting? This will not delete the meeting.')) {
+                        this.$refs.clearMeetingForm.submit();
+                    }
+                },
+
+                deleteSelectedMeeting() {
+                    if (this.selectedMeetingScheduleId
+                        && window.confirm('Delete this dated meeting and its attendance marks? The recurring weekly schedule will remain.')) {
+                        this.$refs.deleteMeetingForm.submit();
+                    }
+                },
+
+                openCellModal(enrollmentId, studentName, dateStr, formattedDate, scheduleId, currentStatus, hoursAbsent, remarks, sessionHours) {
+                    const recordKey = `${dateStr}|${scheduleId ?? ''}`;
+                    if (this.gridRecords[enrollmentId] && this.gridRecords[enrollmentId][recordKey]) {
+                        const local = this.gridRecords[enrollmentId][recordKey];
                         currentStatus = local.status;
                         hoursAbsent = local.hours_absent;
                         remarks = local.remarks;
@@ -1104,6 +1296,7 @@
                         enrollmentId: enrollmentId,
                         studentName: studentName,
                         date: dateStr,
+                        scheduleId: scheduleId,
                         formattedDate: formattedDate,
                         status: currentStatus || 'present',
                         hoursAbsent: (hoursAbsent !== null && hoursAbsent !== undefined) ? hoursAbsent : (sessionHours || 1.5),
@@ -1175,6 +1368,7 @@
                             course_id: this.cellData.courseId,
                             enrollment_id: enrollmentId,
                             session_date: dateStr,
+                            schedule_id: this.cellData.scheduleId,
                             status: this.cellData.status,
                             hours_absent: this.cellData.status === 'absent' ? parseFloat(this.cellData.hoursAbsent) : null,
                             remarks: this.cellData.remarks,
@@ -1190,23 +1384,16 @@
                             if (!this.gridRecords[enrollmentId]) {
                                 this.gridRecords[enrollmentId] = {};
                             }
-                            this.gridRecords[enrollmentId][dateStr] = data.record;
+                            this.gridRecords[enrollmentId][`${dateStr}|${data.record.schedule_id ?? ''}`] = data.record;
 
-                            const cellEl = document.getElementById(`cell-${enrollmentId}-${dateStr}`);
+                            const cellEl = document.getElementById(`cell-${enrollmentId}-${dateStr}-${data.record.schedule_id ?? 'none'}`);
                             if (cellEl) {
                                 cellEl.className = 'bb-cell text-center p-2 min-w-[5.5rem] h-[3.8rem] select-none cursor-pointer group transition-colors border-r border-b border-gray-200 dark:border-gray-700 ' +
                                     (data.record.status === 'late' ? 'bb-cell-late' : 'bg-white dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700');
                                 cellEl.innerHTML = this.buildCellHtml(data.record);
                             }
 
-                            const scoreEl = document.getElementById(`overall-pill-${enrollmentId}`);
-                            if (scoreEl && data.stats) {
-                                const newScore = data.stats.overall_score;
-                                const pillClass = this.getPillClass(newScore);
-                                const scoreText = (newScore == 100) ? '100 / 100' : parseFloat(newScore).toFixed(2) + ' / 100';
-                                scoreEl.className = `bb-pill ${pillClass}`;
-                                scoreEl.textContent = scoreText;
-                            }
+                            this.applyAttendanceStats(enrollmentId, data.stats);
 
                             this.showToast(`Updated ${studentName} to ${data.record.status.toUpperCase()}`);
                         } else {

@@ -35,6 +35,7 @@
                             <th scope="col">Course</th>
                             <th scope="col">Faculty</th>
                             <th scope="col">Reason</th>
+                            <th scope="col">Attempt</th>
                             <th scope="col">Channel</th>
                             <th scope="col" class="text-right">Action</th>
                         </tr>
@@ -57,6 +58,8 @@
 
                                 <td>{{ \App\Models\ReadmissionRequest::reasonLabel((string) $request->reason_code) }}</td>
 
+                                <td>{{ $request->attempt_number }}</td>
+
                                 <td><span class="badge badge-neutral">{{ strtoupper($request->channel) }}</span></td>
 
                                 <td class="text-right">
@@ -67,7 +70,7 @@
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="6" class="py-12 text-center muted">
+                                <td colspan="7" class="py-12 text-center muted">
                                     No pending readmission requests.
                                 </td>
                             </tr>

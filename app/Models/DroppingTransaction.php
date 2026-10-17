@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class DroppingTransaction extends Model
@@ -44,6 +45,13 @@ class DroppingTransaction extends Model
     /** The readmission request this drop led to, if any. */
     public function readmissionRequest(): HasOne
     {
-        return $this->hasOne(ReadmissionRequest::class, 'drop_id', 'drop_id');
+        return $this->hasOne(ReadmissionRequest::class, 'drop_id', 'drop_id')->latestOfMany('attempt_number');
+    }
+
+    /** All readmission attempts for this drop, oldest first. */
+    public function readmissionRequests(): HasMany
+    {
+        return $this->hasMany(ReadmissionRequest::class, 'drop_id', 'drop_id')
+            ->orderBy('attempt_number');
     }
 }

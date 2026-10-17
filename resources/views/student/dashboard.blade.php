@@ -69,8 +69,15 @@
                                             @if ($enrollment->status === 'dropped')
                                                 @if ($enrollment->latest_drop?->readmissionRequest)
                                                     <span class="badge badge-warning shrink-0">
-                                                        Readmission {{ ucfirst($enrollment->latest_drop->readmissionRequest->status) }}
+                                                        Attempt {{ $enrollment->latest_drop->readmissionRequest->attempt_number }}:
+                                                        {{ ucfirst($enrollment->latest_drop->readmissionRequest->status) }}
                                                     </span>
+                                                    @if ($enrollment->latest_drop->readmissionRequest->status === 'rejected')
+                                                        <a href="{{ route('student.readmissions.create', $enrollment) }}"
+                                                           class="btn btn-primary btn-sm shrink-0">
+                                                            Submit another attempt
+                                                        </a>
+                                                    @endif
                                                 @else
                                                     <a href="{{ route('student.readmissions.create', $enrollment) }}"
                                                        class="btn btn-primary btn-sm shrink-0">
@@ -103,6 +110,15 @@
                                         {{ number_format($enrollment->absence_hours, 2) }} of
                                         {{ number_format($enrollment->maximum_absence_hours, 2) }} allowable hours used.
                                         Contact your instructor or the Office of Student Affairs.
+                                    </p>
+                                @endif
+
+                                @if ($enrollment->latest_drop?->readmissionRequest?->status === 'rejected'
+                                    && $enrollment->latest_drop->readmissionRequest->rejection_reason)
+                                    <p class="alert alert-warning mt-4 whitespace-pre-line" role="status">
+                                        OSA feedback for attempt
+                                        {{ $enrollment->latest_drop->readmissionRequest->attempt_number }}:
+                                        {{ $enrollment->latest_drop->readmissionRequest->rejection_reason }}
                                     </p>
                                 @endif
 

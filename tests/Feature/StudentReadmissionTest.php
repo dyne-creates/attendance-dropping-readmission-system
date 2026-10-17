@@ -16,6 +16,7 @@ use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
+use Symfony\Component\HttpFoundation\File\UploadedFile as SymfonyUploadedFile;
 use Tests\TestCase;
 
 class StudentReadmissionTest extends TestCase
@@ -162,10 +163,58 @@ class StudentReadmissionTest extends TestCase
         $this->assertSame([], Storage::allFiles('readmission-documents'));
     }
 
+    public function test_dental_medical_and_personal_family_reasons_require_an_image(): void
+    {
+        [$user, , , $enrollment] = $this->createDroppedStudent();
+
+        $response = $this->actingAs($user)
+            ->from(route('student.readmissions.create', $enrollment))
+            ->post(route('student.readmissions.store', $enrollment), [
+                'reason_code' => 'dental_medical',
+                'consent' => '1',
+            ]);
+
+        $response->assertSessionHasErrors('attachment');
+        $this->assertDatabaseCount('readmission_requests', 0);
+    }
+
+    public function test_upload_size_failure_shows_a_specific_server_limit_message(): void
+    {
+        [$user, , , $enrollment] = $this->createDroppedStudent();
+        $temporaryFile = tempnam(sys_get_temp_dir(), 'failed-upload-');
+        file_put_contents($temporaryFile, 'invalid upload');
+        $failedUpload = new SymfonyUploadedFile(
+            $temporaryFile,
+            'medical.jpg',
+            'image/jpeg',
+            UPLOAD_ERR_INI_SIZE,
+            true,
+        );
+
+        try {
+            $response = $this->actingAs($user)
+                ->from(route('student.readmissions.create', $enrollment))
+                ->post(route('student.readmissions.store', $enrollment), [
+                    'reason_code' => 'dental_medical',
+                    'consent' => '1',
+                    'attachment' => $failedUpload,
+                ]);
+
+            $response->assertSessionHasErrors([
+                'attachment' => 'The image exceeds the server upload limit. Choose a smaller image or increase upload_max_filesize and restart PHP.',
+            ]);
+            $this->assertDatabaseCount('readmission_requests', 0);
+        } finally {
+            if (file_exists($temporaryFile)) {
+                unlink($temporaryFile);
+            }
+        }
+    }
+
     public function test_student_cannot_request_readmission_for_another_students_dropped_enrollment(): void
     {
         [, , , $enrollment] = $this->createDroppedStudent();
-        [$otherStudentUser] = $this->createDroppedStudent();
+        [$otherStudentUser] = $this->createDroppedStudent('F-402');
 
         $response = $this->actingAs($otherStudentUser)
             ->get(route('student.readmissions.create', $enrollment));
@@ -204,6 +253,126 @@ class StudentReadmissionTest extends TestCase
         $this->assertDatabaseCount('readmission_requests', 1);
     }
 
+    public function test_student_can_submit_a_new_numbered_attempt_after_rejection(): void
+    {
+        [$user, , , $enrollment, $drop] = $this->createDroppedStudent();
+        ReadmissionRequest::create([
+            'drop_id' => $drop->drop_id,
+            'attempt_number' => 1,
+            'reason_code' => 'mental_health',
+            'rejection_reason' => 'Please provide additional details.',
+            'channel' => 'online',
+            'status' => 'rejected',
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('student.readmissions.create', $enrollment))
+            ->assertSee('Attempt 1')
+            ->assertSee('Please provide additional details.')
+            ->assertSee('Submitting attempt 2.');
+
+        $response = $this->actingAs($user)
+            ->post(route('student.readmissions.store', $enrollment), [
+                'reason_code' => 'mental_health',
+                'consent' => '1',
+            ]);
+
+        $response->assertRedirect(route('student.dashboard'));
+        $this->assertDatabaseHas('readmission_requests', [
+            'drop_id' => $drop->drop_id,
+            'attempt_number' => 2,
+            'reason_code' => 'mental_health',
+            'status' => 'pending',
+        ]);
+        $this->assertDatabaseCount('readmission_requests', 2);
+    }
+
+    public function test_osa_rejection_reason_is_saved_and_shown_to_the_student(): void
+    {
+        [$user, , , $enrollment, $drop] = $this->createDroppedStudent();
+        $readmission = ReadmissionRequest::create([
+            'drop_id' => $drop->drop_id,
+            'reason_code' => 'mental_health',
+            'channel' => 'online',
+        ]);
+        $osaUser = User::factory()->osaStaff()->create();
+        $reason = 'Please include the missing supporting information.';
+
+        $this->actingAs($osaUser)
+            ->post(route('osa.readmissions.reject', $readmission->readmission_id), [
+                'rejection_reason' => $reason,
+            ])
+            ->assertRedirect(route('osa.readmissions'));
+
+        $this->assertDatabaseHas('readmission_requests', [
+            'readmission_id' => $readmission->readmission_id,
+            'status' => 'rejected',
+            'rejection_reason' => $reason,
+        ]);
+        $this->assertDatabaseHas('notifications', [
+            'readmission_id' => $readmission->readmission_id,
+            'notification_type' => 'readmission_rejected',
+            'message' => 'Your readmission request has been rejected. OSA feedback: '.$reason,
+        ]);
+
+        $this->actingAs($osaUser)
+            ->get(route('osa.readmissions.show', $readmission->readmission_id))
+            ->assertSee($reason);
+
+        $this->actingAs($user)
+            ->get(route('student.dashboard'))
+            ->assertSee($reason)
+            ->assertSee('Submit another attempt');
+    }
+
+    public function test_osa_cannot_reject_a_request_without_feedback(): void
+    {
+        [, , , , $drop] = $this->createDroppedStudent();
+        $readmission = ReadmissionRequest::create([
+            'drop_id' => $drop->drop_id,
+            'reason_code' => 'mental_health',
+            'channel' => 'online',
+        ]);
+        $osaUser = User::factory()->osaStaff()->create();
+
+        $this->actingAs($osaUser)
+            ->from(route('osa.readmissions.show', $readmission->readmission_id))
+            ->post(route('osa.readmissions.reject', $readmission->readmission_id), [])
+            ->assertSessionHasErrors('rejection_reason');
+
+        $this->assertDatabaseHas('readmission_requests', [
+            'readmission_id' => $readmission->readmission_id,
+            'status' => 'pending',
+            'rejection_reason' => null,
+        ]);
+    }
+
+    public function test_osa_lists_attempt_numbers_and_keeps_processed_forms_openable(): void
+    {
+        [, , , , $drop] = $this->createDroppedStudent();
+        $readmission = ReadmissionRequest::create([
+            'drop_id' => $drop->drop_id,
+            'reason_code' => 'mental_health',
+            'channel' => 'online',
+        ]);
+        $osaUser = User::factory()->osaStaff()->create();
+
+        $this->actingAs($osaUser)
+            ->get(route('osa.readmissions'))
+            ->assertSee('Attempt')
+            ->assertSee('1');
+
+        $readmission->update([
+            'status' => 'rejected',
+            'rejection_reason' => 'Please provide more details.',
+            'processed_date' => '2026-10-12',
+        ]);
+
+        $this->get(route('osa.archive.readmissions'))
+            ->assertSee('View attempt 1')
+            ->assertSee(route('osa.readmissions.show', $readmission->readmission_id));
+    }
+
     public function test_osa_staff_can_download_a_private_supporting_document(): void
     {
         [, , , , $drop] = $this->createDroppedStudent();
@@ -227,6 +396,35 @@ class StudentReadmissionTest extends TestCase
         $response->assertOk();
         $response->assertHeader('content-disposition', 'attachment; filename=medical.png');
         $response->assertStreamedContent('private medical image');
+    }
+
+    public function test_osa_can_preview_a_private_supporting_image_for_a_processed_attempt(): void
+    {
+        [, , , , $drop] = $this->createDroppedStudent();
+        Storage::fake('local');
+        $filePath = UploadedFile::fake()->image('medical.png')->store('readmission-documents', 'local');
+        $readmission = ReadmissionRequest::create([
+            'drop_id' => $drop->drop_id,
+            'reason_code' => 'dental_medical',
+            'rejection_reason' => 'Please provide more details.',
+            'channel' => 'online',
+            'status' => 'rejected',
+        ]);
+        $document = $readmission->excuseDocuments()->create([
+            'document_type' => 'supporting_document',
+            'file_path' => $filePath,
+        ]);
+        $osaUser = User::factory()->osaStaff()->create();
+
+        $this->actingAs($osaUser)
+            ->get(route('osa.readmissions.show', $readmission->readmission_id))
+            ->assertSee(route('osa.readmissions.documents.preview', $document->document_id))
+            ->assertSee('Please provide more details.');
+
+        $this->actingAs($osaUser)
+            ->get(route('osa.readmissions.documents.preview', $document->document_id))
+            ->assertOk()
+            ->assertHeader('X-Content-Type-Options', 'nosniff');
     }
 
     public function test_student_cannot_download_an_osa_only_supporting_document(): void
@@ -257,7 +455,7 @@ class StudentReadmissionTest extends TestCase
     /**
      * @return array{User, Student, FacultyMember, Enrollment, DroppingTransaction}
      */
-    private function createDroppedStudent(): array
+    private function createDroppedStudent(string $room = 'F-401'): array
     {
         $schoolYear = SchoolYear::create([
             'year_label' => '2026-2027',
@@ -313,7 +511,7 @@ class StudentReadmissionTest extends TestCase
             'day_of_week' => 'Mon',
             'start_time' => '08:30:00',
             'end_time' => '10:00:00',
-            'room' => 'F-401',
+            'room' => $room,
         ]);
 
         $enrollment = Enrollment::create([

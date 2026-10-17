@@ -45,6 +45,14 @@ Route::middleware(['auth', 'prevent-back-history'])->group(function () {
         ->middleware('facultyMiddleware')
         ->name('faculty.attendance.store');
 
+    Route::delete('/faculty/attendance/meeting', [FacultyController::class, 'clearMeeting'])
+        ->middleware('facultyMiddleware')
+        ->name('faculty.attendance.meeting.clear');
+
+    Route::delete('/faculty/attendance/meeting/delete', [FacultyController::class, 'deleteMeeting'])
+        ->middleware('facultyMiddleware')
+        ->name('faculty.attendance.meeting.delete');
+
     Route::post('/faculty/attendance/record', [FacultyController::class, 'recordSingleAttendance'])
         ->middleware('facultyMiddleware')
         ->name('faculty.attendance.record');
@@ -65,6 +73,8 @@ Route::middleware(['auth', 'prevent-back-history'])->group(function () {
     Route::middleware('facultyMiddleware')->prefix('faculty/courses')->name('faculty.courses.')->group(function () {
         Route::get('/create', [FacultyCourseController::class, 'create'])->name('create');
         Route::post('/', [FacultyCourseController::class, 'store'])->name('store');
+        Route::get('/{course}/schedules/create', [FacultyCourseController::class, 'createSchedule'])->name('schedules.create');
+        Route::post('/{course}/schedules', [FacultyCourseController::class, 'storeSchedule'])->name('schedules.store');
         Route::get('/{course}/edit', [FacultyCourseController::class, 'edit'])->name('edit');
         Route::put('/{course}', [FacultyCourseController::class, 'update'])->name('update');
         Route::delete('/{course}', [FacultyCourseController::class, 'destroy'])->name('destroy');
@@ -102,6 +112,11 @@ Route::middleware(['auth', 'staffMiddleware'])->prefix('osa')->name('osa.')->gro
         OsaStaffController::class,
         'downloadExcuseDocument',
     ])->name('readmissions.documents.download');
+
+    Route::get('/readmissions/documents/{document}/preview', [
+        OsaStaffController::class,
+        'previewExcuseDocument',
+    ])->name('readmissions.documents.preview');
 
     // Approve / reject
     Route::post('/readmissions/{id}/approve', [

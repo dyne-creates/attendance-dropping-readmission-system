@@ -129,4 +129,24 @@ class AttendanceService
             2,
         );
     }
+
+    /**
+     * Calculate accumulated absences as a percentage of the semester's course hours.
+     */
+    public function calculateAbsencePercentage(Course $course, float $absenceHours): float
+    {
+        $totalSemesterHours = $course->hours_per_week * self::SEMESTER_WEEKS;
+
+        return $totalSemesterHours > 0
+            ? round(($absenceHours / $totalSemesterHours) * 100, 2)
+            : 0.0;
+    }
+
+    /**
+     * Return the absence percentage at which a student reaches the drop limit.
+     */
+    public function maximumAllowableAbsencePercentage(): float
+    {
+        return self::MAXIMUM_ABSENCE_PERCENTAGE * 100;
+    }
 }

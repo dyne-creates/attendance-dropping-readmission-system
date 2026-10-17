@@ -105,8 +105,8 @@ class FacultySubjectsSeeder extends Seeder
                 'hours_per_week' => 5,
                 'total_semester_hours' => 90.00,
                 'schedules' => [
-                    ['day_of_week' => 'Mon', 'start_time' => '14:00:00', 'end_time' => '17:00:00', 'room' => 'F-402'],
-                    ['day_of_week' => 'Fri', 'start_time' => '14:00:00', 'end_time' => '16:00:00', 'room' => 'CL-3'],
+                    ['day_of_week' => 'Mon', 'start_time' => '14:00:00', 'end_time' => '17:00:00', 'room' => 'F-404'],
+                    ['day_of_week' => 'Fri', 'start_time' => '14:00:00', 'end_time' => '16:00:00', 'room' => 'CL-4'],
                 ],
                 'students' => [
                     '2023-00101', // John Depp

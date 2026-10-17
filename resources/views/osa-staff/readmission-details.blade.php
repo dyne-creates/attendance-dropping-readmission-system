@@ -118,6 +118,11 @@
 
                 <dl class="card-body grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2">
                     <div>
+                        <dt class="text-sm font-medium muted">Attempt number</dt>
+                        <dd class="mt-1 text-sm font-semibold">{{ $request->attempt_number }}</dd>
+                    </div>
+
+                    <div>
                         <dt class="text-sm font-medium muted">Reason</dt>
                         <dd class="mt-1 text-sm">{{ \App\Models\ReadmissionRequest::reasonLabel((string) $request->reason_code) }}</dd>
                     </div>
@@ -131,6 +136,13 @@
                         <dt class="text-sm font-medium muted">Details</dt>
                         <dd class="mt-1 whitespace-pre-line text-sm">{{ $request->reason_details ?? 'No additional details provided.' }}</dd>
                     </div>
+
+                    @if ($request->rejection_reason)
+                        <div class="sm:col-span-2">
+                            <dt class="text-sm font-medium muted">OSA rejection feedback</dt>
+                            <dd class="mt-1 whitespace-pre-line text-sm">{{ $request->rejection_reason }}</dd>
+                        </div>
+                    @endif
 
                     <div class="sm:col-span-2">
                         <dt class="text-sm font-medium muted">Policy consent</dt>
@@ -216,6 +228,9 @@
                             Download document
                         </a>
                     </div>
+                    <img src="{{ route('osa.readmissions.documents.preview', $document->document_id) }}"
+                         alt="Supporting document for readmission attempt {{ $request->attempt_number }}"
+                         class="max-h-96 max-w-full rounded-lg border object-contain">
                 @empty
                     <p class="text-sm muted">No supporting documents were uploaded.</p>
                 @endforelse
@@ -230,7 +245,7 @@
                     <p class="mt-0.5 text-sm muted">Review all information before processing this request.</p>
                 </div>
 
-                <div class="card-body flex flex-col gap-3 sm:flex-row">
+                <div class="card-body space-y-4">
                     <form method="POST" action="{{ route('osa.readmissions.approve', $request->readmission_id) }}">
                         @csrf
 
@@ -241,12 +256,21 @@
                         </button>
                     </form>
 
-                    <form method="POST" action="{{ route('osa.readmissions.reject', $request->readmission_id) }}">
+                    <form method="POST" action="{{ route('osa.readmissions.reject', $request->readmission_id) }}"
+                          class="max-w-2xl space-y-3">
                         @csrf
 
-                        <button type="submit"
-                                onclick="return confirm('Are you sure you want to reject this readmission request?')"
-                                class="btn btn-danger w-full sm:w-auto">
+                        <div>
+                            <label for="rejection_reason" class="field-label mb-1">Reason for rejection <span aria-hidden="true">*</span></label>
+                            <textarea id="rejection_reason" name="rejection_reason" rows="3" maxlength="2000"
+                                      class="field" required>{{ old('rejection_reason') }}</textarea>
+                            @error('rejection_reason')
+                                <p class="field-error mt-1">{{ $message }}</p>
+                            @enderror
+                        </div>
+
+                        <button type="submit" class="btn btn-danger"
+                                onclick="return confirm('Are you sure you want to reject this readmission request?')">
                             Reject request
                         </button>
                     </form>

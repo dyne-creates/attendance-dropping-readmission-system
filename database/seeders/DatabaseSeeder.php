@@ -118,6 +118,9 @@ class DatabaseSeeder extends Seeder
         // We create AGLDEV1 for all faculty members so whoever logs in sees this course
         $createdCourses = [];
         foreach ($facultyMembers as $idx => $fac) {
+            $mondayRoom = 'F-'.(402 + $idx);
+            $fridayRoom = 'CL-'.(3 + $idx);
+
             $agileCourse = Course::create([
                 'faculty_id' => $fac->faculty_id,
                 'school_year_id' => $schoolYear->school_year_id,
@@ -133,7 +136,7 @@ class DatabaseSeeder extends Seeder
                 'day_of_week' => 'Mon',
                 'start_time' => '14:00:00',
                 'end_time' => '17:00:00',
-                'room' => 'F-402',
+                'room' => $mondayRoom,
             ]);
 
             CourseSchedule::create([
@@ -141,7 +144,7 @@ class DatabaseSeeder extends Seeder
                 'day_of_week' => 'Fri',
                 'start_time' => '14:00:00',
                 'end_time' => '16:00:00',
-                'room' => 'CL-3',
+                'room' => $fridayRoom,
             ]);
 
             $createdCourses[] = $agileCourse;

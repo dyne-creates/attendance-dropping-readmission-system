@@ -12,6 +12,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 use RuntimeException;
+use Symfony\Component\HttpFoundation\File\UploadedFile;
 
 class StudentReadmissionController extends Controller
 {
@@ -33,14 +34,15 @@ class StudentReadmissionController extends Controller
         );
 
         $drop = $enrollment->droppingTransactions()
-            ->with('readmissionRequest')
+            ->with('readmissionRequests')
             ->latest('drop_id')
             ->firstOrFail();
+        $latestAttempt = $drop->readmissionRequests->last();
 
-        if ($drop->readmissionRequest !== null) {
+        if ($latestAttempt !== null && $latestAttempt->status !== 'rejected') {
             return redirect()
                 ->route('student.dashboard')
-                ->with('info', 'A readmission request has already been submitted for this drop.');
+                ->with('info', 'A readmission request is already awaiting review or has been approved.');
         }
 
         $enrollment->load([
@@ -70,6 +72,8 @@ class StudentReadmissionController extends Controller
             'enrollment' => $enrollment,
             'drop' => $drop,
             'dropCount' => $enrollment->droppingTransactions()->count(),
+            'attemptNumber' => ($latestAttempt?->attempt_number ?? 0) + 1,
+            'previousAttempts' => $drop->readmissionRequests,
             'absenceDates' => $absenceDates,
             'reasons' => ReadmissionRequest::REASONS,
             'guardian' => $student->guardians->first(),
@@ -78,13 +82,6 @@ class StudentReadmissionController extends Controller
 
     public function store(Request $request, Enrollment $enrollment): RedirectResponse
     {
-        $validated = $request->validate([
-            'reason_code' => ['required', Rule::in(array_keys(ReadmissionRequest::REASONS))],
-            'reason_details' => ['nullable', 'string', 'max:2000', 'required_if:reason_code,other'],
-            'attachment' => ['nullable', 'file', 'mimes:jpg,jpeg,png', 'extensions:jpg,jpeg,png', 'max:5120'],
-            'consent' => ['accepted'],
-        ]);
-
         $student = $request->user()->student;
 
         abort_unless(
@@ -94,14 +91,49 @@ class StudentReadmissionController extends Controller
             404,
         );
 
+        $attachment = $request->file('attachment');
+
+        if ($attachment instanceof UploadedFile && ! $attachment->isValid()) {
+            $message = match ($attachment->getError()) {
+                UPLOAD_ERR_INI_SIZE => 'The image exceeds the server upload limit. Choose a smaller image or increase upload_max_filesize and restart PHP.',
+                UPLOAD_ERR_FORM_SIZE => 'The image exceeds the maximum size allowed by this form.',
+                UPLOAD_ERR_PARTIAL => 'The image upload was interrupted. Please select it again and retry.',
+                UPLOAD_ERR_NO_TMP_DIR => 'The server is missing its temporary upload folder. Please contact the administrator.',
+                UPLOAD_ERR_CANT_WRITE => 'The server could not save the uploaded image. Please contact the administrator.',
+                UPLOAD_ERR_EXTENSION => 'A server extension stopped the image upload. Please contact the administrator.',
+                default => 'The image could not be uploaded. Please select it again and retry.',
+            };
+
+            return back()
+                ->withErrors(['attachment' => $message])
+                ->withInput($request->except('attachment'));
+        }
+
+        $validated = $request->validate([
+            'reason_code' => ['required', Rule::in(array_keys(ReadmissionRequest::REASONS))],
+            'reason_details' => ['nullable', 'string', 'max:2000', 'required_if:reason_code,other'],
+            'attachment' => [
+                Rule::requiredIf(in_array($request->input('reason_code'), ['dental_medical', 'personal_family'], true)),
+                'nullable',
+                'file',
+                'image',
+                'mimes:jpg,jpeg,png',
+                'extensions:jpg,jpeg,png',
+                'max:5120',
+            ],
+            'consent' => ['accepted'],
+        ]);
+
         $drop = $enrollment->droppingTransactions()
             ->latest('drop_id')
             ->firstOrFail();
 
-        if ($drop->readmissionRequest()->exists()) {
+        $latestAttempt = $drop->readmissionRequests()->latest('attempt_number')->first();
+
+        if ($latestAttempt !== null && $latestAttempt->status !== 'rejected') {
             return redirect()
                 ->route('student.dashboard')
-                ->with('info', 'A readmission request has already been submitted for this drop.');
+                ->with('info', 'A readmission request is already awaiting review or has been approved.');
         }
 
         $created = DB::transaction(function () use ($request, $validated, $student, $enrollment, $drop): bool {
@@ -122,15 +154,19 @@ class StudentReadmissionController extends Controller
                 404,
             );
 
-            if (ReadmissionRequest::query()
+            $latestRequest = ReadmissionRequest::query()
                 ->where('drop_id', $lockedDrop->drop_id)
                 ->lockForUpdate()
-                ->exists()) {
+                ->orderByDesc('attempt_number')
+                ->first();
+
+            if ($latestRequest !== null && $latestRequest->status !== 'rejected') {
                 return false;
             }
 
             $readmission = ReadmissionRequest::create([
                 'drop_id' => $lockedDrop->drop_id,
+                'attempt_number' => ($latestRequest?->attempt_number ?? 0) + 1,
                 'reason_code' => $validated['reason_code'],
                 'reason_details' => $validated['reason_details'] ?? null,
                 'policy_acknowledged_at' => now(),

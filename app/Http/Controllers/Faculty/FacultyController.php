@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Faculty;
 use App\Http\Controllers\Controller;
 use App\Models\AttendanceRecord;
 use App\Models\Course;
+use App\Models\CourseSchedule;
 use App\Models\DroppingTransaction;
 use App\Models\Enrollment;
 use App\Models\FacultyMember;
@@ -14,6 +15,7 @@ use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\View\View;
 
@@ -68,9 +70,11 @@ class FacultyController extends Controller
         ];
         $sessionHistory = collect();
         $gridDates = collect();
+        $meetingHoursByKey = collect();
         $sessionHours = 1.5;
         $slotsForDay = collect();
         $selectedSchedule = null;
+        $isSelectedDateCancelled = false;
 
         if ($course) {
             $scheduledDays = $course->schedules->pluck('day_of_week')->toArray();
@@ -80,6 +84,15 @@ class FacultyController extends Controller
             $slotsForDay = $course->schedules->filter(
                 fn (mixed $s): bool => $s->day_of_week === $scheduleDay
             )->values();
+            $cancelledScheduleIds = DB::table('course_schedule_cancellations')
+                ->whereIn('schedule_id', $slotsForDay->pluck('schedule_id'))
+                ->whereDate('session_date', $selectedDate)
+                ->pluck('schedule_id');
+            $isSelectedDateCancelled = $slotsForDay->isNotEmpty()
+                && $slotsForDay->every(fn (CourseSchedule $schedule): bool => $cancelledScheduleIds->contains($schedule->schedule_id));
+            $slotsForDay = $slotsForDay
+                ->reject(fn (CourseSchedule $schedule): bool => $cancelledScheduleIds->contains($schedule->schedule_id))
+                ->values();
 
             // Determine the active slot: prefer query param, otherwise first for the day
             $selectedScheduleId = (int) $request->query('schedule_id', 0);
@@ -95,9 +108,11 @@ class FacultyController extends Controller
 
             // Load enrollments with student and attendance records
             $enrollments = Enrollment::with(['student.user', 'attendanceRecords'])
+                ->withCount('droppingTransactions')
                 ->where('course_id', $course->course_id)
                 ->get();
 
+            $maximumAbsenceHours = $this->attendanceService->maximumAllowableAbsenceHours($course);
             $totalPresences = 0;
             $totalRecordedEntries = 0;
             $droppedCount = 0;
@@ -117,19 +132,13 @@ class FacultyController extends Controller
                 $totalPresences += $presences;
                 $totalRecordedEntries += $entriesCount;
 
-                $todayRecord = $enrollment->attendanceRecords
-                    ->first(function (AttendanceRecord $r) use ($selectedDate, $selectedSchedule): bool {
-                        $dateMatch = Carbon::parse($r->session_date)->isSameDay($selectedDate);
-                        if (! $dateMatch) {
-                            return false;
-                        }
-                        // If the schedule has multiple slots today, match by schedule_id when available
-                        if ($selectedSchedule && $r->schedule_id !== null) {
-                            return $r->schedule_id === $selectedSchedule->schedule_id;
-                        }
-
-                        return true;
-                    });
+                $recordsForSelectedDate = $enrollment->attendanceRecords
+                    ->filter(fn (AttendanceRecord $record): bool => Carbon::parse($record->session_date)->isSameDay($selectedDate));
+                $todayRecord = $selectedSchedule
+                    ? $recordsForSelectedDate->first(fn (AttendanceRecord $record): bool => $record->schedule_id === $selectedSchedule->schedule_id)
+                        ?? $recordsForSelectedDate->first(fn (AttendanceRecord $record): bool => $record->schedule_id === null)
+                    : $recordsForSelectedDate->first(fn (AttendanceRecord $record): bool => $record->schedule_id === null)
+                        ?? $recordsForSelectedDate->first();
 
                 $overallScore = $this->attendanceService->calculateOverallScore($enrollment->attendanceRecords);
 
@@ -149,8 +158,13 @@ class FacultyController extends Controller
                 $enrollmentRows->push([
                     'enrollment' => $enrollment,
                     'student' => $enrollment->student,
+                    'drop_count' => $enrollment->dropping_transactions_count,
                     'status' => $enrollment->status,
                     'absent_hours' => $absentHours,
+                    'maximum_absence_hours' => $maximumAbsenceHours,
+                    'absence_percentage' => $this->attendanceService->calculateAbsencePercentage($course, $absentHours),
+                    'maximum_absence_percentage' => $this->attendanceService->maximumAllowableAbsencePercentage(),
+                    'is_drop_eligible' => $enrollment->status !== 'dropped' && $absentHours >= $maximumAbsenceHours,
                     'presences' => $presences,
                     'lates' => $lates,
                     'absences' => $absences,
@@ -178,22 +192,74 @@ class FacultyController extends Controller
                 ->map(fn ($d) => Carbon::parse($d)->toDateString())
                 ->unique();
 
+            $cancelledOccurrenceKeys = DB::table('course_schedule_cancellations')
+                ->whereIn('schedule_id', $course->schedules->pluck('schedule_id'))
+                ->get(['schedule_id', 'session_date'])
+                ->mapWithKeys(fn (object $cancellation): array => [
+                    Carbon::parse($cancellation->session_date)->toDateString().'|'.$cancellation->schedule_id => true,
+                ]);
+
             if (! $dateStrings->contains($selectedDate)) {
-                $dateStrings->push($selectedDate);
+                $selectedDaySlots = $course->schedules
+                    ->filter(fn (CourseSchedule $schedule): bool => $schedule->day_of_week === Carbon::parse($selectedDate)->format('D'));
+                $allSelectedDaySlotsCancelled = $selectedDaySlots->isNotEmpty()
+                    && $selectedDaySlots->every(fn (CourseSchedule $schedule): bool => $cancelledOccurrenceKeys->has($selectedDate.'|'.$schedule->schedule_id));
+
+                if (! $allSelectedDaySlotsCancelled) {
+                    $dateStrings->push($selectedDate);
+                }
             }
 
-            $gridDates = $dateStrings->sort()->values()->map(function (string $dateStr) use ($selectedDate, $course): array {
+            $gridDates = $dateStrings->sort()->values()->flatMap(function (string $dateStr) use ($selectedDate, $course, $enrollments, $cancelledOccurrenceKeys): Collection {
                 $carbon = Carbon::parse($dateStr);
+                $scheduledSlots = $course->schedules
+                    ->filter(fn (CourseSchedule $schedule): bool => $schedule->day_of_week === $carbon->format('D')
+                        && ! $cancelledOccurrenceKeys->has($dateStr.'|'.$schedule->schedule_id));
+                $recordedScheduleIds = $enrollments
+                    ->flatMap(fn (Enrollment $enrollment) => $enrollment->attendanceRecords
+                        ->filter(fn (AttendanceRecord $record): bool => Carbon::parse($record->session_date)->toDateString() === $dateStr)
+                        ->filter(fn (AttendanceRecord $record): bool => $record->schedule_id === null
+                            || ! $cancelledOccurrenceKeys->has($dateStr.'|'.$record->schedule_id))
+                        ->pluck('schedule_id'))
+                    ->map(fn ($scheduleId) => $scheduleId === null ? null : (int) $scheduleId)
+                    ->unique()
+                    ->values();
+                $scheduleIds = $scheduledSlots->pluck('schedule_id')
+                    ->merge($recordedScheduleIds->filter(fn ($scheduleId): bool => $scheduleId !== null))
+                    ->map(fn ($scheduleId): int => (int) $scheduleId)
+                    ->unique()
+                    ->values();
 
-                return [
-                    'date' => $dateStr,
-                    'header_label' => $carbon->format('n/j/y'), // Blackboard format: 1/6/20
-                    'full_label' => $carbon->format('M j, Y (D)'),
-                    'is_selected' => $dateStr === $selectedDate,
-                    'is_today' => $carbon->isToday(),
-                    'is_on_schedule' => $this->attendanceService->isDateOnSchedule($course, $dateStr),
-                ];
+                if ($recordedScheduleIds->contains(null) || $scheduleIds->isEmpty()) {
+                    $scheduleIds->push(null);
+                }
+
+                return $scheduleIds->map(function (?int $scheduleId) use ($carbon, $course, $dateStr, $selectedDate): array {
+                    $schedule = $course->schedules->firstWhere('schedule_id', $scheduleId);
+                    $scheduleLabel = $schedule
+                        ? Carbon::parse($schedule->start_time)->format('g:i A').' – '.Carbon::parse($schedule->end_time)->format('g:i A')
+                        : null;
+                    $sessionHours = $schedule
+                        ? round(Carbon::parse($schedule->start_time)->diffInMinutes(Carbon::parse($schedule->end_time)) / 60.0, 2)
+                        : $this->attendanceService->calculateSessionHours($course, $dateStr);
+
+                    return [
+                        'date' => $dateStr,
+                        'column_key' => $dateStr.'|'.($scheduleId ?? ''),
+                        'schedule_id' => $scheduleId,
+                        'schedule_label' => $scheduleLabel,
+                        'session_hours' => $sessionHours,
+                        'header_label' => $carbon->format('n/j/y'),
+                        'full_label' => $carbon->format('M j, Y'),
+                        'is_selected' => $dateStr === $selectedDate,
+                        'is_today' => $carbon->isToday(),
+                        'is_on_schedule' => $this->attendanceService->isDateOnSchedule($course, $dateStr),
+                    ];
+                });
             });
+            $meetingHoursByKey = $gridDates->mapWithKeys(
+                fn (array $meeting): array => [$meeting['column_key'] => $meeting['session_hours']],
+            );
 
             foreach ($distinctDates->sortByDesc('session_date') as $dateItem) {
                 $sessionDate = Carbon::parse($dateItem->session_date)->toDateString();
@@ -238,11 +304,13 @@ class FacultyController extends Controller
             'courseStats' => $courseStats,
             'sessionHistory' => $sessionHistory,
             'gridDates' => $gridDates,
+            'meetingHoursByKey' => $meetingHoursByKey,
             'activeTab' => $activeTab,
             'prevDate' => $prevDate,
             'nextDate' => $nextDate,
             'slotsForDay' => $slotsForDay,
             'selectedSchedule' => $selectedSchedule,
+            'isSelectedDateCancelled' => $isSelectedDateCancelled,
         ]);
     }
 
@@ -273,6 +341,12 @@ class FacultyController extends Controller
 
         $sessionDate = Carbon::parse($validated['session_date'])->toDateString();
         $scheduleId = $validated['schedule_id'] ?? null;
+        if ($scheduleId !== null) {
+            $schedule = $this->scheduleForCourse($course, (int) $scheduleId);
+            $this->ensureScheduleOccurrenceAvailable($schedule, $sessionDate);
+        } else {
+            $this->ensureDateIsNotFullyCancelled($course, $sessionDate);
+        }
         $isOutOfSchedule = ! $this->attendanceService->isDateOnSchedule($course, $sessionDate);
 
         DB::transaction(function () use ($validated, $faculty, $sessionDate, $scheduleId, $isOutOfSchedule): void {
@@ -292,21 +366,33 @@ class FacultyController extends Controller
                     ? (float) $entry['hours_absent']
                     : null;
 
-                AttendanceRecord::updateOrCreate(
-                    [
+                $recordQuery = AttendanceRecord::where('enrollment_id', $enrollment->enrollment_id)
+                    ->whereDate('session_date', $sessionDate);
+                $existingRecord = (clone $recordQuery)->where('schedule_id', $scheduleId)->first();
+
+                if (! $existingRecord && $scheduleId !== null) {
+                    $existingRecord = (clone $recordQuery)->whereNull('schedule_id')->first();
+                }
+
+                $attributes = [
+                    'schedule_id' => $scheduleId,
+                    'recorded_by' => $faculty->faculty_id,
+                    'status' => $entry['status'],
+                    'grading_period' => $validated['grading_period'],
+                    'hours_absent' => $hoursAbsent,
+                    'remarks' => $entry['remarks'] ?? null,
+                    'is_out_of_schedule' => $isOutOfSchedule,
+                ];
+
+                if ($existingRecord) {
+                    $existingRecord->update($attributes);
+                } else {
+                    AttendanceRecord::create([
                         'enrollment_id' => $enrollment->enrollment_id,
                         'session_date' => $sessionDate,
-                        'schedule_id' => $scheduleId,
-                    ],
-                    [
-                        'recorded_by' => $faculty->faculty_id,
-                        'status' => $entry['status'],
-                        'grading_period' => $validated['grading_period'],
-                        'hours_absent' => $hoursAbsent,
-                        'remarks' => $entry['remarks'] ?? null,
-                        'is_out_of_schedule' => $isOutOfSchedule,
-                    ]
-                );
+                        ...$attributes,
+                    ]);
+                }
             }
         });
 
@@ -322,6 +408,119 @@ class FacultyController extends Controller
             'schedule_id' => $scheduleId,
             'tab' => $request->input('tab', 'check'),
         ])->with('success', $message);
+    }
+
+    public function clearMeeting(Request $request): RedirectResponse
+    {
+        $validated = $request->validate([
+            'course_id' => ['required', 'integer', 'exists:courses,course_id'],
+            'session_date' => ['required', 'date'],
+            'schedule_id' => ['present', 'nullable', 'integer', 'exists:course_schedules,schedule_id'],
+        ]);
+
+        $course = Course::query()->findOrFail($validated['course_id']);
+        $this->authorizeFacultyCourse($request, $course);
+        $scheduleId = $validated['schedule_id'];
+
+        if ($scheduleId !== null) {
+            $schedule = $this->scheduleForCourse($course, (int) $scheduleId);
+            abort_unless(
+                $schedule->day_of_week === Carbon::parse($validated['session_date'])->format('D'),
+                422,
+                'The schedule does not match the meeting date.',
+            );
+        }
+
+        $enrollmentIds = Enrollment::query()
+            ->where('course_id', $course->course_id)
+            ->select('enrollment_id');
+        $records = AttendanceRecord::query()
+            ->whereIn('enrollment_id', $enrollmentIds)
+            ->whereDate('session_date', Carbon::parse($validated['session_date'])->toDateString());
+        $scheduleId === null
+            ? $records->whereNull('schedule_id')
+            : $records->where('schedule_id', $scheduleId);
+        $deletedCount = $records->delete();
+
+        return back()->with('success', "{$deletedCount} attendance marks cleared for the selected meeting.");
+    }
+
+    public function deleteMeeting(Request $request): RedirectResponse
+    {
+        $validated = $request->validate([
+            'course_id' => ['required', 'integer', 'exists:courses,course_id'],
+            'session_date' => ['required', 'date'],
+            'schedule_id' => ['required', 'integer', 'exists:course_schedules,schedule_id'],
+        ]);
+
+        $course = Course::query()->findOrFail($validated['course_id']);
+        $this->authorizeFacultyCourse($request, $course);
+        $schedule = $this->scheduleForCourse($course, (int) $validated['schedule_id']);
+        $sessionDate = Carbon::parse($validated['session_date'])->toDateString();
+
+        abort_unless($schedule->day_of_week === Carbon::parse($sessionDate)->format('D'), 422, 'The schedule does not match the meeting date.');
+
+        DB::transaction(function () use ($request, $course, $schedule, $sessionDate): void {
+            $enrollmentIds = Enrollment::query()
+                ->where('course_id', $course->course_id)
+                ->select('enrollment_id');
+            AttendanceRecord::query()
+                ->whereIn('enrollment_id', $enrollmentIds)
+                ->whereDate('session_date', $sessionDate)
+                ->where('schedule_id', $schedule->schedule_id)
+                ->delete();
+
+            DB::table('course_schedule_cancellations')->updateOrInsert(
+                ['schedule_id' => $schedule->schedule_id, 'session_date' => $sessionDate],
+                [
+                    'cancelled_by' => $request->user()->facultyMember->faculty_id,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ],
+            );
+        });
+
+        return back()->with('success', 'The selected dated meeting was deleted. The recurring weekly schedule remains unchanged.');
+    }
+
+    private function authorizeFacultyCourse(Request $request, Course $course): void
+    {
+        abort_unless($course->faculty_id === $request->user()->facultyMember?->faculty_id, 403, 'Unauthorized access to this course.');
+    }
+
+    private function scheduleForCourse(Course $course, int $scheduleId): CourseSchedule
+    {
+        return CourseSchedule::query()
+            ->where('course_id', $course->course_id)
+            ->findOrFail($scheduleId);
+    }
+
+    private function ensureScheduleOccurrenceAvailable(CourseSchedule $schedule, string $sessionDate): void
+    {
+        abort_unless(
+            ! DB::table('course_schedule_cancellations')
+                ->where('schedule_id', $schedule->schedule_id)
+                ->whereDate('session_date', $sessionDate)
+                ->exists(),
+            422,
+            'The selected dated meeting has been cancelled.',
+        );
+    }
+
+    private function ensureDateIsNotFullyCancelled(Course $course, string $sessionDate): void
+    {
+        $scheduledSlots = $course->schedules
+            ->filter(fn (CourseSchedule $schedule): bool => $schedule->day_of_week === Carbon::parse($sessionDate)->format('D'));
+
+        abort_unless(
+            $scheduledSlots->isEmpty()
+                || ! $scheduledSlots->every(fn (CourseSchedule $schedule): bool => DB::table('course_schedule_cancellations')
+                    ->where('schedule_id', $schedule->schedule_id)
+                    ->whereDate('session_date', $sessionDate)
+                    ->exists()),
+            422,
+            'All scheduled meetings on this date have been cancelled.',
+        );
     }
 
     /**
@@ -362,16 +561,21 @@ class FacultyController extends Controller
 
         $sessionDate = Carbon::parse($validated['session_date'])->toDateString();
         $scheduleId = $validated['schedule_id'] ?? null;
+        if ($scheduleId !== null) {
+            $schedule = $this->scheduleForCourse($course, (int) $scheduleId);
+            $this->ensureScheduleOccurrenceAvailable($schedule, $sessionDate);
+        } else {
+            $this->ensureDateIsNotFullyCancelled($course, $sessionDate);
+        }
         $isOutOfSchedule = ! $this->attendanceService->isDateOnSchedule($course, $sessionDate);
 
         $existingRecord = $enrollment->attendanceRecords->first(function ($r) use ($sessionDate, $scheduleId): bool {
             $dateMatch = Carbon::parse($r->session_date)->isSameDay($sessionDate);
-            if (! $dateMatch) {
-                return false;
-            }
 
-            return $scheduleId === null || $r->schedule_id === $scheduleId;
-        });
+            return $dateMatch && $r->schedule_id === $scheduleId;
+        }) ?? ($scheduleId !== null
+            ? $enrollment->attendanceRecords->first(fn (AttendanceRecord $r): bool => Carbon::parse($r->session_date)->isSameDay($sessionDate) && $r->schedule_id === null)
+            : null);
 
         $gradingPeriod = $validated['grading_period'] ?? $existingRecord?->grading_period ?? 'first_grading';
 
@@ -379,25 +583,30 @@ class FacultyController extends Controller
             ? (float) $validated['hours_absent']
             : null;
 
-        $record = AttendanceRecord::updateOrCreate(
-            [
+        $attributes = [
+            'schedule_id' => $scheduleId,
+            'recorded_by' => $faculty->faculty_id,
+            'status' => $validated['status'],
+            'grading_period' => $gradingPeriod,
+            'hours_absent' => $hoursAbsent,
+            'remarks' => $validated['remarks'] ?? null,
+            'is_out_of_schedule' => $isOutOfSchedule,
+        ];
+        if ($existingRecord) {
+            $existingRecord->update($attributes);
+            $record = $existingRecord->refresh();
+        } else {
+            $record = AttendanceRecord::create([
                 'enrollment_id' => $enrollment->enrollment_id,
                 'session_date' => $sessionDate,
-                'schedule_id' => $scheduleId,
-            ],
-            [
-                'recorded_by' => $faculty->faculty_id,
-                'status' => $validated['status'],
-                'grading_period' => $gradingPeriod,
-                'hours_absent' => $hoursAbsent,
-                'remarks' => $validated['remarks'] ?? null,
-                'is_out_of_schedule' => $isOutOfSchedule,
-            ]
-        );
+                ...$attributes,
+            ]);
+        }
 
         $enrollment->load('attendanceRecords');
         $absentHours = $this->attendanceService->calculateStudentAbsenceHours($enrollment);
         $overallScore = $this->attendanceService->calculateOverallScore($enrollment->attendanceRecords);
+        $maximumAbsenceHours = $this->attendanceService->maximumAllowableAbsenceHours($course);
 
         if ($request->wantsJson()) {
             return response()->json([
@@ -414,6 +623,10 @@ class FacultyController extends Controller
                 'stats' => [
                     'overall_score' => $overallScore,
                     'absent_hours' => $absentHours,
+                    'maximum_absence_hours' => $maximumAbsenceHours,
+                    'absence_percentage' => $this->attendanceService->calculateAbsencePercentage($course, $absentHours),
+                    'maximum_absence_percentage' => $this->attendanceService->maximumAllowableAbsencePercentage(),
+                    'is_drop_eligible' => $absentHours >= $maximumAbsenceHours,
                     'presences' => $enrollment->attendanceRecords->where('status', 'present')->count(),
                     'lates' => $enrollment->attendanceRecords->where('status', 'late')->count(),
                     'absences' => $enrollment->attendanceRecords->where('status', 'absent')->count(),
@@ -441,7 +654,17 @@ class FacultyController extends Controller
             return back()->with('info', 'This student is already marked as Dropped.');
         }
 
+        $enrollment->loadMissing('course.schedules', 'attendanceRecords');
         $absenceHours = $this->attendanceService->calculateStudentAbsenceHours($enrollment);
+        $maximumAbsenceHours = $this->attendanceService->maximumAllowableAbsenceHours($enrollment->course);
+
+        if ($absenceHours < $maximumAbsenceHours) {
+            return back()->with('error', sprintf(
+                'This student can be dropped after reaching %.2f absent hours; current total is %.2f hours.',
+                $maximumAbsenceHours,
+                $absenceHours,
+            ));
+        }
 
         DB::transaction(function () use ($enrollment, $faculty, $absenceHours): void {
             $enrollment->update(['status' => 'dropped']);
