@@ -11,6 +11,7 @@ use App\Models\Enrollment;
 use App\Models\FacultyMember;
 use App\Models\Notification;
 use App\Services\AttendanceService;
+use App\Services\AttendanceImportService;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -18,6 +19,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\View\View;
+use InvalidArgumentException;
 
 class FacultyController extends Controller
 {
@@ -343,6 +345,7 @@ class FacultyController extends Controller
         $scheduleId = $validated['schedule_id'] ?? null;
         if ($scheduleId !== null) {
             $schedule = $this->scheduleForCourse($course, (int) $scheduleId);
+
             $this->ensureScheduleOccurrenceAvailable($schedule, $sessionDate);
         } else {
             $this->ensureDateIsNotFullyCancelled($course, $sessionDate);
@@ -408,6 +411,100 @@ class FacultyController extends Controller
             'schedule_id' => $scheduleId,
             'tab' => $request->input('tab', 'check'),
         ])->with('success', $message);
+    }
+
+    /**
+     * Import attendance from a date-column CSV or Excel workbook.
+     */
+    public function importAttendance(Request $request, AttendanceImportService $importService): RedirectResponse
+    {
+        $validated = $request->validate([
+            'course_id' => ['required', 'integer', 'exists:courses,course_id'],
+            'file' => ['required', 'file', 'mimes:csv,txt,xlsx', 'extensions:csv,xlsx', 'max:5120'],
+            'grading_period' => ['required', 'in:first_grading,midterms,finals'],
+        ]);
+
+        $faculty = $request->user()->facultyMember;
+        $course = Course::with('schedules')->where('course_id', $validated['course_id'])->firstOrFail();
+        abort_unless($course->faculty_id === $faculty?->faculty_id, 403, 'Unauthorized access to this course.');
+
+        try {
+            $rows = $importService->rows($validated['file']);
+        } catch (InvalidArgumentException $exception) {
+            return back()->withErrors(['file' => $exception->getMessage()])->withInput();
+        }
+
+        $dates = collect($rows)->pluck('meeting_date')->unique()->values();
+        foreach ($dates as $sessionDate) {
+            $this->ensureDateIsNotFullyCancelled($course, $sessionDate);
+        }
+
+        $studentNumbers = collect($rows)->pluck('student_number')->unique()->values();
+        $attendanceKeys = collect($rows)->map(fn (array $row): string => $row['meeting_date'].'|'.$row['student_number']);
+        if ($studentNumbers->contains('') || $attendanceKeys->count() !== $attendanceKeys->unique()->count()) {
+            return back()->withErrors(['file' => 'Each student can have only one attendance mark per meeting date.'])->withInput();
+        }
+
+        $enrollmentsByStudentNumber = Enrollment::with('student')
+            ->where('course_id', $course->course_id)
+            ->whereHas('student', fn ($query) => $query->whereIn('student_number', $studentNumbers))
+            ->get()
+            ->keyBy(fn (Enrollment $enrollment): string => $enrollment->student->student_number);
+
+        foreach ($rows as $row) {
+            $enrollment = $enrollmentsByStudentNumber->get($row['student_number']);
+            if (! in_array($row['status'], ['present', 'absent', 'late', 'excused'], true)) {
+                return back()->withErrors(['file' => "Row {$row['row']} has an invalid status. Use A, P, L, or E."])->withInput();
+            }
+            if (! $enrollment) {
+                return back()->withErrors(['file' => "Student {$row['student_number']} on row {$row['row']} is not enrolled in this course."])->withInput();
+            }
+            if ($enrollment->status === 'dropped') {
+                return back()->withErrors(['file' => "Student {$row['student_number']} on row {$row['row']} has been dropped from this course."])->withInput();
+            }
+        }
+
+        $isOutOfScheduleByDate = $dates->mapWithKeys(fn (string $date): array => [
+            $date => ! $this->attendanceService->isDateOnSchedule($course, $date),
+        ]);
+
+        DB::transaction(function () use ($rows, $enrollmentsByStudentNumber, $faculty, $isOutOfScheduleByDate, $validated): void {
+            foreach ($rows as $row) {
+                $enrollment = $enrollmentsByStudentNumber->get($row['student_number']);
+                $recordQuery = AttendanceRecord::where('enrollment_id', $enrollment->enrollment_id)
+                    ->whereDate('session_date', $row['meeting_date'])
+                    ->whereNull('schedule_id');
+                $existingRecord = (clone $recordQuery)->first();
+
+                $attributes = [
+                    'schedule_id' => null,
+                    'recorded_by' => $faculty->faculty_id,
+                    'grading_period' => $validated['grading_period'],
+                    'status' => $row['status'],
+                    'hours_absent' => null,
+                    'remarks' => $row['remarks'],
+                    'is_out_of_schedule' => $isOutOfScheduleByDate->get($row['meeting_date']),
+                ];
+
+                if ($existingRecord) {
+                    $existingRecord->update($attributes);
+                } else {
+                    AttendanceRecord::create([
+                        'enrollment_id' => $enrollment->enrollment_id,
+                        'session_date' => $row['meeting_date'],
+                        ...$attributes,
+                    ]);
+                }
+            }
+        });
+
+        $latestMeetingDate = $dates->sort()->last();
+
+        return redirect()->route('faculty.dashboard', [
+            'course_id' => $course->course_id,
+            'date' => $latestMeetingDate,
+            'tab' => 'meeting',
+        ])->with('success', count($rows).' attendance marks imported across '.count($dates).' meeting dates.');
     }
 
     public function clearMeeting(Request $request): RedirectResponse
@@ -563,6 +660,7 @@ class FacultyController extends Controller
         $scheduleId = $validated['schedule_id'] ?? null;
         if ($scheduleId !== null) {
             $schedule = $this->scheduleForCourse($course, (int) $scheduleId);
+
             $this->ensureScheduleOccurrenceAvailable($schedule, $sessionDate);
         } else {
             $this->ensureDateIsNotFullyCancelled($course, $sessionDate);

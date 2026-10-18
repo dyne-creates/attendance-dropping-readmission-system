@@ -15,6 +15,7 @@ use App\Services\AttendanceService;
 use Carbon\Carbon;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
 use Tests\TestCase;
 
 class FacultyAttendanceTest extends TestCase
@@ -1145,5 +1146,116 @@ class FacultyAttendanceTest extends TestCase
         $response->assertSee('100 / 100');
         $response->assertSee('Present');
         $response->assertSee('bb-grid-table', false);
+    }
+
+    public function test_faculty_can_import_csv_attendance_using_letter_statuses(): void
+    {
+        $statuses = [$this->student->student_number => 'P'];
+        foreach (['2025-0002' => 'A', '2025-0003' => 'L', '2025-0004' => 'E'] as $studentNumber => $status) {
+            $studentUser = User::factory()->create([
+                'name' => 'Student '.substr($studentNumber, -1),
+                'email' => 'student'.substr($studentNumber, -1).'@s.ubaguio.edu',
+                'role' => 'student',
+            ]);
+            $student = Student::create([
+                'user_id' => $studentUser->user_id,
+                'student_number' => $studentNumber,
+                'last_name' => 'Student',
+                'first_name' => substr($studentNumber, -1),
+                'department' => 'School of Information Technology',
+                'year_level' => 1,
+                'program' => 'BSCS',
+            ]);
+            Enrollment::create([
+                'student_id' => $student->student_id,
+                'course_id' => $this->course->course_id,
+                'status' => 'enrolled',
+                'cycle_number' => 1,
+            ]);
+            $statuses[$studentNumber] = $status;
+        }
+
+        $csv = "meeting_date,student_number,status\n";
+        foreach ($statuses as $studentNumber => $status) {
+            $csv .= "2025-08-11,{$studentNumber},{$status}\n";
+        }
+
+        $response = $this->actingAs($this->facultyUser)->post(route('faculty.attendance.import'), [
+            'course_id' => $this->course->course_id,
+            'grading_period' => 'first_grading',
+            'file' => UploadedFile::fake()->createWithContent('attendance.csv', $csv),
+        ]);
+
+        $response->assertRedirect(route('faculty.dashboard', [
+            'course_id' => $this->course->course_id,
+            'date' => '2025-08-11',
+            'tab' => 'meeting',
+        ]));
+        $this->assertDatabaseCount('attendance_records', 4);
+        foreach ($statuses as $studentNumber => $status) {
+            $enrollment = Enrollment::where('course_id', $this->course->course_id)
+                ->whereHas('student', fn ($query) => $query->where('student_number', $studentNumber))
+                ->firstOrFail();
+            $expectedStatus = match ($status) {
+                'P' => 'present',
+                'A' => 'absent',
+                'L' => 'late',
+                'E' => 'excused',
+            };
+            $this->assertDatabaseHas('attendance_records', [
+                'enrollment_id' => $enrollment->enrollment_id,
+                'session_date' => '2025-08-11',
+                'status' => $expectedStatus,
+                'recorded_by' => $this->faculty->faculty_id,
+            ]);
+        }
+    }
+
+    public function test_csv_attendance_import_rejects_students_outside_the_course_without_saving(): void
+    {
+        $csv = "meeting_date,student_number,status\n2025-08-11,9999-9999,P\n";
+
+        $response = $this->actingAs($this->facultyUser)
+            ->from(route('faculty.dashboard', ['course_id' => $this->course->course_id]))
+            ->post(route('faculty.attendance.import'), [
+                'course_id' => $this->course->course_id,
+                'grading_period' => 'first_grading',
+                'file' => UploadedFile::fake()->createWithContent('attendance.csv', $csv),
+            ]);
+
+        $response->assertRedirect(route('faculty.dashboard', ['course_id' => $this->course->course_id]));
+        $response->assertSessionHasErrors('file');
+        $this->assertDatabaseCount('attendance_records', 0);
+    }
+    public function test_faculty_can_import_date_columns_with_gender_section_rows(): void
+    {
+        $csv = ",10/13/25,10/15/25\nMALE,,\n2025-0001,P,A\nFEMALE,,\n";
+
+        $response = $this->actingAs($this->facultyUser)->post(route('faculty.attendance.import'), [
+            'course_id' => $this->course->course_id,
+            'grading_period' => 'midterms',
+            'file' => UploadedFile::fake()->createWithContent('attendance.csv', $csv),
+        ]);
+
+        $response->assertRedirect(route('faculty.dashboard', [
+            'course_id' => $this->course->course_id,
+            'date' => '2025-10-15',
+            'tab' => 'meeting',
+        ]));
+        $this->assertDatabaseCount('attendance_records', 2);
+        $this->assertDatabaseHas('attendance_records', [
+            'enrollment_id' => $this->enrollment->enrollment_id,
+            'session_date' => '2025-10-13',
+            'status' => 'present',
+            'grading_period' => 'midterms',
+            'schedule_id' => null,
+        ]);
+        $this->assertDatabaseHas('attendance_records', [
+            'enrollment_id' => $this->enrollment->enrollment_id,
+            'session_date' => '2025-10-15',
+            'status' => 'absent',
+            'grading_period' => 'midterms',
+            'schedule_id' => null,
+        ]);
     }
 }

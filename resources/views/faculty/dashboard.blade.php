@@ -86,6 +86,11 @@
                         </a>
                     </div>
 
+                    <a href="{{ route('faculty.dashboard', ['course_id' => $selectedCourse->course_id, 'date' => $selectedDate, 'tab' => 'overall']) }}#attendance-import"
+                       class="btn btn-primary btn-sm whitespace-nowrap">
+                        Import attendance
+                    </a>
+
                     {{-- Blackboard Settings Gear Button --}}
                     <button type="button" @click="showSettingsModal = true"
                             class="h-8 w-8 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white flex items-center justify-center shadow-xs transition-colors"
@@ -705,6 +710,30 @@
                     </section>
                     @endif
 
+                    <section id="attendance-import" class="card p-4 space-y-3 scroll-mt-6" aria-labelledby="attendance-import-heading">
+                        <div>
+                            <h3 id="attendance-import-heading" class="font-semibold text-sm">Import attendance file</h3>
+                        </div>
+                        <form method="POST" action="{{ route('faculty.attendance.import') }}" enctype="multipart/form-data" class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4 lg:items-end">
+                            @csrf
+                            <input type="hidden" name="course_id" value="{{ $selectedCourse->course_id }}">
+                            <div class="sm:col-span-2">
+                                <label for="attendance-import-file" class="field-label">CSV or Excel file</label>
+                                <input id="attendance-import-file" name="file" type="file" accept=".csv,.xlsx" required class="field">
+                            </div>
+                            <div>
+                                <label for="attendance-import-grading-period" class="field-label">Grading period</label>
+                                <select id="attendance-import-grading-period" name="grading_period" class="field" required>
+                                    <option value="first_grading">First Grading</option>
+                                    <option value="midterms">Midterms</option>
+                                    <option value="finals">Finals</option>
+                                </select>
+                            </div>
+                            <div>
+                                <button type="submit" class="btn btn-primary btn-sm w-full">Upload and save attendance</button>
+                            </div>
+                        </form>
+                    </section>
                     {{-- The Blackboard Overall Spreadsheet Grid --}}
                     <div class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded shadow-xs overflow-hidden">
                         <div class="overflow-x-auto max-h-[72vh]">

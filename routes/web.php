@@ -41,6 +41,10 @@ Route::middleware(['auth', 'prevent-back-history'])->group(function () {
         ->middleware('facultyMiddleware')
         ->name('faculty.dashboard');
 
+    Route::post('/faculty/attendance/import', [FacultyController::class, 'importAttendance'])
+        ->middleware('facultyMiddleware')
+        ->name('faculty.attendance.import');
+
     Route::post('/faculty/attendance', [FacultyController::class, 'storeAttendance'])
         ->middleware('facultyMiddleware')
         ->name('faculty.attendance.store');

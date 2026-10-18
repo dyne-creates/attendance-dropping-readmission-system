@@ -11,17 +11,29 @@ return new class extends Migration
      * Run the migrations.
      */
     public function up(): void
-    {
-        Schema::table('readmission_requests', function (Blueprint $table): void {
-            $table->unsignedInteger('attempt_number')->default(1)->after('drop_id');
-            $table->text('rejection_reason')->nullable()->after('reason_details');
-            $table->dropUnique('readmission_requests_drop_id_unique');
-            $table->unique(
-                ['drop_id', 'attempt_number'],
-                'readmission_requests_drop_attempt_unique',
-            );
-        });
-    }
+{
+    Schema::table('readmission_requests', function (Blueprint $table): void {
+        $table->unsignedInteger('attempt_number')
+            ->default(1)
+            ->after('drop_id');
+
+        $table->text('rejection_reason')
+            ->nullable()
+            ->after('reason_details');
+
+        // Ensure a non-unique index remains for the foreign key.
+        $table->index('drop_id', 'readmission_requests_drop_id_index');
+    });
+
+    Schema::table('readmission_requests', function (Blueprint $table): void {
+        $table->dropUnique('readmission_requests_drop_id_unique');
+
+        $table->unique(
+            ['drop_id', 'attempt_number'],
+            'readmission_requests_drop_attempt_unique'
+        );
+    });
+}
 
     /**
      * Reverse the migrations.
