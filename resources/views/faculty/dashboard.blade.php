@@ -154,9 +154,15 @@
         @endif
 
         @if (! $selectedCourse)
-            <div class="card p-12 text-center">
-                <p class="font-semibold text-lg">No course selected</p>
-                <p class="muted mt-1 text-sm">Please select a course to check attendance.</p>
+            <div class="card p-8 text-center space-y-3">
+                <div>
+                    <p class="font-semibold text-lg">No course selected</p>
+                    <p class="muted mt-1 text-sm">Create a subject manually or import a Blackboard class list to get started.</p>
+                </div>
+                <div class="flex flex-wrap justify-center gap-2">
+                    <a href="{{ route('faculty.courses.import') }}" class="btn btn-primary">Import Class List</a>
+                    <a href="{{ route('faculty.courses.create') }}" class="btn btn-secondary">Add Subject</a>
+                </div>
             </div>
         @else
 
@@ -179,6 +185,10 @@
                         <span class="badge badge-neutral text-xs">
                             {{ $courses->count() }} {{ Str::plural('subject', $courses->count()) }}
                         </span>
+                        <a href="{{ route('faculty.courses.import') }}"
+                           class="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 shadow-xs transition-colors font-medium">
+                            Import Class List
+                        </a>
                         <a href="{{ route('faculty.courses.create') }}"
                            class="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 shadow-xs transition-colors font-medium">
                             <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
@@ -717,17 +727,33 @@
                         <form method="POST" action="{{ route('faculty.attendance.import') }}" enctype="multipart/form-data" class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4 lg:items-end">
                             @csrf
                             <input type="hidden" name="course_id" value="{{ $selectedCourse->course_id }}">
+                            <input type="hidden" name="session_date" :value="selectedMeetingDate">
+                            <input type="hidden" name="schedule_id" :value="selectedMeetingScheduleId">
                             <div class="sm:col-span-2">
-                                <label for="attendance-import-file" class="field-label">CSV or Excel file</label>
-                                <input id="attendance-import-file" name="file" type="file" accept=".csv,.xlsx" required class="field">
-                            </div>
-                            <div>
-                                <label for="attendance-import-grading-period" class="field-label">Grading period</label>
-                                <select id="attendance-import-grading-period" name="grading_period" class="field" required>
-                                    <option value="first_grading">First Grading</option>
-                                    <option value="midterms">Midterms</option>
-                                    <option value="finals">Finals</option>
+                                <label for="attendance-import-meeting" class="field-label">Selected dated meeting</label>
+                                <select id="attendance-import-meeting" class="field"
+                                        x-model="selectedMeetingKey">
+                                    @foreach ($importMeetingOptions as $meeting)
+                                        <option value="{{ $meeting['key'] }}">
+                                            {{ $meeting['label'] }}
+                                        </option>
+                                    @endforeach
                                 </select>
+                                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                                    Dates in the file take priority; this meeting is used for rows without a date.
+                                </p>
+                            </div>
+                            <div class="sm:col-span-2">
+                                <div class="flex items-center justify-between gap-2">
+                                    <label for="attendance-import-file" class="field-label">CSV or Excel file</label>
+                                    <a href="{{ asset('attendance-import-template.xlsx') }}" class="text-xs text-indigo-600 dark:text-indigo-400 hover:underline">
+                                        Download sample Excel
+                                    </a>
+                                </div>
+                                <input id="attendance-import-file" name="file" type="file" accept=".csv,.xlsx" required class="field">
+                                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                                    Use student_number, status, and optional remarks columns. Replace the example student numbers with students enrolled in this course.
+                                </p>
                             </div>
                             <div>
                                 <button type="submit" class="btn btn-primary btn-sm w-full">Upload and save attendance</button>

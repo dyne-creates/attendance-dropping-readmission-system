@@ -1,0 +1,49 @@
+DEMO LOGIN AND ATTENDANCE DATA
+==============================
+
+Copy/paste sample only. These details are NOT installed in the application:
+DatabaseSeeder is intentionally empty. Create a matching student account and
+attendance records in a local/test database before using this login.
+
+DEMO LOGIN
+----------
+Role: Student
+Name: Demo Student
+Email: demo.student@s.ubaguio.edu
+Password: DemoStudent123!
+Student number: DEMO-STU-001
+
+SUBJECT
+-------
+Subject: Agile Development
+Subject code: AGILEDEV
+Section: IDB - SD
+School year: 2025-2026
+Semester: 1st Semester
+
+ATTENDANCE CSV
+--------------
+Use the values in the grading_period column when entering attendance records.
+Statuses per grading period: 6 present, 2 absent, 2 late.
+
+session_date,grading_period,status,remarks
+2025-08-05,first_grading,present,
+2025-08-07,first_grading,present,
+2025-08-12,first_grading,present,
+2025-08-14,first_grading,absent,
+2025-08-19,first_grading,present,
+2025-08-21,first_grading,late,
+2025-08-26,first_grading,present,
+2025-08-28,first_grading,absent,
+2025-09-02,first_grading,late,
+2025-09-04,first_grading,present,
+2025-09-09,midterms,present,
+2025-09-11,midterms,late,
+2025-09-16,midterms,present,
+2025-09-18,midterms,present,
+2025-09-23,midterms,absent,
+2025-09-25,midterms,present,
+2025-09-30,midterms,late,
+2025-10-02,midterms,present,
+2025-10-07,midterms,absent,
+2025-10-09,midterms,present,

@@ -77,6 +77,8 @@ Route::middleware(['auth', 'prevent-back-history'])->group(function () {
     Route::middleware('facultyMiddleware')->prefix('faculty/courses')->name('faculty.courses.')->group(function () {
         Route::get('/create', [FacultyCourseController::class, 'create'])->name('create');
         Route::post('/', [FacultyCourseController::class, 'store'])->name('store');
+        Route::get('/import', [FacultyCourseController::class, 'importForm'])->name('import');
+        Route::post('/import', [FacultyCourseController::class, 'importClassList'])->name('import.store');
         Route::get('/{course}/schedules/create', [FacultyCourseController::class, 'createSchedule'])->name('schedules.create');
         Route::post('/{course}/schedules', [FacultyCourseController::class, 'storeSchedule'])->name('schedules.store');
         Route::get('/{course}/edit', [FacultyCourseController::class, 'edit'])->name('edit');

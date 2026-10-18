@@ -10,14 +10,17 @@ use App\Models\DroppingTransaction;
 use App\Models\Enrollment;
 use App\Models\FacultyMember;
 use App\Models\Notification;
-use App\Services\AttendanceService;
 use App\Services\AttendanceImportService;
+use App\Services\AttendanceService;
 use Carbon\Carbon;
+use Carbon\CarbonPeriod;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 use InvalidArgumentException;
 
@@ -72,6 +75,7 @@ class FacultyController extends Controller
         ];
         $sessionHistory = collect();
         $gridDates = collect();
+        $importMeetingOptions = collect();
         $meetingHoursByKey = collect();
         $sessionHours = 1.5;
         $slotsForDay = collect();
@@ -259,6 +263,39 @@ class FacultyController extends Controller
                     ];
                 });
             });
+            $importMeetingDates = $dateStrings;
+            $termStart = Carbon::parse($course->schoolYear->start_date)->max(Carbon::parse($selectedDate));
+            $termEnd = Carbon::parse($course->schoolYear->end_date);
+
+            if ($termStart->lte($termEnd)) {
+                $scheduledMeetingDates = collect(CarbonPeriod::create($termStart, $termEnd))
+                    ->filter(fn (Carbon $date): bool => $course->schedules->contains('day_of_week', $date->format('D')))
+                    ->map(fn (Carbon $date): string => $date->toDateString());
+
+                $importMeetingDates = $importMeetingDates->merge($scheduledMeetingDates);
+            }
+
+            $importMeetingOptions = $importMeetingDates->unique()->sort()->values()->flatMap(
+                function (string $dateStr) use ($course, $cancelledOccurrenceKeys): Collection {
+                    $carbon = Carbon::parse($dateStr);
+                    $scheduledSlots = $course->schedules
+                        ->filter(fn (CourseSchedule $schedule): bool => $schedule->day_of_week === $carbon->format('D')
+                            && ! $cancelledOccurrenceKeys->has($dateStr.'|'.$schedule->schedule_id));
+                    $scheduleOptions = $scheduledSlots->map(function (CourseSchedule $schedule) use ($carbon, $dateStr): array {
+                        $scheduleLabel = Carbon::parse($schedule->start_time)->format('g:i A').' – '.Carbon::parse($schedule->end_time)->format('g:i A');
+
+                        return [
+                            'key' => $dateStr.'|'.$schedule->schedule_id,
+                            'label' => $carbon->format('n/j/y').' · '.$scheduleLabel,
+                        ];
+                    });
+
+                    return $scheduleOptions->push([
+                        'key' => $dateStr.'|',
+                        'label' => $carbon->format('n/j/y').' · Unscheduled',
+                    ]);
+                }
+            );
             $meetingHoursByKey = $gridDates->mapWithKeys(
                 fn (array $meeting): array => [$meeting['column_key'] => $meeting['session_hours']],
             );
@@ -306,6 +343,7 @@ class FacultyController extends Controller
             'courseStats' => $courseStats,
             'sessionHistory' => $sessionHistory,
             'gridDates' => $gridDates,
+            'importMeetingOptions' => $importMeetingOptions,
             'meetingHoursByKey' => $meetingHoursByKey,
             'activeTab' => $activeTab,
             'prevDate' => $prevDate,
@@ -414,22 +452,64 @@ class FacultyController extends Controller
     }
 
     /**
-     * Import attendance from a date-column CSV or Excel workbook.
+     * Import attendance from a CSV or Excel workbook.
      */
     public function importAttendance(Request $request, AttendanceImportService $importService): RedirectResponse
     {
+        $file = $request->file('file');
+        if ($file instanceof UploadedFile && ! $file->isValid()) {
+            $message = match ($file->getError()) {
+                UPLOAD_ERR_INI_SIZE => 'The file exceeds the server upload limit. Choose a smaller file or increase upload_max_filesize and restart PHP.',
+                UPLOAD_ERR_FORM_SIZE => 'The file exceeds the maximum size allowed by this form.',
+                UPLOAD_ERR_PARTIAL => 'The file upload was interrupted. Please select it again and retry.',
+                UPLOAD_ERR_NO_TMP_DIR => 'The server is missing its temporary upload folder. Please contact the administrator.',
+                UPLOAD_ERR_CANT_WRITE => 'The server could not save the uploaded file. Please contact the administrator.',
+                UPLOAD_ERR_EXTENSION => 'A server extension stopped the file upload. Please contact the administrator.',
+                default => 'The file could not be uploaded. Please select it again and retry.',
+            };
+
+            return back()
+                ->withErrors(['file' => $message])
+                ->withInput($request->except('file'));
+        }
+
         $validated = $request->validate([
             'course_id' => ['required', 'integer', 'exists:courses,course_id'],
             'file' => ['required', 'file', 'mimes:csv,txt,xlsx', 'extensions:csv,xlsx', 'max:5120'],
-            'grading_period' => ['required', 'in:first_grading,midterms,finals'],
+            'session_date' => ['required', 'date'],
+            'schedule_id' => ['nullable', 'integer'],
         ]);
 
         $faculty = $request->user()->facultyMember;
         $course = Course::with('schedules')->where('course_id', $validated['course_id'])->firstOrFail();
         abort_unless($course->faculty_id === $faculty?->faculty_id, 403, 'Unauthorized access to this course.');
+        $selectedMeetingDate = Carbon::parse($validated['session_date'])->toDateString();
+        $selectedScheduleId = $validated['schedule_id'] ?? null;
+
+        if ($selectedScheduleId !== null) {
+            $selectedSchedule = $course->schedules->firstWhere('schedule_id', (int) $selectedScheduleId);
+            $selectedMeetingDay = Carbon::parse($selectedMeetingDate)->format('D');
+
+            if ($selectedSchedule === null || $selectedSchedule->day_of_week !== $selectedMeetingDay) {
+                throw ValidationException::withMessages([
+                    'schedule_id' => 'Choose a scheduled meeting that belongs to this course and date.',
+                ]);
+            }
+
+            $isCancelledMeeting = DB::table('course_schedule_cancellations')
+                ->where('schedule_id', $selectedSchedule->schedule_id)
+                ->whereDate('session_date', $selectedMeetingDate)
+                ->exists();
+
+            if ($isCancelledMeeting) {
+                throw ValidationException::withMessages([
+                    'schedule_id' => 'The selected meeting has been cancelled.',
+                ]);
+            }
+        }
 
         try {
-            $rows = $importService->rows($validated['file']);
+            $rows = $importService->rows($validated['file'], $selectedMeetingDate);
         } catch (InvalidArgumentException $exception) {
             return back()->withErrors(['file' => $exception->getMessage()])->withInput();
         }
@@ -468,18 +548,19 @@ class FacultyController extends Controller
             $date => ! $this->attendanceService->isDateOnSchedule($course, $date),
         ]);
 
-        DB::transaction(function () use ($rows, $enrollmentsByStudentNumber, $faculty, $isOutOfScheduleByDate, $validated): void {
+        DB::transaction(function () use ($rows, $enrollmentsByStudentNumber, $faculty, $isOutOfScheduleByDate, $selectedMeetingDate, $selectedScheduleId): void {
             foreach ($rows as $row) {
                 $enrollment = $enrollmentsByStudentNumber->get($row['student_number']);
+                $scheduleId = $row['meeting_date'] === $selectedMeetingDate ? $selectedScheduleId : null;
                 $recordQuery = AttendanceRecord::where('enrollment_id', $enrollment->enrollment_id)
                     ->whereDate('session_date', $row['meeting_date'])
-                    ->whereNull('schedule_id');
+                    ->where('schedule_id', $scheduleId);
                 $existingRecord = (clone $recordQuery)->first();
 
                 $attributes = [
-                    'schedule_id' => null,
+                    'schedule_id' => $scheduleId,
                     'recorded_by' => $faculty->faculty_id,
-                    'grading_period' => $validated['grading_period'],
+                    'grading_period' => null,
                     'status' => $row['status'],
                     'hours_absent' => null,
                     'remarks' => $row['remarks'],
