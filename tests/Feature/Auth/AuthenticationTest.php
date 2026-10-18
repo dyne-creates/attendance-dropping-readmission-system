@@ -16,6 +16,7 @@ class AuthenticationTest extends TestCase
         $response = $this->get('/login');
 
         $response->assertStatus(200);
+        $response->assertHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
     }
 
     public function test_users_can_authenticate_using_the_login_screen(): void
@@ -170,6 +171,21 @@ class AuthenticationTest extends TestCase
         $response = $this->actingAs($user)->post('/logout');
 
         $this->assertGuest();
-        $response->assertRedirect('/');
+        $response->assertRedirect(route('login'));
+
+        $this->get(route('student.dashboard'))
+            ->assertRedirect(route('login'));
+
+        $this->get(route('login'))
+            ->assertOk();
+    }
+
+    public function test_authenticated_dashboard_responses_are_not_cached(): void
+    {
+        $response = $this->actingAs(User::factory()->create())
+            ->get(route('student.dashboard'));
+
+        $response->assertOk();
+        $response->assertHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
     }
 }

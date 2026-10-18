@@ -1,6 +1,6 @@
 <x-app-layout>
     <x-slot name="header">
-        <x-page-title title="Your profile" description="View and update your account details. Your account type cannot be changed." />
+        <x-page-title title="Your profile" description="View and update your account details." />
     </x-slot>
 
     <div class="page space-y-6">

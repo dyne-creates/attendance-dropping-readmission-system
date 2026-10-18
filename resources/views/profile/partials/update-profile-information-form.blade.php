@@ -42,7 +42,7 @@
                 disabled
                 aria-describedby="account-type-help"
             />
-            <p id="account-type-help" class="muted mt-1 text-xs">Account type is assigned during registration and cannot be edited.</p>
+            <p id="account-type-help" class="muted mt-1 text-xs">Account type is assigned to your account and cannot be edited.</p>
         </div>
 
         <div>

@@ -42,7 +42,7 @@
                 </p>
                 <div class="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-200">
                     <span class="font-semibold">Initial student login:</span>
-                    new student accounts will share the password <code class="font-mono">passwords</code>.
+                    New student accounts will share the password <code class="font-mono">passwords</code>.
                     Change this before using the accounts with real student data.
                 </div>
                 <p class="text-xs text-gray-500 dark:text-gray-400">

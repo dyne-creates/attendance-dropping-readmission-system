@@ -67,7 +67,7 @@
                         </select>
                     @endif
                 </div>
-                <h1 class="font-serif text-3xl md:text-4xl font-normal text-gray-900 dark:text-gray-100 tracking-tight mt-0.5">
+                <h1 class="text-3xl md:text-4xl font-normal text-gray-900 dark:text-gray-100 tracking-tight mt-0.5">
                     Attendance
                 </h1>
             </div>

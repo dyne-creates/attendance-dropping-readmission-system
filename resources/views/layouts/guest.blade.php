@@ -61,9 +61,11 @@
     </div>
 
     <script>
-        // If the browser restores this page from its back/forward cache, reload it so state is fresh.
+        // Revalidate history-restored pages with the server so auth changes take effect.
         window.addEventListener('pageshow', function (event) {
-            if (event.persisted) {
+            const navigation = performance.getEntriesByType('navigation')[0];
+
+            if (event.persisted || navigation?.type === 'back_forward') {
                 window.location.reload();
             }
         });
