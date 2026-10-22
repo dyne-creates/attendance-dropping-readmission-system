@@ -122,6 +122,42 @@ class FacultyAttendanceTest extends TestCase
         $response->assertSee('Attendance Settings');
         $response->assertSee('settings-grading-period');
         $response->assertSee('View Overall Blackboard Grid');
+        $response->assertSee('Student status:')
+            ->assertSee('Green: below weekly threshold')
+            ->assertSee('Yellow: approaching or meeting weekly-hours drop threshold')
+            ->assertSee('Red: 20% permanent-drop level or already dropped')
+            ->assertSee('studentStatusOutline');
+    }
+
+    public function test_faculty_can_browse_the_weekly_subject_schedule_and_jump_to_a_date(): void
+    {
+        $mondaySchedule = $this->course->schedules()->where('day_of_week', 'Mon')->firstOrFail();
+
+        $response = $this->actingAs($this->facultyUser)->get(route('faculty.dashboard', [
+            'course_id' => $this->course->course_id,
+            'date' => '2025-08-13',
+        ]));
+
+        $response->assertSee('Weekly schedule · CS 101')
+            ->assertSee('Aug 11, 2025 – Aug 17, 2025')
+            ->assertSee('Jump to date')
+            ->assertSee('name="date" value="2025-08-13"', false)
+            ->assertSee(route('faculty.dashboard', [
+                'course_id' => $this->course->course_id,
+                'date' => '2025-08-11',
+                'tab' => 'meeting',
+                'schedule_id' => $mondaySchedule->schedule_id,
+            ]))
+            ->assertSee(route('faculty.dashboard', [
+                'course_id' => $this->course->course_id,
+                'date' => '2025-08-06',
+                'tab' => 'meeting',
+            ]))
+            ->assertSee(route('faculty.dashboard', [
+                'course_id' => $this->course->course_id,
+                'date' => '2025-08-20',
+                'tab' => 'meeting',
+            ]));
     }
 
     public function test_attendance_import_meeting_selector_lists_scheduled_meetings(): void
@@ -691,14 +727,14 @@ class FacultyAttendanceTest extends TestCase
         ]);
     }
 
-    public function test_faculty_cannot_drop_student_before_the_absence_limit(): void
+    public function test_faculty_cannot_drop_student_before_one_week_of_absences(): void
     {
         AttendanceRecord::create([
             'enrollment_id' => $this->enrollment->enrollment_id,
             'recorded_by' => $this->faculty->faculty_id,
             'session_date' => '2026-10-05',
             'status' => 'absent',
-            'hours_absent' => 10.79,
+            'hours_absent' => 2.99,
             'is_out_of_schedule' => false,
         ]);
 
@@ -710,7 +746,7 @@ class FacultyAttendanceTest extends TestCase
             ->post(route('faculty.enrollments.drop', $this->enrollment));
 
         $response->assertRedirect();
-        $response->assertSessionHas('error', 'This student can be dropped after reaching 10.80 absent hours; current total is 10.79 hours.');
+        $response->assertSessionHas('error', 'This student can be dropped to OSA after reaching 3.00 absent hours (one week of this subject); current total is 2.99 hours.');
         $this->assertSame('enrolled', $this->enrollment->fresh()->status);
         $this->assertDatabaseMissing('dropping_transactions', [
             'enrollment_id' => $this->enrollment->enrollment_id,
@@ -721,7 +757,7 @@ class FacultyAttendanceTest extends TestCase
         ]);
     }
 
-    public function test_zero_overall_score_does_not_replace_the_twenty_percent_absence_threshold(): void
+    public function test_zero_overall_score_does_not_replace_the_twenty_percent_semester_absence_threshold(): void
     {
         AttendanceRecord::create([
             'enrollment_id' => $this->enrollment->enrollment_id,
@@ -736,14 +772,14 @@ class FacultyAttendanceTest extends TestCase
             ->get(route('faculty.dashboard', ['course_id' => $this->course->course_id]));
 
         $response->assertViewHas('enrollmentRows', fn ($rows): bool => $rows->first()['is_drop_eligible'] === false);
-        $response->assertSeeText('Absence threshold:');
+        $response->assertSeeText('Absent:');
         $response->assertSee('2.78', false);
         $response->assertSee('20.00%', false);
         $response->assertSee('0 / 100');
         $this->assertSame('enrolled', $this->enrollment->fresh()->status);
     }
 
-    public function test_ajax_attendance_update_reports_drop_eligibility_at_the_twenty_percent_threshold(): void
+    public function test_ajax_attendance_update_reports_drop_eligibility_at_the_twenty_percent_semester_threshold(): void
     {
         $response = $this->actingAs($this->facultyUser)
             ->postJson(route('faculty.attendance.record'), [
@@ -757,12 +793,128 @@ class FacultyAttendanceTest extends TestCase
 
         $response->assertOk()
             ->assertJsonPath('stats.absence_percentage', 20)
+            ->assertJsonPath('stats.maximum_absence_hours', 10.8)
+            ->assertJsonPath('stats.weekly_drop_threshold_hours', 3)
             ->assertJsonPath('stats.maximum_absence_percentage', 20)
-            ->assertJsonPath('stats.is_drop_eligible', true);
+            ->assertJsonPath('stats.is_drop_eligible', true)
+            ->assertJsonPath('stats.is_permanent_drop_eligible', true);
         $this->assertSame('enrolled', $this->enrollment->fresh()->status);
     }
 
-    public function test_faculty_can_drop_student_after_the_absence_limit_is_reached(): void
+    public function test_ajax_attendance_update_reports_weekly_drop_eligibility_before_the_permanent_threshold(): void
+    {
+        $response = $this->actingAs($this->facultyUser)
+            ->postJson(route('faculty.attendance.record'), [
+                'course_id' => $this->course->course_id,
+                'enrollment_id' => $this->enrollment->enrollment_id,
+                'session_date' => '2026-10-05',
+                'status' => 'absent',
+                'hours_absent' => 3,
+                'grading_period' => 'first_grading',
+            ]);
+
+        $response->assertOk()
+            ->assertJsonPath('stats.absent_hours', 3)
+            ->assertJsonPath('stats.weekly_drop_threshold_hours', 3)
+            ->assertJsonPath('stats.is_drop_eligible', true)
+            ->assertJsonPath('stats.is_permanent_drop_eligible', false);
+        $this->assertSame('enrolled', $this->enrollment->fresh()->status);
+    }
+
+    public function test_faculty_can_drop_student_to_osa_after_one_week_of_absences(): void
+    {
+        AttendanceRecord::create([
+            'enrollment_id' => $this->enrollment->enrollment_id,
+            'recorded_by' => $this->faculty->faculty_id,
+            'session_date' => '2026-10-05',
+            'status' => 'absent',
+            'hours_absent' => 3,
+            'is_out_of_schedule' => false,
+        ]);
+
+        $this->actingAs($this->facultyUser)
+            ->get(route('faculty.dashboard', ['course_id' => $this->course->course_id]))
+            ->assertSee('Drop student to OSA');
+
+        $response = $this->actingAs($this->facultyUser)
+            ->post(route('faculty.enrollments.drop', $this->enrollment));
+
+        $response->assertRedirect();
+        $response->assertSessionHas('success');
+
+        $this->assertSame('dropped', $this->enrollment->fresh()->status);
+        $this->assertDatabaseHas('dropping_transactions', [
+            'enrollment_id' => $this->enrollment->enrollment_id,
+            'dropped_by' => $this->faculty->faculty_id,
+            'drop_type' => DroppingTransaction::TYPE_WEEKLY_HOURS,
+        ]);
+        $this->assertDatabaseHas('notifications', [
+            'student_id' => $this->student->student_id,
+            'notification_type' => 'student_dropped',
+        ]);
+    }
+
+    public function test_faculty_can_refer_student_to_osa_for_a_circumstance_below_the_absence_threshold(): void
+    {
+        $this->actingAs($this->facultyUser)
+            ->get(route('faculty.dashboard', ['course_id' => $this->course->course_id]))
+            ->assertSee('Refer student to OSA (Circumstance)');
+
+        $response = $this->actingAs($this->facultyUser)
+            ->post(route('faculty.enrollments.drop', $this->enrollment), [
+                'referral_type' => 'circumstance',
+                'instructor_reason' => 'The student has a personal circumstance requiring OSA support.',
+            ]);
+
+        $response->assertRedirect()
+            ->assertSessionHas('success');
+        $this->assertSame('dropped', $this->enrollment->fresh()->status);
+        $this->assertDatabaseHas('dropping_transactions', [
+            'enrollment_id' => $this->enrollment->enrollment_id,
+            'dropped_by' => $this->faculty->faculty_id,
+            'absence_hours_at_drop' => 0,
+            'drop_type' => DroppingTransaction::TYPE_INSTRUCTOR_REFERRAL,
+            'instructor_reason' => 'The student has a personal circumstance requiring OSA support.',
+        ]);
+
+        $osaUser = User::factory()->osaStaff()->create();
+        $this->actingAs($osaUser)
+            ->get(route('osa.archive.drops'))
+            ->assertSee('Instructor referral')
+            ->assertSee('The student has a personal circumstance requiring OSA support.');
+    }
+
+    public function test_faculty_cannot_submit_a_circumstance_referral_without_a_reason(): void
+    {
+        $response = $this->actingAs($this->facultyUser)
+            ->post(route('faculty.enrollments.drop', $this->enrollment), [
+                'referral_type' => 'circumstance',
+                'instructor_reason' => '',
+            ]);
+
+        $response->assertSessionHasErrors('instructor_reason');
+        $this->assertSame('enrolled', $this->enrollment->fresh()->status);
+        $this->assertDatabaseMissing('dropping_transactions', [
+            'enrollment_id' => $this->enrollment->enrollment_id,
+        ]);
+    }
+
+    public function test_faculty_cannot_submit_an_overlong_circumstance_referral_reason(): void
+    {
+        $response = $this->actingAs($this->facultyUser)
+            ->post(route('faculty.enrollments.drop', $this->enrollment), [
+                'referral_type' => 'circumstance',
+                'instructor_reason' => str_repeat('a', 1001),
+            ]);
+
+        $response->assertSessionHasErrors('instructor_reason');
+        $this->assertSame('enrolled', $this->enrollment->fresh()->status);
+        $this->assertDatabaseMissing('dropping_transactions', [
+            'enrollment_id' => $this->enrollment->enrollment_id,
+        ]);
+    }
+
+    public function test_faculty_marks_drop_as_permanent_at_twenty_percent_but_osa_can_review_readmission(): void
     {
         AttendanceRecord::create([
             'enrollment_id' => $this->enrollment->enrollment_id,
@@ -775,23 +927,22 @@ class FacultyAttendanceTest extends TestCase
 
         $this->actingAs($this->facultyUser)
             ->get(route('faculty.dashboard', ['course_id' => $this->course->course_id]))
-            ->assertSee('Drop student');
+            ->assertSee('Permanent drop to OSA');
 
         $response = $this->actingAs($this->facultyUser)
             ->post(route('faculty.enrollments.drop', $this->enrollment));
 
-        $response->assertRedirect();
-        $response->assertSessionHas('success');
-
-        $this->assertEquals('dropped', $this->enrollment->fresh()->status);
+        $response->assertRedirect()
+            ->assertSessionHas('success');
+        $this->assertSame('dropped', $this->enrollment->fresh()->status);
         $this->assertDatabaseHas('dropping_transactions', [
             'enrollment_id' => $this->enrollment->enrollment_id,
-            'dropped_by' => $this->faculty->faculty_id,
+            'drop_type' => DroppingTransaction::TYPE_PERMANENT,
         ]);
-        $this->assertDatabaseHas('notifications', [
-            'student_id' => $this->student->student_id,
-            'notification_type' => 'student_dropped',
-        ]);
+
+        $this->actingAs($this->student->user)
+            ->get(route('student.readmissions.create', $this->enrollment))
+            ->assertSee('OSA may still review and approve your readmission request.');
     }
 
     public function test_overall_and_meeting_views_share_attendance_per_schedule_slot(): void

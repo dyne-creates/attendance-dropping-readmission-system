@@ -81,8 +81,47 @@ class FacultyController extends Controller
         $slotsForDay = collect();
         $selectedSchedule = null;
         $isSelectedDateCancelled = false;
+        $weekStart = Carbon::parse($selectedDate)->startOfWeek(Carbon::MONDAY);
+        $weekEnd = $weekStart->copy()->endOfWeek(Carbon::SUNDAY);
+        $previousWeekDate = Carbon::parse($selectedDate)->subWeek()->toDateString();
+        $nextWeekDate = Carbon::parse($selectedDate)->addWeek()->toDateString();
+        $weeklySchedule = collect();
 
         if ($course) {
+            $weeklyCancelledOccurrenceKeys = DB::table('course_schedule_cancellations')
+                ->whereIn('schedule_id', $course->schedules->pluck('schedule_id'))
+                ->whereBetween('session_date', [$weekStart->toDateString(), $weekEnd->toDateString()])
+                ->get(['schedule_id', 'session_date'])
+                ->mapWithKeys(fn (object $cancellation): array => [
+                    Carbon::parse($cancellation->session_date)->toDateString().'|'.$cancellation->schedule_id => true,
+                ]);
+
+            $weeklySchedule = collect(CarbonPeriod::create($weekStart->copy(), $weekEnd->copy()))
+                ->map(function (Carbon $date) use ($course, $weeklyCancelledOccurrenceKeys, $selectedDate): array {
+                    $dateString = $date->toDateString();
+                    $slots = $course->schedules
+                        ->filter(fn (CourseSchedule $schedule): bool => $schedule->day_of_week === $date->format('D'))
+                        ->sortBy('start_time')
+                        ->map(fn (CourseSchedule $schedule): array => [
+                            'schedule_id' => $schedule->schedule_id,
+                            'start_time' => $schedule->start_time,
+                            'end_time' => $schedule->end_time,
+                            'room' => $schedule->room,
+                            'is_cancelled' => $weeklyCancelledOccurrenceKeys->has($dateString.'|'.$schedule->schedule_id),
+                        ])
+                        ->values();
+
+                    return [
+                        'date' => $dateString,
+                        'day_name' => $date->format('l'),
+                        'day_short' => $date->format('D'),
+                        'date_label' => $date->format('j'),
+                        'is_selected' => $dateString === $selectedDate,
+                        'is_today' => $date->isToday(),
+                        'slots' => $slots,
+                    ];
+                });
+
             $scheduledDays = $course->schedules->pluck('day_of_week')->toArray();
             $isOnSchedule = $this->attendanceService->isDateOnSchedule($course, $selectedDate);
 
@@ -119,6 +158,7 @@ class FacultyController extends Controller
                 ->get();
 
             $maximumAbsenceHours = $this->attendanceService->maximumAllowableAbsenceHours($course);
+            $weeklyDropThresholdHours = $this->attendanceService->weeklyDropThresholdHours($course);
             $totalPresences = 0;
             $totalRecordedEntries = 0;
             $droppedCount = 0;
@@ -168,9 +208,11 @@ class FacultyController extends Controller
                     'status' => $enrollment->status,
                     'absent_hours' => $absentHours,
                     'maximum_absence_hours' => $maximumAbsenceHours,
+                    'weekly_drop_threshold_hours' => $weeklyDropThresholdHours,
                     'absence_percentage' => $this->attendanceService->calculateAbsencePercentage($course, $absentHours),
                     'maximum_absence_percentage' => $this->attendanceService->maximumAllowableAbsencePercentage(),
-                    'is_drop_eligible' => $enrollment->status !== 'dropped' && $absentHours >= $maximumAbsenceHours,
+                    'is_drop_eligible' => $enrollment->status !== 'dropped' && $absentHours >= $weeklyDropThresholdHours,
+                    'is_permanent_drop_eligible' => $enrollment->status !== 'dropped' && $absentHours >= $maximumAbsenceHours,
                     'presences' => $presences,
                     'lates' => $lates,
                     'absences' => $absences,
@@ -351,6 +393,11 @@ class FacultyController extends Controller
             'slotsForDay' => $slotsForDay,
             'selectedSchedule' => $selectedSchedule,
             'isSelectedDateCancelled' => $isSelectedDateCancelled,
+            'weekStart' => $weekStart,
+            'weekEnd' => $weekEnd,
+            'previousWeekDate' => $previousWeekDate,
+            'nextWeekDate' => $nextWeekDate,
+            'weeklySchedule' => $weeklySchedule,
         ]);
     }
 
@@ -855,6 +902,7 @@ class FacultyController extends Controller
         $absentHours = $this->attendanceService->calculateStudentAbsenceHours($enrollment);
         $overallScore = $this->attendanceService->calculateOverallScore($enrollment->attendanceRecords);
         $maximumAbsenceHours = $this->attendanceService->maximumAllowableAbsenceHours($course);
+        $weeklyDropThresholdHours = $this->attendanceService->weeklyDropThresholdHours($course);
 
         if ($request->wantsJson()) {
             return response()->json([
@@ -872,9 +920,11 @@ class FacultyController extends Controller
                     'overall_score' => $overallScore,
                     'absent_hours' => $absentHours,
                     'maximum_absence_hours' => $maximumAbsenceHours,
+                    'weekly_drop_threshold_hours' => $weeklyDropThresholdHours,
                     'absence_percentage' => $this->attendanceService->calculateAbsencePercentage($course, $absentHours),
                     'maximum_absence_percentage' => $this->attendanceService->maximumAllowableAbsencePercentage(),
-                    'is_drop_eligible' => $absentHours >= $maximumAbsenceHours,
+                    'is_drop_eligible' => $absentHours >= $weeklyDropThresholdHours,
+                    'is_permanent_drop_eligible' => $absentHours >= $maximumAbsenceHours,
                     'presences' => $enrollment->attendanceRecords->where('status', 'present')->count(),
                     'lates' => $enrollment->attendanceRecords->where('status', 'late')->count(),
                     'absences' => $enrollment->attendanceRecords->where('status', 'absent')->count(),
@@ -891,6 +941,12 @@ class FacultyController extends Controller
      */
     public function dropStudent(Request $request, Enrollment $enrollment): RedirectResponse
     {
+        $validated = $request->validate([
+            'referral_type' => ['nullable', 'in:attendance,circumstance'],
+            'instructor_reason' => ['required_if:referral_type,circumstance', 'nullable', 'string', 'max:1000'],
+        ]);
+        $referralType = $validated['referral_type'] ?? 'attendance';
+
         /** @var FacultyMember $faculty */
         $faculty = $request->user()->facultyMember;
 
@@ -905,16 +961,26 @@ class FacultyController extends Controller
         $enrollment->loadMissing('course.schedules', 'attendanceRecords');
         $absenceHours = $this->attendanceService->calculateStudentAbsenceHours($enrollment);
         $maximumAbsenceHours = $this->attendanceService->maximumAllowableAbsenceHours($enrollment->course);
+        $weeklyDropThresholdHours = $this->attendanceService->weeklyDropThresholdHours($enrollment->course);
 
-        if ($absenceHours < $maximumAbsenceHours) {
+        if ($referralType === 'attendance' && $absenceHours < $weeklyDropThresholdHours) {
             return back()->with('error', sprintf(
-                'This student can be dropped after reaching %.2f absent hours; current total is %.2f hours.',
-                $maximumAbsenceHours,
+                'This student can be dropped to OSA after reaching %.2f absent hours (one week of this subject); current total is %.2f hours.',
+                $weeklyDropThresholdHours,
                 $absenceHours,
             ));
         }
 
-        DB::transaction(function () use ($enrollment, $faculty, $absenceHours): void {
+        $dropType = $absenceHours >= $maximumAbsenceHours
+            ? DroppingTransaction::TYPE_PERMANENT
+            : ($referralType === 'circumstance'
+                ? DroppingTransaction::TYPE_INSTRUCTOR_REFERRAL
+                : DroppingTransaction::TYPE_WEEKLY_HOURS);
+        $instructorReason = $referralType === 'circumstance'
+            ? $validated['instructor_reason']
+            : null;
+
+        DB::transaction(function () use ($enrollment, $faculty, $absenceHours, $dropType, $instructorReason): void {
             $enrollment->update(['status' => 'dropped']);
 
             $sequence = DroppingTransaction::where('enrollment_id', $enrollment->enrollment_id)->count() + 1;
@@ -925,6 +991,8 @@ class FacultyController extends Controller
                 'absence_hours_at_drop' => $absenceHours,
                 'sequence_in_cycle' => $sequence,
                 'drop_date' => now()->toDateString(),
+                'drop_type' => $dropType,
+                'instructor_reason' => $instructorReason,
             ]);
 
             if ($enrollment->student_id) {
@@ -938,7 +1006,13 @@ class FacultyController extends Controller
             }
         });
 
-        return back()->with('success', "Student {$enrollment->student->fullName} has been dropped from the course.");
+        $message = $dropType === DroppingTransaction::TYPE_PERMANENT
+            ? "Student {$enrollment->student->fullName} has been marked for permanent dropping and referred to OSA. OSA may still review a readmission request."
+            : ($dropType === DroppingTransaction::TYPE_INSTRUCTOR_REFERRAL
+                ? "Student {$enrollment->student->fullName} has been referred to OSA based on the instructor's stated circumstance."
+                : "Student {$enrollment->student->fullName} has been dropped to OSA for readmission review.");
+
+        return back()->with('success', $message);
     }
 
     /**

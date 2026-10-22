@@ -33,9 +33,12 @@
                 'score_text' => $scoreText,
                 'absent_hours' => $row['absent_hours'],
                 'maximum_absence_hours' => $row['maximum_absence_hours'],
+                'weekly_drop_threshold_hours' => $row['weekly_drop_threshold_hours'],
                 'absence_percentage' => $row['absence_percentage'],
                 'maximum_absence_percentage' => $row['maximum_absence_percentage'],
                 'is_drop_eligible' => $row['is_drop_eligible'],
+                'is_permanent_drop_eligible' => $row['is_permanent_drop_eligible'],
+                'is_dropped' => $row['status'] === 'dropped',
             ];
         }
     }
@@ -48,7 +51,7 @@
 
 <x-app-layout>
     <x-slot name="header">
-        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div class="flex flex-col gap-4 [zoom:0.9] sm:flex-row sm:items-center sm:justify-between">
             <div>
                 <div class="flex items-center gap-2">
                     <span class="text-xs text-gray-500 dark:text-gray-400 font-medium tracking-wide">
@@ -105,7 +108,7 @@
         </div>
     </x-slot>
 
-    <div class="page space-y-6"
+    <div class="page space-y-6 [zoom:0.9]"
          x-data="facultyDashboard({
              courseId: {{ $selectedCourse ? $selectedCourse->course_id : 'null' }},
              defaultSessionHours: {{ $sessionHours ?? 1.5 }},
@@ -173,24 +176,29 @@
             {{-- =========================================================================
                  ASSIGNED SUBJECTS & SCHEDULE (Simple & Clean, No Clutter)
                  ========================================================================= --}}
-            <section class="space-y-3" aria-labelledby="assigned-subjects-heading">
-                <div class="flex items-center justify-between gap-3">
-                    <div>
-                        <h2 id="assigned-subjects-heading" class="font-semibold text-sm text-gray-900 dark:text-gray-100">
-                            Assigned Subjects
-                        </h2>
-                        <p class="muted text-xs">Switch between subjects to manage attendance and view enrolled students.</p>
-                    </div>
-                    <div class="flex items-center gap-2">
+            <section class="space-y-3" aria-labelledby="assigned-subjects-heading"
+                     x-data="{ subjectSearch: '', subjectCount: {{ $courses->count() }} }"
+                     x-effect="subjectCount = Array.from($el.querySelectorAll('[data-subject-card]')).filter(card => !subjectSearch || card.dataset.subjectSearch.includes(subjectSearch.trim().toLowerCase())).length">
+                <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div class="flex items-center gap-3">
+                        <div>
+                            <h2 id="assigned-subjects-heading" class="font-semibold text-sm text-gray-900 dark:text-gray-100">
+                                Assigned Subjects
+                            </h2>
+                            <p class="muted text-xs">Switch between subjects to manage attendance and view enrolled students.</p>
+                        </div>
                         <span class="badge badge-neutral text-xs">
-                            {{ $courses->count() }} {{ Str::plural('subject', $courses->count()) }}
+                            <span x-text="subjectCount">{{ $courses->count() }}</span>
+                            <span class="ml-1" x-text="subjectCount === 1 ? 'subject' : 'subjects'">{{ Str::plural('subject', $courses->count()) }}</span>
                         </span>
+                    </div>
+                    <div class="flex flex-wrap items-center gap-2">
                         <a href="{{ route('faculty.courses.import') }}"
-                           class="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 shadow-xs transition-colors font-medium">
+                           class="inline-flex items-center gap-1 rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-700 shadow-xs transition-colors hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700">
                             Import Class List
                         </a>
                         <a href="{{ route('faculty.courses.create') }}"
-                           class="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 shadow-xs transition-colors font-medium">
+                           class="inline-flex items-center gap-1 rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-700 shadow-xs transition-colors hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700">
                             <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
                             </svg>
@@ -199,32 +207,47 @@
                     </div>
                 </div>
 
+                <label class="relative block w-full sm:max-w-sm">
+                    <span class="sr-only">Search subjects</span>
+                    <svg class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24" aria-hidden="true">
+                        <circle cx="11" cy="11" r="7" />
+                        <path stroke-linecap="round" d="m20 20-4-4" />
+                    </svg>
+                    <input type="search"
+                           x-model.debounce.150ms="subjectSearch"
+                           placeholder="Find a subject by code, section, or name"
+                           class="block w-full rounded-md border-gray-300 bg-white py-2 pl-9 pr-3 text-xs text-gray-900 placeholder:text-gray-400 focus:border-gray-500 focus:ring-gray-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 dark:placeholder:text-gray-500 dark:focus:border-gray-400 dark:focus:ring-gray-400">
+                </label>
+
                 {{-- Subject Cards Grid --}}
-                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                <div class="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
                     @foreach ($courses as $c)
                         @php
                             $isSelected = $selectedCourse && $selectedCourse->course_id === $c->course_id;
                         @endphp
 
                         <a href="{{ route('faculty.dashboard', ['course_id' => $c->course_id, 'date' => $selectedDate, 'tab' => $activeTab]) }}"
+                           data-subject-card
+                           data-subject-search="{{ Str::lower($c->subject_code.' '.$c->section.' '.$c->course_name) }}"
+                           x-show="!subjectSearch || $el.dataset.subjectSearch.includes(subjectSearch.trim().toLowerCase())"
                            @class([
-                               'p-3.5 rounded-lg border transition-all text-left block group relative shadow-xs',
-                               'bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 border-gray-900 dark:border-gray-100 ring-2 ring-gray-900/10' => $isSelected,
-                               'bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 border-gray-200 dark:border-gray-700 hover:border-gray-400 dark:hover:border-gray-500' => ! $isSelected,
+                               'block rounded-md border p-2.5 text-left transition-colors',
+                               'border-gray-900 bg-gray-900 text-white ring-1 ring-gray-900/10 dark:border-gray-100 dark:bg-gray-100 dark:text-gray-900' => $isSelected,
+                               'border-gray-200 bg-white text-gray-800 hover:border-gray-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:border-gray-500' => ! $isSelected,
                            ])
                            @if ($isSelected) aria-current="true" @endif>
 
-                            <div class="flex items-start justify-between gap-2">
-                                <div>
+                            <div class="flex items-center justify-between gap-2">
+                                <div class="min-w-0">
                                     <span @class([
-                                        'font-bold text-sm tracking-tight',
+                                        'font-semibold text-xs tracking-tight',
                                         'text-white dark:text-gray-900' => $isSelected,
                                         'text-gray-900 dark:text-gray-100' => ! $isSelected,
                                     ])>
                                         {{ $c->subject_code }}
                                     </span>
                                     <span @class([
-                                        'text-xs ml-1 font-normal',
+                                        'ml-1 text-[11px] font-normal',
                                         'text-gray-300 dark:text-gray-600' => $isSelected,
                                         'text-gray-500 dark:text-gray-400' => ! $isSelected,
                                     ])>
@@ -233,7 +256,7 @@
                                 </div>
 
                                 <span @class([
-                                    'badge text-[11px] px-2 py-0.5 rounded-full shrink-0 font-medium',
+                                    'shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium',
                                     'bg-white/20 text-white dark:bg-gray-900/20 dark:text-gray-900' => $isSelected,
                                     'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300' => ! $isSelected,
                                 ])>
@@ -242,35 +265,34 @@
                             </div>
 
                             <p @class([
-                                'mt-1 text-xs truncate font-medium',
+                                'mt-1 truncate text-[11px] font-medium',
                                 'text-gray-200 dark:text-gray-700' => $isSelected,
                                 'text-gray-600 dark:text-gray-400' => ! $isSelected,
                             ])>
                                 {{ $c->course_name }}
                             </p>
 
-                            {{-- Schedule of the subject --}}
                             <div @class([
-                                'mt-3 pt-2 border-t text-[11px] flex items-center justify-between gap-2',
-                                'border-white/15 dark:border-gray-900/15 text-gray-300 dark:text-gray-600' => $isSelected,
-                                'border-gray-100 dark:border-gray-700 text-gray-500 dark:text-gray-400' => ! $isSelected,
+                                'mt-2 flex items-center justify-between gap-2 text-[10px]',
+                                'text-gray-300 dark:text-gray-600' => $isSelected,
+                                'text-gray-500 dark:text-gray-400' => ! $isSelected,
                             ])>
-                                <span class="truncate flex items-center gap-1">
-                                    <svg class="h-3.5 w-3.5 shrink-0 opacity-70" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                    </svg>
+                                <span class="truncate">
                                     @if ($c->schedules->isNotEmpty())
                                         {{ $c->schedules->pluck('day_of_week')->join(', ') }}
-                                        at {{ \Carbon\Carbon::parse($c->schedules->first()->start_time)->format('g:i A') }}
+                                        · {{ \Carbon\Carbon::parse($c->schedules->first()->start_time)->format('g:i A') }}
                                     @else
                                         Schedule TBA
                                     @endif
                                 </span>
-                                <span class="shrink-0 font-medium">{{ $c->hours_per_week }} hrs/wk</span>
+                                <span class="shrink-0">{{ $c->hours_per_week }}h/wk</span>
                             </div>
                         </a>
                     @endforeach
                 </div>
+                <p x-show="subjectCount === 0" x-cloak class="rounded-md border border-dashed border-gray-300 px-4 py-6 text-center text-xs text-gray-500 dark:border-gray-700 dark:text-gray-400">
+                    No subjects match that search.
+                </p>
 
                 {{-- Selected Subject Schedule Strip --}}
                 @if ($selectedCourse->schedules->isNotEmpty())
@@ -325,7 +347,117 @@
                         </div>
                     </div>
                 @endif
+
+                @if ($selectedCourse->schedules->isNotEmpty())
+                    <section class="space-y-3" aria-labelledby="weekly-schedule-heading">
+                        <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                            <div>
+                                <h3 id="weekly-schedule-heading" class="font-semibold text-sm text-gray-900 dark:text-gray-100">
+                                    Weekly schedule · {{ $selectedCourse->subject_code }}
+                                </h3>
+                                <p class="muted text-xs">
+                                    {{ $weekStart->format('M j, Y') }} – {{ $weekEnd->format('M j, Y') }}
+                                </p>
+                            </div>
+
+                            <div class="flex flex-wrap items-center gap-2">
+                                <a href="{{ route('faculty.dashboard', ['course_id' => $selectedCourse->course_id, 'date' => $previousWeekDate, 'tab' => 'meeting']) }}"
+                                   class="btn btn-secondary btn-sm"
+                                   aria-label="Previous week">
+                                    &larr; Previous week
+                                </a>
+                                <a href="{{ route('faculty.dashboard', ['course_id' => $selectedCourse->course_id, 'date' => $nextWeekDate, 'tab' => 'meeting']) }}"
+                                   class="btn btn-secondary btn-sm"
+                                   aria-label="Next week">
+                                    Next week &rarr;
+                                </a>
+                                <form method="GET" action="{{ route('faculty.dashboard') }}" class="flex items-center gap-2">
+                                    <input type="hidden" name="course_id" value="{{ $selectedCourse->course_id }}">
+                                    <input type="hidden" name="tab" value="meeting">
+                                    <label for="weekly-schedule-date" class="text-xs font-medium text-gray-600 dark:text-gray-300">
+                                        Jump to date
+                                    </label>
+                                    <input id="weekly-schedule-date" type="date" name="date" value="{{ $selectedDate }}"
+                                           onchange="this.form.submit()"
+                                           class="rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 text-sm shadow-xs focus:border-indigo-500 focus:ring-indigo-500">
+                                </form>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-7 gap-2">
+                            @foreach ($weeklySchedule as $day)
+                                <div @class([
+                                    'min-h-32 rounded-lg border p-3',
+                                    'border-indigo-400 bg-indigo-50 dark:border-indigo-500 dark:bg-indigo-950/30' => $day['is_selected'],
+                                    'border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800' => ! $day['is_selected'],
+                                ])>
+                                    <a href="{{ route('faculty.dashboard', ['course_id' => $selectedCourse->course_id, 'date' => $day['date'], 'tab' => 'meeting']) }}"
+                                       @class([
+                                           'flex items-baseline justify-between gap-2 rounded font-semibold text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500',
+                                           'text-indigo-700 dark:text-indigo-300' => $day['is_selected'],
+                                           'text-gray-800 dark:text-gray-100 hover:text-indigo-700 dark:hover:text-indigo-300' => ! $day['is_selected'],
+                                       ])
+                                       @if ($day['is_selected']) aria-current="date" @endif>
+                                        <span>{{ $day['day_name'] }}</span>
+                                        <span @class([
+                                            'inline-flex h-7 w-7 items-center justify-center rounded-full',
+                                            'bg-indigo-600 text-white' => $day['is_today'],
+                                            'bg-indigo-100 text-indigo-700 dark:bg-indigo-900 dark:text-indigo-200' => $day['is_selected'] && ! $day['is_today'],
+                                            'text-gray-500 dark:text-gray-400' => ! $day['is_selected'] && ! $day['is_today'],
+                                        ])>{{ $day['date_label'] }}</span>
+                                    </a>
+
+                                    <div class="mt-3 flex flex-col gap-2">
+                                        @forelse ($day['slots'] as $slot)
+                                            <a href="{{ route('faculty.dashboard', [
+                                                'course_id' => $selectedCourse->course_id,
+                                                'date' => $day['date'],
+                                                'tab' => 'meeting',
+                                                'schedule_id' => $slot['is_cancelled'] ? null : $slot['schedule_id'],
+                                            ]) }}"
+                                               @class([
+                                                   'rounded-md border px-2 py-1.5 text-[11px] leading-tight transition-colors',
+                                                   'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900 dark:bg-rose-950/30 dark:text-rose-300' => $slot['is_cancelled'],
+                                                   'border-indigo-200 bg-indigo-100 text-indigo-900 hover:border-indigo-400 dark:border-indigo-900 dark:bg-indigo-900/40 dark:text-indigo-200 dark:hover:border-indigo-600' => ! $slot['is_cancelled'],
+                                               ])>
+                                                <span class="block font-semibold">
+                                                    {{ \Carbon\Carbon::parse($slot['start_time'])->format('g:i A') }}
+                                                    – {{ \Carbon\Carbon::parse($slot['end_time'])->format('g:i A') }}
+                                                </span>
+                                                @if ($slot['room'])
+                                                    <span class="mt-0.5 block truncate">{{ $slot['room'] }}</span>
+                                                @endif
+                                                @if ($slot['is_cancelled'])
+                                                    <span class="mt-0.5 block font-semibold">Cancelled</span>
+                                                @endif
+                                            </a>
+                                        @empty
+                                            <span class="text-xs text-gray-400 dark:text-gray-500">No class</span>
+                                        @endforelse
+                                    </div>
+                                </div>
+                            @endforeach
+                        </div>
+                    </section>
+                @endif
             </section>
+
+            <div class="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-gray-600 dark:text-gray-300"
+                 aria-label="Student absence status colors">
+                <span class="font-medium">Student status:</span>
+                <span class="inline-flex items-center gap-1.5">
+                    <span class="h-3 w-3 rounded-sm border-2 border-emerald-500"></span>
+                    Green: below weekly threshold
+                </span>
+                <span class="inline-flex items-center gap-1.5">
+                    <span class="h-3 w-3 rounded-sm border-2 border-amber-500"></span>
+                    Yellow: approaching or meeting weekly-hours drop threshold
+                </span>
+                <span class="inline-flex items-center gap-1.5">
+                    <span class="h-3 w-3 rounded-sm border-2 border-rose-500"></span>
+                    Red: 20% permanent-drop level or already dropped
+                </span>
+            </div>
 
             {{-- =========================================================================
                  VIEW 1: BLACKBOARD ULTRA MEETING VIEW (EXACTLY MATCHES media_1792078260731_1da7d63d.png)
@@ -468,7 +600,8 @@
 
                                         {{-- Column 1: Student (Avatar + Name) --}}
                                         <td class="py-4 px-6 border-r border-b border-gray-200 dark:border-gray-700">
-                                            <div class="flex items-center gap-3.5">
+                                            <div class="flex items-center gap-3.5 rounded-lg border-2 border-transparent p-2 transition-colors"
+                                                 x-bind:class="studentStatusOutline({{ $enrollment->enrollment_id }})">
                                                 <div class="h-10 w-10 rounded-full bg-[#1e1e1e] text-white flex items-center justify-center font-semibold text-xs shrink-0 tracking-wider shadow-xs">
                                                     {{ $initials }}
                                                 </div>
@@ -480,25 +613,58 @@
                                                         <span class="badge badge-danger text-[10px] mt-0.5">Dropped</span>
                                                     @else
                                                         <span class="text-[11px] text-gray-500 dark:text-gray-400 font-medium mt-0.5 block">
-                                                            Absence threshold:
+                                                            Absent:
                                                             <span x-text="Number(studentScores[{{ $enrollment->enrollment_id }}].absence_percentage).toFixed(2)">{{ number_format($row['absence_percentage'], 2) }}</span>% /
-                                                            {{ number_format($row['maximum_absence_percentage'], 2) }}%
+                                                            {{ number_format($row['maximum_absence_percentage'], 2) }}% semester
                                                         </span>
                                                         <div x-show="studentScores[{{ $enrollment->enrollment_id }}].is_drop_eligible" x-cloak>
-                                                            <span class="text-[11px] text-rose-600 dark:text-rose-400 font-medium mt-0.5 block">
-                                                                Drop limit reached:
+                                                            <span x-show="!studentScores[{{ $enrollment->enrollment_id }}].is_permanent_drop_eligible"
+                                                                  class="text-[11px] text-amber-700 dark:text-amber-400 font-medium mt-0.5 block">
+                                                                Weekly absence threshold reached:
                                                                 <span x-text="Number(studentScores[{{ $enrollment->enrollment_id }}].absent_hours).toFixed(2)"></span> /
-                                                                {{ number_format($row['maximum_absence_hours'], 2) }}h
+                                                                {{ number_format($row['weekly_drop_threshold_hours'], 2) }}h
+                                                            </span>
+                                                            <span x-show="studentScores[{{ $enrollment->enrollment_id }}].is_permanent_drop_eligible"
+                                                                  class="text-[11px] text-rose-600 dark:text-rose-400 font-medium mt-0.5 block">
+                                                                20% semester absence reached. OSA may still review readmission.
                                                             </span>
                                                             <form method="POST" action="{{ route('faculty.enrollments.drop', $enrollment) }}"
-                                                                  onsubmit="return confirm('Drop this student from this subject?')">
+                                                                  onsubmit="return confirm(studentScores[{{ $enrollment->enrollment_id }}].is_permanent_drop_eligible ? 'Mark this as a permanent drop and refer the student to OSA? OSA may still review readmission.' : 'Drop this student to OSA for readmission review?')">
                                                                 @csrf
-                                                                <button type="submit" class="mt-1 text-[11px] font-semibold text-rose-700 dark:text-rose-400 underline underline-offset-2 hover:text-rose-900 dark:hover:text-rose-300">
-                                                                    Drop student
+                                                                <button type="submit" x-show="!studentScores[{{ $enrollment->enrollment_id }}].is_permanent_drop_eligible"
+                                                                        class="mt-1 text-[11px] font-semibold text-amber-700 dark:text-amber-400 underline underline-offset-2 hover:text-amber-900 dark:hover:text-amber-300">
+                                                                    Drop student to OSA
+                                                                </button>
+                                                                <button type="submit" x-show="studentScores[{{ $enrollment->enrollment_id }}].is_permanent_drop_eligible"
+                                                                        class="mt-1 text-[11px] font-semibold text-rose-700 dark:text-rose-400 underline underline-offset-2 hover:text-rose-900 dark:hover:text-rose-300">
+                                                                    Permanent drop to OSA
                                                                 </button>
                                                             </form>
                                                         </div>
                                                     @endif
+                                                    <details class="mt-2">
+                                                        <summary class="cursor-pointer text-[11px] font-semibold text-blue-700 underline underline-offset-2 dark:text-blue-300">
+                                                            Refer student to OSA (Circumstance)
+                                                        </summary>
+                                                        <form method="POST" action="{{ route('faculty.enrollments.drop', $enrollment) }}"
+                                                              class="mt-2 space-y-2"
+                                                              onsubmit="return confirm('Refer this student to OSA for review of the stated circumstance?')">
+                                                            @csrf
+                                                            <input type="hidden" name="referral_type" value="circumstance">
+                                                            <label class="block text-[11px] font-medium text-gray-700 dark:text-gray-300">
+                                                                Reason for referral (required)
+                                                                <textarea name="instructor_reason" rows="2" maxlength="1000" required
+                                                                          class="mt-1 block w-full rounded-md border-gray-300 text-xs shadow-sm dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
+                                                                          placeholder="Explain why this student should be referred to OSA."></textarea>
+                                                            </label>
+                                                            @error('instructor_reason')
+                                                                <p class="text-xs text-rose-600">{{ $message }}</p>
+                                                            @enderror
+                                                            <button type="submit" class="text-[11px] font-semibold text-blue-700 underline underline-offset-2 hover:text-blue-900 dark:text-blue-300 dark:hover:text-blue-200">
+                                                                Drop and refer to OSA
+                                                            </button>
+                                                        </form>
+                                                    </details>
                                                 </div>
                                             </div>
                                         </td>
@@ -829,7 +995,8 @@
 
                                             {{-- Student Name & Info (Sticky Left) --}}
                                             <td class="sticky left-0 z-10 bg-white dark:bg-gray-800 py-3 px-4 border-r border-b border-gray-200 dark:border-gray-700 min-w-[13rem]">
-                                                <div class="flex items-center gap-3">
+                                                <div class="flex items-center gap-3 rounded-lg border-2 border-transparent p-2 transition-colors"
+                                                     x-bind:class="studentStatusOutline({{ $enrollmentId }})">
                                                     <div class="h-8 w-8 rounded-full bg-[#1e1e1e] text-white flex items-center justify-center font-bold text-xs shrink-0">
                                                         {{ $initials }}
                                                     </div>
@@ -843,27 +1010,60 @@
                                                                 <span class="badge badge-danger text-[10px] ml-1">Dropped</span>
                                                             @else
                                                                 <span class="block text-[11px] text-gray-500 dark:text-gray-400 font-medium mt-0.5">
-                                                                    Absence threshold:
+                                                                    Absent:
                                                                     <span x-text="Number(studentScores[{{ $enrollmentId }}].absence_percentage).toFixed(2)">{{ number_format($row['absence_percentage'], 2) }}</span>% /
-                                                                    {{ number_format($row['maximum_absence_percentage'], 2) }}%
+                                                                    {{ number_format($row['maximum_absence_percentage'], 2) }}% semester
                                                                 </span>
                                                             @endif
                                                             @if (! $isDropped)
                                                                 <div x-show="studentScores[{{ $enrollmentId }}].is_drop_eligible" x-cloak>
-                                                                <span class="block text-[11px] text-rose-600 dark:text-rose-400 font-medium mt-0.5">
-                                                                    Drop limit reached:
+                                                                <span x-show="!studentScores[{{ $enrollmentId }}].is_permanent_drop_eligible"
+                                                                      class="block text-[11px] text-amber-700 dark:text-amber-400 font-medium mt-0.5">
+                                                                    Weekly absence threshold reached:
                                                                     <span x-text="Number(studentScores[{{ $enrollmentId }}].absent_hours).toFixed(2)"></span> /
-                                                                    {{ number_format($row['maximum_absence_hours'], 2) }}h
+                                                                    {{ number_format($row['weekly_drop_threshold_hours'], 2) }}h
+                                                                </span>
+                                                                <span x-show="studentScores[{{ $enrollmentId }}].is_permanent_drop_eligible"
+                                                                      class="block text-[11px] text-rose-600 dark:text-rose-400 font-medium mt-0.5">
+                                                                    20% semester absence reached. OSA may still review readmission.
                                                                 </span>
                                                                 <form method="POST" action="{{ route('faculty.enrollments.drop', $row['enrollment']) }}"
-                                                                      onsubmit="return confirm('Drop this student from this subject?')">
+                                                                      onsubmit="return confirm(studentScores[{{ $enrollmentId }}].is_permanent_drop_eligible ? 'Mark this as a permanent drop and refer the student to OSA? OSA may still review readmission.' : 'Drop this student to OSA for readmission review?')">
                                                                     @csrf
-                                                                    <button type="submit" class="mt-1 text-[11px] font-semibold text-rose-700 dark:text-rose-400 underline underline-offset-2 hover:text-rose-900 dark:hover:text-rose-300">
-                                                                        Drop student
+                                                                    <button type="submit" x-show="!studentScores[{{ $enrollmentId }}].is_permanent_drop_eligible"
+                                                                            class="mt-1 text-[11px] font-semibold text-amber-700 dark:text-amber-400 underline underline-offset-2 hover:text-amber-900 dark:hover:text-amber-300">
+                                                                        Drop student to OSA
+                                                                    </button>
+                                                                    <button type="submit" x-show="studentScores[{{ $enrollmentId }}].is_permanent_drop_eligible"
+                                                                            class="mt-1 text-[11px] font-semibold text-rose-700 dark:text-rose-400 underline underline-offset-2 hover:text-rose-900 dark:hover:text-rose-300">
+                                                                        Permanent drop to OSA
                                                                     </button>
                                                                 </form>
                                                                 </div>
                                                             @endif
+                                                            <details class="mt-2">
+                                                                <summary class="cursor-pointer text-[11px] font-semibold text-blue-700 underline underline-offset-2 dark:text-blue-300">
+                                                                    Refer student to OSA for a circumstance
+                                                                </summary>
+                                                                <form method="POST" action="{{ route('faculty.enrollments.drop', $row['enrollment']) }}"
+                                                                      class="mt-2 space-y-2"
+                                                                      onsubmit="return confirm('Refer this student to OSA for review of the stated circumstance?')">
+                                                                    @csrf
+                                                                    <input type="hidden" name="referral_type" value="circumstance">
+                                                                    <label class="block text-[11px] font-medium text-gray-700 dark:text-gray-300">
+                                                                        Reason for referral (required)
+                                                                        <textarea name="instructor_reason" rows="2" maxlength="1000" required
+                                                                                  class="mt-1 block w-full rounded-md border-gray-300 text-xs shadow-sm dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
+                                                                                  placeholder="Explain why this student should be referred to OSA."></textarea>
+                                                                    </label>
+                                                                    @error('instructor_reason')
+                                                                        <p class="text-xs text-rose-600">{{ $message }}</p>
+                                                                    @enderror
+                                                                    <button type="submit" class="text-[11px] font-semibold text-blue-700 underline underline-offset-2 hover:text-blue-900 dark:text-blue-300 dark:hover:text-blue-200">
+                                                                        Drop and refer to OSA
+                                                                    </button>
+                                                                </form>
+                                                            </details>
                                                         </div>
                                                     </div>
                                                 </div>
@@ -1167,6 +1367,20 @@
                     return Object.values(this.studentStatuses).filter(s => s === targetStatus).length;
                 },
 
+                studentStatusOutline(enrollmentId) {
+                    const score = this.studentScores[enrollmentId] || {};
+
+                    if (score.is_dropped || score.is_permanent_drop_eligible) {
+                        return 'border-rose-500 ring-1 ring-inset ring-rose-500/40';
+                    }
+
+                    if (Number(score.absent_hours) >= Number(score.weekly_drop_threshold_hours) * 0.8) {
+                        return 'border-amber-500 ring-1 ring-inset ring-amber-500/40';
+                    }
+
+                    return 'border-emerald-500 ring-1 ring-inset ring-emerald-500/40';
+                },
+
                 applyAttendanceStats(enrollmentId, stats) {
                     if (!stats) {
                         return;
@@ -1179,9 +1393,11 @@
                         score_text: stats.overall_score == 100 ? '100 / 100' : parseFloat(stats.overall_score).toFixed(2) + ' / 100',
                         absent_hours: stats.absent_hours,
                         maximum_absence_hours: stats.maximum_absence_hours,
+                        weekly_drop_threshold_hours: stats.weekly_drop_threshold_hours,
                         absence_percentage: stats.absence_percentage,
                         maximum_absence_percentage: stats.maximum_absence_percentage,
                         is_drop_eligible: stats.is_drop_eligible,
+                        is_permanent_drop_eligible: stats.is_permanent_drop_eligible,
                     };
 
                     const scoreEl = document.getElementById(`overall-pill-${enrollmentId}`);

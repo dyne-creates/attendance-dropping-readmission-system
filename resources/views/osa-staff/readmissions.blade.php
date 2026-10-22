@@ -35,6 +35,7 @@
                             <th scope="col">Course</th>
                             <th scope="col">Faculty</th>
                             <th scope="col">Reason</th>
+                            <th scope="col">Drop level</th>
                             <th scope="col">Attempt</th>
                             <th scope="col">Channel</th>
                             <th scope="col" class="text-right">Action</th>
@@ -58,6 +59,20 @@
 
                                 <td>{{ \App\Models\ReadmissionRequest::reasonLabel((string) $request->reason_code) }}</td>
 
+                                <td>
+                                    @if ($request->drop_type === \App\Models\DroppingTransaction::TYPE_PERMANENT)
+                                        <span class="badge badge-danger">Permanent · {{ $request->absence_hours_at_drop }} hrs</span>
+                                        <p class="mt-1 text-xs muted">OSA may still review readmission.</p>
+                                    @elseif ($request->drop_type === \App\Models\DroppingTransaction::TYPE_INSTRUCTOR_REFERRAL)
+                                        <span class="badge badge-neutral">Instructor referral</span>
+                                    @else
+                                        <span class="badge badge-warning">Weekly hours · {{ $request->absence_hours_at_drop }} hrs</span>
+                                    @endif
+                                    @if ($request->instructor_reason)
+                                        <p class="mt-1 text-xs muted">{{ $request->instructor_reason }}</p>
+                                    @endif
+                                </td>
+
                                 <td>{{ $request->attempt_number }}</td>
 
                                 <td><span class="badge badge-neutral">{{ strtoupper($request->channel) }}</span></td>
@@ -70,7 +85,7 @@
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="7" class="py-12 text-center muted">
+                                <td colspan="8" class="py-12 text-center muted">
                                     No pending readmission requests.
                                 </td>
                             </tr>

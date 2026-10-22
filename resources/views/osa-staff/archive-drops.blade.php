@@ -22,6 +22,7 @@
                             <th scope="col">Student</th>
                             <th scope="col">Course</th>
                             <th scope="col">Faculty</th>
+                            <th scope="col">Drop level</th>
                             <th scope="col">Absence hours</th>
                             <th scope="col">Drop no.</th>
                             <th scope="col">Drop date</th>
@@ -43,6 +44,19 @@
 
                                 <td>{{ $drop->faculty_name }}</td>
 
+                                <td>
+                                    @if ($drop->drop_type === \App\Models\DroppingTransaction::TYPE_PERMANENT)
+                                        <span class="badge badge-danger">Permanent · OSA may review readmission</span>
+                                    @elseif ($drop->drop_type === \App\Models\DroppingTransaction::TYPE_INSTRUCTOR_REFERRAL)
+                                        <span class="badge badge-neutral">Instructor referral</span>
+                                    @else
+                                        <span class="badge badge-warning">Weekly hours · OSA review</span>
+                                    @endif
+                                    @if ($drop->instructor_reason)
+                                        <p class="mt-1 text-xs muted">{{ $drop->instructor_reason }}</p>
+                                    @endif
+                                </td>
+
                                 <td>{{ $drop->absence_hours_at_drop }} hrs</td>
 
                                 <td><span class="badge badge-neutral">#{{ $drop->sequence_in_cycle }}</span></td>
@@ -51,7 +65,7 @@
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="6" class="py-12 text-center muted">
+                                <td colspan="7" class="py-12 text-center muted">
                                     No drop records found.
                                 </td>
                             </tr>

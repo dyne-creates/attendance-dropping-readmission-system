@@ -6,6 +6,21 @@
     </x-slot>
 
     <div class="page space-y-6">
+        @if ($drop->drop_type === \App\Models\DroppingTransaction::TYPE_PERMANENT)
+            <div class="alert alert-danger" role="status">
+                This is recorded as a permanent-drop case because absences reached 20% of the subject's semester hours.
+                OSA may still review and approve your readmission request.
+            </div>
+        @elseif ($drop->drop_type === \App\Models\DroppingTransaction::TYPE_INSTRUCTOR_REFERRAL)
+            <div class="alert alert-warning" role="status">
+                Your instructor referred you to OSA based on a circumstance. OSA will review your readmission request.
+            </div>
+        @else
+            <div class="alert alert-warning" role="status">
+                Your instructor referred this weekly-hours drop to OSA for readmission review.
+            </div>
+        @endif
+
         <section class="card p-5 sm:p-6" aria-labelledby="policy-heading">
             <h2 id="policy-heading" class="text-lg font-semibold">Section 1: Attendance monitoring and consent</h2>
             <div class="muted mt-3 space-y-3 text-sm leading-6">

@@ -11,8 +11,6 @@ use Illuminate\Database\Eloquent\Collection;
 
 class AttendanceService
 {
-    private const SEMESTER_WEEKS = 18;
-
     private const MAXIMUM_ABSENCE_PERCENTAGE = 0.20;
 
     /**
@@ -120,14 +118,19 @@ class AttendanceService
     }
 
     /**
-     * Calculate the maximum absence hours allowed for a course in a semester.
+     * Calculate the 20% semester absence threshold for a course.
      */
     public function maximumAllowableAbsenceHours(Course $course): float
     {
-        return round(
-            $course->hours_per_week * self::SEMESTER_WEEKS * self::MAXIMUM_ABSENCE_PERCENTAGE,
-            2,
-        );
+        return round((float) $course->total_semester_hours * self::MAXIMUM_ABSENCE_PERCENTAGE, 2);
+    }
+
+    /**
+     * Calculate the weekly absence threshold for an instructor-initiated drop.
+     */
+    public function weeklyDropThresholdHours(Course $course): float
+    {
+        return round((float) $course->hours_per_week, 2);
     }
 
     /**
@@ -135,7 +138,7 @@ class AttendanceService
      */
     public function calculateAbsencePercentage(Course $course, float $absenceHours): float
     {
-        $totalSemesterHours = $course->hours_per_week * self::SEMESTER_WEEKS;
+        $totalSemesterHours = (float) $course->total_semester_hours;
 
         return $totalSemesterHours > 0
             ? round(($absenceHours / $totalSemesterHours) * 100, 2)
