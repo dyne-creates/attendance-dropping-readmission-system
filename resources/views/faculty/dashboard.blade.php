@@ -740,7 +740,7 @@
                                     @endforeach
                                 </select>
                                 <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                                    Dates in the file take priority; this meeting is used for rows without a date.
+                                    File dates are matched to this course's schedule by weekday. Repeated date columns are assigned to that day's meeting slots in start-time order (first date column to the first slot). This meeting supplies a date when the file has no date column.
                                 </p>
                             </div>
                             <div class="sm:col-span-2">
@@ -752,7 +752,7 @@
                                 </div>
                                 <input id="attendance-import-file" name="file" type="file" accept=".csv,.xlsx" required class="field">
                                 <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                                    Use student_number, status, and optional remarks columns. Replace the example student numbers with students enrolled in this course.
+                                    A date-column file can use student_number first, then one column per meeting date. Use P or Present for present attendance.
                                 </p>
                             </div>
                             <div>
@@ -770,17 +770,6 @@
                                         <th scope="col"
                                             class="sticky left-0 z-30 bg-white dark:bg-gray-800 py-3.5 px-4 text-left font-semibold text-gray-700 dark:text-gray-200 border-r border-b border-gray-200 dark:border-gray-700 min-w-[13rem]">
                                             Student
-                                        </th>
-
-                                        <th scope="col"
-                                            class="py-3.5 px-3 text-center font-semibold text-gray-700 dark:text-gray-200 border-r border-b border-gray-200 dark:border-gray-700 min-w-[5rem]">
-                                            Drops
-                                        </th>
-
-                                        {{-- Overall Column --}}
-                                        <th scope="col"
-                                            class="py-3.5 px-4 text-center font-semibold text-gray-700 dark:text-gray-200 border-r border-b border-gray-200 dark:border-gray-700 min-w-[7.5rem]">
-                                            Overall
                                         </th>
 
                                         {{-- Date Columns (Image 2 style) --}}
@@ -812,6 +801,16 @@
                                                 {{ \Carbon\Carbon::parse($selectedDate)->format('n/j/y') }}
                                             </th>
                                         @endforelse
+
+                                        {{-- Summary Columns at the end --}}
+                                        <th scope="col"
+                                            class="py-3.5 px-4 text-center font-semibold text-gray-700 dark:text-gray-200 border-r border-b border-gray-200 dark:border-gray-700 min-w-[7.5rem]">
+                                            Overall
+                                        </th>
+                                        <th scope="col"
+                                            class="py-3.5 px-3 text-center font-semibold text-gray-700 dark:text-gray-200 border-r border-b border-gray-200 dark:border-gray-700 min-w-[5rem]">
+                                            Drops
+                                        </th>
                                     </tr>
                                 </thead>
                                 <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
@@ -868,19 +867,6 @@
                                                         </div>
                                                     </div>
                                                 </div>
-                                            </td>
-
-                                            <td class="py-3 px-3 text-center border-r border-b border-gray-200 dark:border-gray-700 tabular-nums">
-                                                {{ $row['drop_count'] }}
-                                            </td>
-
-                                            {{-- Overall Badge (Blackboard Style Pill) --}}
-                                            <td class="py-3 px-3 text-center border-r border-b border-gray-200 dark:border-gray-700">
-                                                <span id="overall-pill-{{ $enrollmentId }}"
-                                                      class="bb-pill {{ $pillClass }}"
-                                                      title="Overall attendance score: {{ $overallScore }}%">
-                                                    {{ $scoreText }}
-                                                </span>
                                             </td>
 
                                             {{-- Date Columns --}}
@@ -942,6 +928,18 @@
                                                     @endif
                                                 </td>
                                             @endforeach
+
+                                            {{-- Overall and drops summary columns at the end --}}
+                                            <td class="py-3 px-3 text-center border-r border-b border-gray-200 dark:border-gray-700">
+                                                <span id="overall-pill-{{ $enrollmentId }}"
+                                                      class="bb-pill {{ $pillClass }}"
+                                                      title="Overall attendance score: {{ $overallScore }}%">
+                                                    {{ $scoreText }}
+                                                </span>
+                                            </td>
+                                            <td class="py-3 px-3 text-center border-r border-b border-gray-200 dark:border-gray-700 tabular-nums">
+                                                {{ $row['drop_count'] }}
+                                            </td>
 
                                         </tr>
                                     @empty

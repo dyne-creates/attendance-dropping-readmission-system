@@ -144,7 +144,7 @@ class FacultyCourseController extends Controller
             }
 
             $existingUser = $usersByEmail->get($studentData['email']);
-            if ($existingUser !== null && ($existingUser->role !== 'student' || $existingUser->student !== null)) {
+            if ($existingUser !== null && $existingUser->role !== 'student') {
                 throw ValidationException::withMessages([
                     'file' => "The email {$studentData['email']} already belongs to another account. Resolve the account conflict before importing.",
                 ]);
@@ -193,6 +193,8 @@ class FacultyCourseController extends Controller
                 ]);
             }
 
+            $enrolledStudentIds = [];
+
             foreach ($classList['students'] as $studentData) {
                 $student = $studentsByNumber->get($studentData['student_number']);
 
@@ -207,16 +209,26 @@ class FacultyCourseController extends Controller
                         ]);
                     }
 
-                    $student = Student::create([
-                        'user_id' => $user->user_id,
-                        'student_number' => $studentData['student_number'],
-                        'first_name' => $studentData['first_name'],
-                        'last_name' => $studentData['last_name'],
-                        'department' => $classList['department'],
-                        'year_level' => $studentData['year_level'],
-                        'program' => $studentData['program'],
-                    ]);
+                    $student = $user->student;
+
+                    if ($student === null) {
+                        $student = Student::create([
+                            'user_id' => $user->user_id,
+                            'student_number' => $studentData['student_number'],
+                            'first_name' => $studentData['first_name'],
+                            'last_name' => $studentData['last_name'],
+                            'department' => $classList['department'],
+                            'year_level' => $studentData['year_level'],
+                            'program' => $studentData['program'],
+                        ]);
+                    }
                 }
+
+                if (isset($enrolledStudentIds[$student->student_id])) {
+                    continue;
+                }
+
+                $enrolledStudentIds[$student->student_id] = true;
 
                 Enrollment::create([
                     'student_id' => $student->student_id,

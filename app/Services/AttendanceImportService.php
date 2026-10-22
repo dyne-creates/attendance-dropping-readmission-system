@@ -9,7 +9,7 @@ use InvalidArgumentException;
 class AttendanceImportService
 {
     /**
-     * @return array<int, array{meeting_date: string, student_number: string, status: string, hours_absent: ?string, remarks: ?string, row: int}>
+     * @return array<int, array{meeting_date: string, student_number: string, status: string, hours_absent: ?string, remarks: ?string, row: int, date_occurrence: ?int}>
      */
     public function rows(UploadedFile $file, ?string $defaultMeetingDate = null): array
     {
@@ -57,7 +57,7 @@ class AttendanceImportService
 
     /**
      * @param  array<int, array<int, string>>  $rows
-     * @return array<int, array{meeting_date: string, student_number: string, status: string, hours_absent: ?string, remarks: ?string, row: int}>
+     * @return array<int, array{meeting_date: string, student_number: string, status: string, hours_absent: ?string, remarks: ?string, row: int, date_occurrence: ?int}>
      */
     private function mapRows(array $rows, ?string $defaultMeetingDate): array
     {
@@ -106,6 +106,7 @@ class AttendanceImportService
                 'hours_absent' => $values['hours_absent'] ?? null,
                 'remarks' => ($values['remarks'] ?? '') !== '' ? $values['remarks'] : null,
                 'row' => $index + 2,
+                'date_occurrence' => null,
             ];
         }
 
@@ -118,7 +119,7 @@ class AttendanceImportService
 
     /**
      * @param  array<int, string>  $headerRow
-     * @return array<int, array{column: int, date: string}>
+     * @return array<int, array{column: int, date: string, occurrence: int}>
      */
     private function dateColumns(array $headerRow): array
     {
@@ -145,13 +146,20 @@ class AttendanceImportService
             throw new InvalidArgumentException('Every heading after the student number must be a meeting date.');
         }
 
+        $occurrences = [];
+        foreach ($dateColumns as &$dateColumn) {
+            $dateColumn['occurrence'] = ($occurrences[$dateColumn['date']] ?? 0) + 1;
+            $occurrences[$dateColumn['date']] = $dateColumn['occurrence'];
+        }
+        unset($dateColumn);
+
         return $dateColumns;
     }
 
     /**
-     * @param  array<int, array{column: int, date: string}>  $dateColumns
+     * @param  array<int, array{column: int, date: string, occurrence: int}>  $dateColumns
      * @param  array<int, array<int, string>>  $rows
-     * @return array<int, array{meeting_date: string, student_number: string, status: string, hours_absent: ?string, remarks: ?string, row: int}>
+     * @return array<int, array{meeting_date: string, student_number: string, status: string, hours_absent: ?string, remarks: ?string, row: int, date_occurrence: ?int}>
      */
     private function mapMatrixRows(array $dateColumns, array $rows): array
     {
@@ -187,6 +195,7 @@ class AttendanceImportService
                     'hours_absent' => null,
                     'remarks' => null,
                     'row' => $index + 2,
+                    'date_occurrence' => $dateColumn['occurrence'],
                 ];
             }
         }

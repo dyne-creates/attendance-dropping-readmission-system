@@ -8,7 +8,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Str;
-use Laravel\Socialite\Facades\Socialite;
+use Laravel\Socialite\Socialite;
 use Throwable;
 
 class GoogleController extends Controller
