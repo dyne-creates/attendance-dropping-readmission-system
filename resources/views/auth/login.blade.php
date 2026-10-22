@@ -62,6 +62,6 @@
             <path d="M24 4 C33 12, 33 36, 24 44 C15 36, 15 12, 24 4 Z" />
             <line x1="24" y1="4" x2="24" y2="44" />
         </svg>
-        <span>Sign in with University Account</span>
+        <span>Sign in with Google</span>
     </a>
 </x-guest-layout>
