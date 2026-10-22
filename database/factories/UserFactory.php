@@ -46,7 +46,7 @@ class UserFactory extends Factory
     {
         return $this->state(fn (array $attributes) => [
             'role' => 'osa_staff',
-            'email' => fake()->unique()->userName().'@e.ubaguio.edu',
+            'email' => 'osa@e.ubaguio.edu',
         ]);
     }
 

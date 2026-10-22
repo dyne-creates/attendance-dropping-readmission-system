@@ -2,8 +2,9 @@
 
 namespace App\Http\Requests\Auth;
 
+use App\Models\User;
+use App\Support\UbAccount;
 use Illuminate\Auth\Events\Lockout;
-use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\RateLimiter;
@@ -12,84 +13,55 @@ use Illuminate\Validation\ValidationException;
 
 class LoginRequest extends FormRequest
 {
-    /**
-     * Determine if the user is authorized to make this request.
-     */
     public function authorize(): bool
     {
         return true;
     }
 
-    /**
-     * Get the validation rules that apply to the request.
-     *
-     * @return array<string, ValidationRule|array<mixed>|string>
-     */
+    /** @return array<string, array<int, string>> */
     public function rules(): array
     {
         return [
-            'email' => [
-                'required',
-                'string',
-                'email',
-                function (string $attribute, mixed $value, \Closure $fail): void {
-                    $domain = strtolower((string) substr(strrchr((string) $value, '@') ?: '', 1));
-
-                    if (! in_array($domain, ['s.ubaguio.edu', 'e.ubaguio.edu'], true)) {
-                        $fail('Use your University of Baguio email address to sign in.');
-                    }
-                },
-            ],
+            'email' => ['required', 'string', 'email'],
             'password' => ['required', 'string'],
         ];
     }
 
     protected function prepareForValidation(): void
     {
-        $this->merge([
-            'email' => strtolower(trim((string) $this->input('email'))),
-        ]);
+        $this->merge(['email' => Str::lower(trim((string) $this->input('email')))]);
     }
 
-    /**
-     * Attempt to authenticate the request's credentials.
-     *
-     * @throws ValidationException
-     */
+    /** @throws ValidationException */
     public function authenticate(): void
     {
         $this->ensureIsNotRateLimited();
 
-        if (! Auth::attempt($this->only('email', 'password'), $this->boolean('remember'))) {
-            RateLimiter::hit($this->throttleKey());
+        $email = $this->string('email')->toString();
+        $ubAccount = UbAccount::resolve($email);
+        $dummyAccounts = config('ub.dummy_password_accounts', []);
 
-            throw ValidationException::withMessages([
-                'email' => trans('auth.failed'),
-            ]);
+        if (
+            ! app()->environment(['local', 'testing'])
+            || ! in_array($email, $dummyAccounts, true)
+            || ! in_array($ubAccount['role'] ?? null, ['faculty', 'osa_staff'], true)
+            || ! Auth::attempt($this->only('email', 'password'), $this->boolean('remember'))
+        ) {
+            $this->rejectCredentials();
         }
 
         $user = Auth::user();
-        $requiredDomain = $user?->role === 'student' ? 's.ubaguio.edu' : 'e.ubaguio.edu';
-        $emailDomain = strtolower((string) substr(strrchr((string) $user?->email, '@') ?: '', 1));
 
-        if ($emailDomain !== $requiredDomain) {
-            Auth::logout();
-            RateLimiter::hit($this->throttleKey());
-
-            throw ValidationException::withMessages([
-                'email' => trans('auth.failed'),
-            ]);
+        if (! $user instanceof User || $user->role !== $ubAccount['role']) {
+            Auth::guard('web')->logout();
+            $this->rejectCredentials();
         }
 
         RateLimiter::clear($this->throttleKey());
     }
 
-    /**
-     * Ensure the login request is not rate limited.
-     *
-     * @throws ValidationException
-     */
-    public function ensureIsNotRateLimited(): void
+    /** @throws ValidationException */
+    private function ensureIsNotRateLimited(): void
     {
         if (! RateLimiter::tooManyAttempts($this->throttleKey(), 5)) {
             return;
@@ -97,20 +69,22 @@ class LoginRequest extends FormRequest
 
         event(new Lockout($this));
 
-        $seconds = RateLimiter::availableIn($this->throttleKey());
-
         throw ValidationException::withMessages([
             'email' => trans('auth.throttle', [
-                'seconds' => $seconds,
-                'minutes' => ceil($seconds / 60),
+                'seconds' => RateLimiter::availableIn($this->throttleKey()),
+                'minutes' => ceil(RateLimiter::availableIn($this->throttleKey()) / 60),
             ]),
         ]);
     }
 
-    /**
-     * Get the rate limiting throttle key for the request.
-     */
-    public function throttleKey(): string
+    private function rejectCredentials(): never
+    {
+        RateLimiter::hit($this->throttleKey());
+
+        throw ValidationException::withMessages(['email' => trans('auth.failed')]);
+    }
+
+    private function throttleKey(): string
     {
         return Str::transliterate(Str::lower($this->string('email')).'|'.$this->ip());
     }

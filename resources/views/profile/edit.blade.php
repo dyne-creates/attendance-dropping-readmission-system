@@ -1,25 +1,47 @@
 <x-app-layout>
     <x-slot name="header">
-        <x-page-title title="Your profile" description="View and update your account details." />
+        <x-page-title title="Your profile" description="Your University account details." />
     </x-slot>
 
-    <div class="page space-y-6">
-        <section class="card p-4 sm:p-8">
-            <div class="max-w-2xl">
-                @include('profile.partials.update-profile-information-form')
-            </div>
-        </section>
+    @php
+        $roleLabels = [
+            'student' => 'Student',
+            'faculty' => 'Faculty',
+            'osa_staff' => 'OSA Staff',
+        ];
+    @endphp
 
-        <section class="card p-4 sm:p-8">
-            <div class="max-w-2xl">
-                @include('profile.partials.update-password-form')
-            </div>
-        </section>
+    <div class="page">
+        <section class="card mx-auto max-w-2xl p-6 sm:p-8">
+            <div class="flex items-center gap-4">
+                @if ($user->avatar_url)
+                    <img src="{{ $user->avatar_url }}" alt="" class="h-16 w-16 rounded-full object-cover">
+                @else
+                    <div class="flex h-16 w-16 items-center justify-center rounded-full bg-red-100 font-semibold text-red-700" aria-hidden="true">
+                        {{ mb_substr($user->name, 0, 1) }}
+                    </div>
+                @endif
 
-        <section class="card p-4 sm:p-8">
-            <div class="max-w-2xl">
-                @include('profile.partials.delete-user-form')
+                <div>
+                    <h2 class="text-lg font-semibold">{{ $user->name }}</h2>
+                    <p class="muted">{{ $roleLabels[$user->role] ?? 'University account' }}</p>
+                </div>
             </div>
+
+            <dl class="mt-8 divide-y">
+                <div class="grid gap-1 py-4 sm:grid-cols-3">
+                    <dt class="text-sm font-medium muted">Name</dt>
+                    <dd class="sm:col-span-2">{{ $user->name }}</dd>
+                </div>
+                <div class="grid gap-1 py-4 sm:grid-cols-3">
+                    <dt class="text-sm font-medium muted">University email</dt>
+                    <dd class="sm:col-span-2">{{ $user->email }}</dd>
+                </div>
+                <div class="grid gap-1 py-4 sm:grid-cols-3">
+                    <dt class="text-sm font-medium muted">Account type</dt>
+                    <dd class="sm:col-span-2">{{ $roleLabels[$user->role] ?? 'University account' }}</dd>
+                </div>
+            </dl>
         </section>
     </div>
 </x-app-layout>
