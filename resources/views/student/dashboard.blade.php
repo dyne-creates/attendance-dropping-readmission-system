@@ -46,9 +46,14 @@
                             $score = $enrollment->overall_score ?? 100.0;
                             $pillClass = $score >= 90 ? 'bb-pill-green' : ($score >= 80 ? 'bb-pill-lime' : ($score >= 70 ? 'bb-pill-yellow' : 'bb-pill-red'));
                             $scoreText = ($score == 100) ? '100 / 100' : number_format($score, 2) . ' / 100';
+                            $statusOutlineClass = $enrollment->status === 'dropped' || $enrollment->absence_warning === 'limit_reached'
+                                ? 'ring-rose-500/60'
+                                : (in_array($enrollment->absence_warning, ['approaching_limit', 'weekly_drop_eligible'], true)
+                                    ? 'ring-amber-500/60'
+                                    : 'ring-emerald-500/60');
                         @endphp
 
-                        <details class="card disclosure overflow-hidden">
+                        <details @class(['card disclosure overflow-hidden ring-1 ring-inset', $statusOutlineClass])>
 
                             <summary class="p-5">
                                 <div class="flex items-start justify-between gap-4">
@@ -60,11 +65,20 @@
 
                                             @if ($enrollment->status === 'dropped')
                                                 <span class="badge badge-neutral">Dropped</span>
+                                                @if ($enrollment->latest_drop?->drop_type === \App\Models\DroppingTransaction::TYPE_PERMANENT)
+                                                    <span class="badge badge-danger">Permanent-drop case · OSA may review readmission</span>
+                                                @elseif ($enrollment->latest_drop?->drop_type === \App\Models\DroppingTransaction::TYPE_INSTRUCTOR_REFERRAL)
+                                                    <span class="badge badge-warning">Instructor referred you to OSA</span>
+                                                @else
+                                                    <span class="badge badge-warning">Referred to OSA for readmission review</span>
+                                                @endif
                                             @endif
                                             @if ($enrollment->absence_warning === 'approaching_limit')
                                                 <span class="badge badge-warning">Absence warning</span>
+                                            @elseif ($enrollment->absence_warning === 'weekly_drop_eligible')
+                                                <span class="badge badge-warning">Eligible for instructor referral to OSA</span>
                                             @elseif ($enrollment->absence_warning === 'limit_reached')
-                                                <span class="badge badge-danger">Absence limit reached</span>
+                                                <span class="badge badge-danger">Permanent-drop level reached</span>
                                             @endif
                                             @if ($enrollment->status === 'dropped')
                                                 @if ($enrollment->latest_drop?->readmissionRequest)
@@ -100,16 +114,26 @@
 
                                 @if ($enrollment->absence_warning === 'approaching_limit')
                                     <p class="alert alert-warning mt-4" role="status">
-                                        Absence warning: {{ number_format($enrollment->absence_hours, 2) }} of
-                                        {{ number_format($enrollment->maximum_absence_hours, 2) }} allowable absence hours
-                                        used in this subject (80% warning level).
+                                        Approaching the weekly absence threshold:
+                                        {{ number_format($enrollment->absence_hours, 2) }} of
+                                        {{ number_format($enrollment->weekly_drop_threshold_hours, 2) }} weekly hours.
+                                    </p>
+                                @elseif ($enrollment->absence_warning === 'weekly_drop_eligible')
+                                    <p class="alert alert-warning mt-4" role="status">
+                                        Weekly absence threshold reached:
+                                        {{ number_format($enrollment->absence_hours, 2) }} of
+                                        {{ number_format($enrollment->weekly_drop_threshold_hours, 2) }} weekly hours.
+                                        Your instructor may drop and refer you to OSA for readmission review.
+                                        You will not be dropped automatically.
                                     </p>
                                 @elseif ($enrollment->absence_warning === 'limit_reached')
                                     <p class="alert alert-danger mt-4" role="alert">
-                                        Maximum absence limit reached:
+                                        Permanent-drop level reached at 20% of semester hours:
                                         {{ number_format($enrollment->absence_hours, 2) }} of
-                                        {{ number_format($enrollment->maximum_absence_hours, 2) }} allowable hours used.
-                                        Contact your instructor or the Office of Student Affairs.
+                                        {{ number_format($enrollment->maximum_absence_hours, 2) }} allowable hours used
+                                        (20% of total semester hours). Your instructor may mark a permanent drop
+                                        and refer you to OSA. OSA may still review and approve a readmission request.
+                                        You will not be dropped automatically.
                                     </p>
                                 @endif
 

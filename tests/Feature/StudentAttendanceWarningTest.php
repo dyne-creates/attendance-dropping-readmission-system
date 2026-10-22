@@ -17,26 +17,28 @@ class StudentAttendanceWarningTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_dashboard_warns_at_eighty_percent_of_maximum_absence_hours(): void
+    public function test_dashboard_warns_as_student_approaches_weekly_drop_threshold(): void
     {
         [$user, $faculty, $enrollment] = $this->createStudentEnrollment();
 
-        foreach (['2026-10-05', '2026-10-07', '2026-10-12', '2026-10-14', '2026-10-19', '2026-10-21'] as $date) {
+        foreach (['2026-10-05', '2026-10-07'] as $date) {
             AttendanceRecord::create([
                 'enrollment_id' => $enrollment->enrollment_id,
                 'recorded_by' => $faculty->faculty_id,
                 'session_date' => $date,
                 'grading_period' => 'first_grading',
                 'status' => 'absent',
+                'hours_absent' => 1.25,
             ]);
         }
 
         $response = $this->actingAs($user)->get(route('student.dashboard'));
 
-        $response->assertSee('80% warning level');
+        $response->assertSee('Approaching the weekly absence threshold')
+            ->assertSee('2.50 of')
+            ->assertSee('3.00 weekly hours');
         $response->assertSee('Absence warning');
-        $response->assertSee('9.00 of');
-        $response->assertSee('10.80 allowable absence hours');
+        $response->assertSee('ring-amber-500/60');
     }
 
     public function test_dashboard_shows_critical_warning_when_maximum_absence_hours_are_reached(): void
@@ -64,12 +66,16 @@ class StudentAttendanceWarningTest extends TestCase
 
         $response = $this->actingAs($user)->get(route('student.dashboard'));
 
-        $response->assertSee('Maximum absence limit reached');
+        $response->assertSee('Permanent-drop level reached at 20% of semester hours');
         $response->assertSee('12.00 of');
-        $response->assertSee('10.80 allowable hours used');
+        $response->assertSee('10.80 allowable hours used')
+            ->assertSee('OSA may still review and approve a readmission request.')
+            ->assertSee('You will not be dropped automatically.');
+        $response->assertSee('ring-rose-500/60');
+        $this->assertSame('enrolled', $enrollment->fresh()->status);
     }
 
-    public function test_lab_course_uses_its_own_weekly_hours_for_the_allowable_limit(): void
+    public function test_lab_course_uses_its_own_weekly_hours_for_the_drop_threshold(): void
     {
         [$user, $faculty, $enrollment] = $this->createStudentEnrollment(5);
 
@@ -85,9 +91,54 @@ class StudentAttendanceWarningTest extends TestCase
 
         $response = $this->actingAs($user)->get(route('student.dashboard'));
 
-        $response->assertSee('15.00 of');
-        $response->assertSee('18.00 allowable absence hours');
-        $response->assertSee('80% warning level');
+        $response->assertSee('Weekly absence threshold reached')
+            ->assertSee('15.00 of')
+            ->assertSee('5.00 weekly hours')
+            ->assertDontSee('Permanent-drop level reached');
+    }
+
+    public function test_weekly_drop_threshold_is_one_week_of_course_hours(): void
+    {
+        [$user, $faculty, $enrollment] = $this->createStudentEnrollment(5);
+        AttendanceRecord::create([
+            'enrollment_id' => $enrollment->enrollment_id,
+            'recorded_by' => $faculty->faculty_id,
+            'session_date' => '2026-10-05',
+            'grading_period' => 'first_grading',
+            'status' => 'absent',
+            'hours_absent' => 5,
+        ]);
+
+        $response = $this->actingAs($user)->get(route('student.dashboard'));
+
+        $response->assertSee('Weekly absence threshold reached')
+            ->assertSee('5.00 of')
+            ->assertSee('5.00 weekly hours')
+            ->assertDontSee('Permanent-drop level reached');
+        $this->assertSame('enrolled', $enrollment->fresh()->status);
+    }
+
+    public function test_permanent_drop_threshold_uses_the_course_total_semester_hours(): void
+    {
+        [$user, $faculty, $enrollment] = $this->createStudentEnrollment();
+        $enrollment->course->update(['total_semester_hours' => 60]);
+        AttendanceRecord::create([
+            'enrollment_id' => $enrollment->enrollment_id,
+            'recorded_by' => $faculty->faculty_id,
+            'session_date' => '2026-10-05',
+            'grading_period' => 'first_grading',
+            'status' => 'absent',
+            'hours_absent' => 11.9,
+        ]);
+
+        $response = $this->actingAs($user)->get(route('student.dashboard'));
+
+        $response->assertSee('11.90 of')
+            ->assertSee('3.00 weekly hours')
+            ->assertDontSee('Permanent-drop level reached')
+            ->assertSee('ring-amber-500/60');
+        $response->assertViewHas('enrollments', fn ($enrollments): bool => $enrollments->first()->maximum_absence_hours === 12.0);
+        $this->assertSame('enrolled', $enrollment->fresh()->status);
     }
 
     public function test_dashboard_displays_only_attendance_assigned_to_a_grading_period(): void

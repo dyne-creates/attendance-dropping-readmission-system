@@ -123,7 +123,10 @@ class OsaStaffController extends Controller
                 'courses.course_name',
                 'courses.section',
                 'faculty_members.faculty_id',
-                'faculty_members.full_name as faculty_name'
+                'faculty_members.full_name as faculty_name',
+                'dropping_transactions.drop_type',
+                'dropping_transactions.absence_hours_at_drop',
+                'dropping_transactions.instructor_reason',
             )
             ->orderByDesc('readmission_requests.readmission_id')
             ->get();
@@ -173,6 +176,8 @@ class OsaStaffController extends Controller
                 'dropping_transactions.drop_id',
                 'dropping_transactions.drop_date',
                 'dropping_transactions.absence_hours_at_drop',
+                'dropping_transactions.drop_type',
+                'dropping_transactions.instructor_reason',
                 'enrollments.enrollment_id',
                 'students.student_id',
                 'students.student_number',
@@ -585,7 +590,10 @@ class OsaStaffController extends Controller
                 'students.first_name',
                 'students.last_name',
                 'courses.subject_code',
-                'courses.course_name'
+                'courses.course_name',
+                'dropping_transactions.drop_type',
+                'dropping_transactions.absence_hours_at_drop',
+                'dropping_transactions.instructor_reason',
             )
             ->whereIn(
                 'readmission_requests.status',

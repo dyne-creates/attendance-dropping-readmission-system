@@ -15,6 +15,7 @@ use App\Models\Student;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
 use Symfony\Component\HttpFoundation\File\UploadedFile as SymfonyUploadedFile;
 use Tests\TestCase;
@@ -50,17 +51,23 @@ class StudentReadmissionTest extends TestCase
 
     public function test_student_dashboard_displays_readmission_action_for_dropped_class(): void
     {
-        [$user, , , $enrollment] = $this->createDroppedStudent();
+        [$user, , , $enrollment, $drop] = $this->createDroppedStudent();
+        $drop->update(['drop_type' => DroppingTransaction::TYPE_PERMANENT]);
 
         $response = $this->actingAs($user)->get(route('student.dashboard'));
 
         $response->assertSee('Request readmission');
+        $response->assertSee('Permanent-drop case · OSA may review readmission');
         $response->assertSee(route('student.readmissions.create', $enrollment));
     }
 
     public function test_osa_review_includes_guardian_absences_and_policy_consent(): void
     {
         [, , $faculty, $enrollment, $drop] = $this->createDroppedStudent();
+        $drop->update([
+            'drop_type' => DroppingTransaction::TYPE_INSTRUCTOR_REFERRAL,
+            'instructor_reason' => 'The student needs OSA support for a personal circumstance.',
+        ]);
         $this->createAbsence($enrollment, $faculty, '2026-10-05', 'first_grading');
         $readmission = ReadmissionRequest::create([
             'drop_id' => $drop->drop_id,
@@ -69,6 +76,11 @@ class StudentReadmissionTest extends TestCase
             'channel' => 'online',
         ]);
         $osaUser = User::factory()->osaStaff()->create();
+
+        $this->actingAs($osaUser)
+            ->get(route('osa.readmissions'))
+            ->assertSee('Instructor referral')
+            ->assertSee('The student needs OSA support for a personal circumstance.');
 
         $response = $this->actingAs($osaUser)
             ->get(route('osa.readmissions.show', $readmission->readmission_id));
@@ -80,6 +92,54 @@ class StudentReadmissionTest extends TestCase
         $response->assertSee('October 5, 2026');
         $response->assertSee('Policy consent');
         $response->assertSee('Acknowledged on');
+        $response->assertSee('Instructor referral to OSA');
+        $response->assertSee('The student needs OSA support for a personal circumstance.');
+    }
+
+    public function test_osa_can_review_readmission_for_a_permanent_drop_case(): void
+    {
+        [, , , , $drop] = $this->createDroppedStudent();
+        $drop->update(['drop_type' => DroppingTransaction::TYPE_PERMANENT]);
+        $readmission = ReadmissionRequest::create([
+            'drop_id' => $drop->drop_id,
+            'reason_code' => 'mental_health',
+            'policy_acknowledged_at' => '2026-10-11 10:00:00',
+            'channel' => 'online',
+        ]);
+        $osaUser = User::factory()->osaStaff()->create();
+
+        $this->actingAs($osaUser)
+            ->get(route('osa.readmissions'))
+            ->assertSee('Permanent')
+            ->assertSee('OSA may still review readmission.');
+
+        $this->actingAs($osaUser)
+            ->get(route('osa.readmissions.show', $readmission->readmission_id))
+            ->assertSee('Permanent-drop level (20% of semester hours)')
+            ->assertSee('OSA may still review and approve readmission.');
+
+        Mail::fake();
+
+        $this->actingAs($osaUser)
+            ->post(route('osa.readmissions.approve', $readmission->readmission_id))
+            ->assertRedirect(route('osa.readmissions'));
+
+        $this->assertDatabaseHas('readmission_requests', [
+            'readmission_id' => $readmission->readmission_id,
+            'status' => 'approved',
+        ]);
+        $this->assertDatabaseHas('enrollments', [
+            'enrollment_id' => $drop->enrollment_id,
+            'status' => 'readmitted',
+        ]);
+        $this->assertDatabaseHas('notifications', [
+            'readmission_id' => $readmission->readmission_id,
+            'notification_type' => 'readmission_approved',
+        ]);
+
+        $this->actingAs($osaUser)
+            ->get(route('osa.archive.readmissions'))
+            ->assertSee('Permanent');
     }
 
     public function test_dropped_student_can_submit_a_readmission_request_with_a_supporting_image(): void

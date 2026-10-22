@@ -103,6 +103,26 @@
                         <dd class="mt-1 text-sm">{{ $request->absence_hours_at_drop }} hrs</dd>
                     </div>
 
+                    <div>
+                        <dt class="text-sm font-medium muted">Drop level</dt>
+                        <dd class="mt-1 text-sm font-semibold">
+                            @if ($request->drop_type === \App\Models\DroppingTransaction::TYPE_PERMANENT)
+                                Permanent-drop level (20% of semester hours)
+                                <span class="mt-1 block text-xs font-normal muted">OSA may still review and approve readmission.</span>
+                            @elseif ($request->drop_type === \App\Models\DroppingTransaction::TYPE_INSTRUCTOR_REFERRAL)
+                                Instructor referral to OSA
+                            @else
+                                Weekly-hours drop referred to OSA
+                            @endif
+                        </dd>
+                    </div>
+                    @if ($request->instructor_reason)
+                        <div class="sm:col-span-2">
+                            <dt class="text-sm font-medium muted">Instructor's reason for referral</dt>
+                            <dd class="mt-1 whitespace-pre-line text-sm">{{ $request->instructor_reason }}</dd>
+                        </div>
+                    @endif
+
                     <div class="sm:col-span-2">
                         <dt class="text-sm font-medium muted">Drop transaction</dt>
                         <dd class="mt-1 text-sm font-semibold">#{{ $request->drop_id }}</dd>

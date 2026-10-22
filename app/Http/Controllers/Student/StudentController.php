@@ -87,13 +87,17 @@ class StudentController extends Controller
                 $enrollment->attendanceRecords->where('status', 'absent'),
             );
             $maximumAbsenceHours = $attendanceService->maximumAllowableAbsenceHours($enrollment->course);
-            $warningThresholdHours = round($maximumAbsenceHours * 0.8, 2);
+            $weeklyDropThresholdHours = $attendanceService->weeklyDropThresholdHours($enrollment->course);
+            $warningThresholdHours = round($weeklyDropThresholdHours * 0.8, 2);
             $absenceWarning = $absenceHours >= $maximumAbsenceHours
                 ? 'limit_reached'
-                : ($absenceHours >= $warningThresholdHours ? 'approaching_limit' : null);
+                : ($absenceHours >= $weeklyDropThresholdHours
+                    ? 'weekly_drop_eligible'
+                    : ($absenceHours >= $warningThresholdHours ? 'approaching_limit' : null));
 
             $enrollment->setAttribute('absence_hours', $absenceHours);
             $enrollment->setAttribute('maximum_absence_hours', $maximumAbsenceHours);
+            $enrollment->setAttribute('weekly_drop_threshold_hours', $weeklyDropThresholdHours);
             $enrollment->setAttribute('absence_warning', $absenceWarning);
         }
 

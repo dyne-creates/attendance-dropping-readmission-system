@@ -12,6 +12,12 @@ class DroppingTransaction extends Model
 {
     use HasFactory;
 
+    public const TYPE_WEEKLY_HOURS = 'weekly_hours';
+
+    public const TYPE_PERMANENT = 'permanent';
+
+    public const TYPE_INSTRUCTOR_REFERRAL = 'instructor_referral';
+
     protected $primaryKey = 'drop_id';
 
     protected $fillable = [
@@ -20,6 +26,8 @@ class DroppingTransaction extends Model
         'absence_hours_at_drop',
         'sequence_in_cycle',
         'drop_date',
+        'drop_type',
+        'instructor_reason',
     ];
 
     protected function casts(): array

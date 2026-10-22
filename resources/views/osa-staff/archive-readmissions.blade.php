@@ -22,6 +22,7 @@
                             <th scope="col">Student</th>
                             <th scope="col">Course</th>
                             <th scope="col">Reason</th>
+                            <th scope="col">Drop level</th>
                             <th scope="col">Channel</th>
                             <th scope="col">Status</th>
                             <th scope="col">Processed</th>
@@ -43,6 +44,19 @@
                                 </td>
 
                                 <td>{{ \App\Models\ReadmissionRequest::reasonLabel((string) $record->reason_code) }}</td>
+
+                                <td>
+                                    @if ($record->drop_type === \App\Models\DroppingTransaction::TYPE_PERMANENT)
+                                        <span class="badge badge-danger">Permanent · {{ $record->absence_hours_at_drop }} hrs</span>
+                                    @elseif ($record->drop_type === \App\Models\DroppingTransaction::TYPE_INSTRUCTOR_REFERRAL)
+                                        <span class="badge badge-neutral">Instructor referral</span>
+                                    @else
+                                        <span class="badge badge-warning">Weekly hours · {{ $record->absence_hours_at_drop }} hrs</span>
+                                    @endif
+                                    @if ($record->instructor_reason)
+                                        <p class="mt-1 text-xs muted">{{ $record->instructor_reason }}</p>
+                                    @endif
+                                </td>
 
                                 <td><span class="badge badge-neutral">{{ strtoupper($record->channel) }}</span></td>
 
@@ -66,7 +80,7 @@
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="7" class="py-12 text-center muted">
+                                <td colspan="8" class="py-12 text-center muted">
                                     No processed readmission requests found.
                                 </td>
                             </tr>
