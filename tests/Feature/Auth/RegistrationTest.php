@@ -9,22 +9,17 @@ class RegistrationTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_registration_page_is_not_available(): void
+    public function test_password_registration_submission_is_not_available(): void
     {
-        $this->get('/register')->assertNotFound();
-    }
-
-    public function test_registration_submission_is_not_available(): void
-    {
-        $this->post('/register', [
+        $this->post(route('register'), [
             'name' => 'Test User',
-            'role' => 'student',
-            'email' => 'test@s.ubaguio.edu',
+            'role' => 'osa_staff',
+            'email' => 'osa@e.ubaguio.edu',
             'password' => 'password',
             'password_confirmation' => 'password',
-        ])->assertNotFound();
+        ])->assertMethodNotAllowed();
 
-        $this->assertDatabaseMissing('users', ['email' => 'test@s.ubaguio.edu']);
+        $this->assertDatabaseMissing('users', ['email' => 'osa@e.ubaguio.edu']);
         $this->assertGuest();
     }
 }

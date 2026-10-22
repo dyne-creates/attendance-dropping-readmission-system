@@ -19,16 +19,19 @@ class AuthenticatedSessionController extends Controller
         return view('auth.login');
     }
 
-    /**
-     * Handle an incoming authentication request.
-     */
+    /** Allow password login only for local demo accounts. */
     public function store(LoginRequest $request): RedirectResponse
     {
         $request->authenticate();
-
         $request->session()->regenerate();
 
-        return redirect()->route('dashboard');
+        $dashboardRoute = match ($request->user()->role) {
+            'student' => 'student.dashboard',
+            'faculty' => 'faculty.dashboard',
+            'osa_staff' => 'osa.dashboard',
+        };
+
+        return redirect()->intended(route($dashboardRoute, absolute: false));
     }
 
     /**
