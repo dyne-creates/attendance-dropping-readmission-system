@@ -4,7 +4,11 @@ namespace App\Http\Controllers\OsaStaff;
 
 use App\Http\Controllers\Controller;
 use App\Mail\ReadmissionDecisionMail;
+use App\Models\DroppingTransaction;
+use App\Models\Enrollment;
 use App\Models\ExcuseDocument;
+use App\Models\ReadmissionRequest;
+use App\Services\AttendanceService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -23,6 +27,14 @@ class OsaStaffController extends Controller
 
         $approvedReadmissions = DB::table('readmission_requests')
             ->where('status', 'approved')
+            ->where(function ($query): void {
+                $query->whereNull('outcome')
+                    ->orWhere('outcome', ReadmissionRequest::OUTCOME_APPROVED);
+            })
+            ->count();
+
+        $excusedReadmissions = DB::table('readmission_requests')
+            ->where('outcome', ReadmissionRequest::OUTCOME_EXCUSED)
             ->count();
 
         $rejectedReadmissions = DB::table('readmission_requests')
@@ -72,6 +84,7 @@ class OsaStaffController extends Controller
         return view('osa-staff.dashboard', compact(
             'pendingReadmissions',
             'approvedReadmissions',
+            'excusedReadmissions',
             'rejectedReadmissions',
             'totalDrops',
             'recentReadmissions'
@@ -209,10 +222,8 @@ class OsaStaffController extends Controller
         $absenceDates = DB::table('attendance_records')
             ->where('enrollment_id', $request->enrollment_id)
             ->where('status', 'absent')
-            ->whereNotNull('grading_period')
             ->orderBy('session_date')
-            ->get()
-            ->groupBy('grading_period');
+            ->get();
 
         return view(
             'osa-staff.readmission-details',
@@ -237,7 +248,7 @@ class OsaStaffController extends Controller
         ]);
     }
 
-    public function approveReadmission(Request $request, int $id)
+    public function approveReadmission(Request $request, int $id): RedirectResponse
     {
         DB::beginTransaction();
 
@@ -276,6 +287,12 @@ class OsaStaffController extends Controller
                     'faculty_members.faculty_id'
                 )
                 ->join(
+                    'courses',
+                    'enrollments.course_id',
+                    '=',
+                    'courses.course_id'
+                )
+                ->join(
                     'users as faculty_users',
                     'faculty_members.user_id',
                     '=',
@@ -285,6 +302,8 @@ class OsaStaffController extends Controller
                     'readmission_requests.readmission_id',
                     $id
                 )
+                ->where('readmission_requests.status', 'pending')
+                ->lockForUpdate()
                 ->select(
                     'readmission_requests.*',
                     'dropping_transactions.drop_id',
@@ -295,6 +314,8 @@ class OsaStaffController extends Controller
                     'faculty_users.email as faculty_email',
                     'students.first_name',
                     'students.last_name',
+                    'courses.subject_code',
+                    'courses.course_name',
                     'faculty_members.full_name as faculty_name'
                 )
                 ->first();
@@ -311,6 +332,7 @@ class OsaStaffController extends Controller
                 ->where('readmission_id', $id)
                 ->update([
                     'status' => 'approved',
+                    'outcome' => ReadmissionRequest::OUTCOME_APPROVED,
                     'processed_by' => $osaStaff->getKey(),
                     'processed_date' => now()->toDateString(),
                     'notice_sent_date' => now()->toDateString(),
@@ -358,13 +380,13 @@ class OsaStaffController extends Controller
                     ->send(new ReadmissionDecisionMail($readmission, 'approved'));
 
                 Mail::to($readmission->faculty_email)
-                    ->send(new ReadmissionDecisionMail($readmission, 'approved_faculty'));
+                    ->send(new ReadmissionDecisionMail($readmission, 'approved', 'faculty'));
             } catch (\Throwable $exception) {
                 report($exception);
 
                 return redirect()
                     ->route('osa.readmissions')
-                    ->with('warning', 'The readmission was approved, but an email notification could not be sent.');
+                    ->with('warning', 'The readmission was approved, but one or more email notifications could not be sent.');
             }
 
             return redirect()
@@ -387,132 +409,251 @@ class OsaStaffController extends Controller
         }
     }
 
-    public function rejectReadmission(
-        Request $request,
-        int $id
-    ): RedirectResponse {
+    public function rejectReadmission(Request $request, int $id): RedirectResponse
+    {
         $validated = $request->validate([
             'rejection_reason' => ['required', 'string', 'max:2000'],
         ]);
 
-        DB::beginTransaction();
+        return $this->processNegativeDecision(
+            $request,
+            $id,
+            ReadmissionRequest::OUTCOME_REJECTED,
+            $validated['rejection_reason'],
+        );
+    }
+
+    public function notExcusedReadmission(Request $request, int $id): RedirectResponse
+    {
+        $validated = $request->validate([
+            'rejection_reason' => ['required', 'string', 'max:2000'],
+        ]);
+
+        return $this->processNegativeDecision(
+            $request,
+            $id,
+            ReadmissionRequest::OUTCOME_NOT_EXCUSED,
+            $validated['rejection_reason'],
+        );
+    }
+
+    public function excuseReadmission(Request $request, int $id, AttendanceService $attendanceService): RedirectResponse
+    {
+        $validated = $request->validate([
+            'excused_from' => ['required', 'date'],
+            'excused_through' => ['required', 'date', 'after_or_equal:excused_from'],
+        ]);
 
         try {
-            $osaStaff = $request->user()->osaStaff()->firstOrCreate();
+            $readmission = DB::transaction(function () use ($request, $id, $validated, $attendanceService): ?object {
+                $osaStaff = $request->user()->osaStaff()->firstOrCreate();
+                $readmission = $this->readmissionDecisionDetails($id, true);
 
-            $readmission = DB::table('readmission_requests')
-                ->join(
-                    'dropping_transactions',
-                    'readmission_requests.drop_id',
-                    '=',
-                    'dropping_transactions.drop_id'
-                )
-                ->join(
-                    'enrollments',
-                    'dropping_transactions.enrollment_id',
-                    '=',
-                    'enrollments.enrollment_id'
-                )
-                ->join(
-                    'students',
-                    'enrollments.student_id',
-                    '=',
-                    'students.student_id'
-                )
-                ->join(
-                    'users as student_users',
-                    'students.user_id',
-                    '=',
-                    'student_users.user_id'
-                )
-                ->join(
-                    'faculty_members',
-                    'dropping_transactions.dropped_by',
-                    '=',
-                    'faculty_members.faculty_id'
-                )
-                ->join(
-                    'users as faculty_users',
-                    'faculty_members.user_id',
-                    '=',
-                    'faculty_users.user_id'
-                )
-                ->where(
-                    'readmission_requests.readmission_id',
-                    $id
-                )
-                ->select(
-                    'readmission_requests.*',
-                    'enrollments.enrollment_id',
-                    'enrollments.student_id',
-                    'student_users.email as student_email',
-                    'faculty_users.email as faculty_email',
-                    'students.first_name',
-                    'students.last_name'
-                )
-                ->first();
+                if ($readmission === null || $readmission->status !== 'pending') {
+                    return null;
+                }
 
-            if (! $readmission) {
-                DB::rollBack();
+                $drop = DroppingTransaction::query()
+                    ->whereKey($readmission->drop_id)
+                    ->lockForUpdate()
+                    ->firstOrFail();
+                $enrollment = Enrollment::query()
+                    ->with('course.schedules')
+                    ->whereKey($readmission->enrollment_id)
+                    ->lockForUpdate()
+                    ->firstOrFail();
+                $absences = $enrollment->attendanceRecords()
+                    ->where('status', 'absent')
+                    ->whereBetween('session_date', [$validated['excused_from'], $validated['excused_through']])
+                    ->lockForUpdate()
+                    ->get();
+                $deductedHours = $attendanceService->calculateAbsenceHours($enrollment->course, $absences);
 
-                return redirect()
-                    ->route('osa.readmissions')
-                    ->with('error', 'Request not found.');
-            }
+                $enrollment->attendanceRecords()
+                    ->where('status', 'absent')
+                    ->whereBetween('session_date', [$validated['excused_from'], $validated['excused_through']])
+                    ->update([
+                        'status' => 'excused',
+                        'hours_absent' => null,
+                        'updated_at' => now(),
+                    ]);
 
-            DB::table('readmission_requests')
-                ->where('readmission_id', $id)
-                ->update([
-                    'status' => 'rejected',
-                    'rejection_reason' => $validated['rejection_reason'],
-                    'processed_by' => $osaStaff->getKey(),
-                    'processed_date' => now()->toDateString(),
-                    'notice_sent_date' => now()->toDateString(),
+                $drop->update([
+                    'absence_hours_at_drop' => max(0, (float) $drop->absence_hours_at_drop - $deductedHours),
+                ]);
+                $enrollment->update(['status' => 'readmitted']);
+
+                DB::table('readmission_requests')
+                    ->where('readmission_id', $id)
+                    ->update([
+                        'status' => 'approved',
+                        'outcome' => ReadmissionRequest::OUTCOME_EXCUSED,
+                        'excused_from' => $validated['excused_from'],
+                        'excused_through' => $validated['excused_through'],
+                        'excused_hours_deducted' => $deductedHours,
+                        'rejection_reason' => null,
+                        'processed_by' => $osaStaff->getKey(),
+                        'processed_date' => now()->toDateString(),
+                        'notice_sent_date' => now()->toDateString(),
+                    ]);
+
+                DB::table('notifications')->insert([
+                    'readmission_id' => $id,
+                    'osa_id' => $osaStaff->getKey(),
+                    'student_id' => $readmission->student_id,
+                    'guardian_id' => null,
+                    'notification_type' => 'readmission_excused',
+                    'channel' => 'email',
+                    'message' => 'OSA readmitted you and excused absences from '.$validated['excused_from'].' through '.$validated['excused_through'].'. '.$deductedHours.' absence hours were deducted.',
+                    'sent_at' => now(),
                 ]);
 
-            DB::table('notifications')->insert([
-                'readmission_id' => $id,
-                'osa_id' => $osaStaff->getKey(),
-                'student_id' => $readmission->student_id,
-                'guardian_id' => null,
-                'notification_type' => 'readmission_rejected',
-                'channel' => 'email',
-                'message' => 'Your readmission request has been rejected. OSA feedback: '.$validated['rejection_reason'],
-                'sent_at' => now(),
-            ]);
+                $readmission->outcome = ReadmissionRequest::OUTCOME_EXCUSED;
+                $readmission->excused_from = $validated['excused_from'];
+                $readmission->excused_through = $validated['excused_through'];
+                $readmission->excused_hours_deducted = $deductedHours;
 
-            DB::commit();
+                return $readmission;
+            });
+
+            if ($readmission === null) {
+                return redirect()
+                    ->route('osa.readmissions')
+                    ->with('error', 'The readmission request was not found or has already been processed.');
+            }
 
             try {
-                $readmission->rejection_reason = $validated['rejection_reason'];
                 Mail::to($readmission->student_email)
-                    ->send(new ReadmissionDecisionMail($readmission, 'rejected'));
+                    ->send(new ReadmissionDecisionMail($readmission, ReadmissionRequest::OUTCOME_EXCUSED));
+                Mail::to($readmission->faculty_email)
+                    ->send(new ReadmissionDecisionMail($readmission, ReadmissionRequest::OUTCOME_EXCUSED, 'faculty'));
             } catch (\Throwable $exception) {
                 report($exception);
 
                 return redirect()
                     ->route('osa.readmissions')
-                    ->with('warning', 'The readmission was rejected, but the notification email could not be sent.');
+                    ->with('warning', 'The student was readmitted and absences were excused, but one or more email notifications could not be sent.');
             }
 
             return redirect()
                 ->route('osa.readmissions')
-                ->with(
-                    'success',
-                    'Readmission request rejected and student notified.'
-                );
-
+                ->with('success', 'The student was readmitted, matching absences were excused, and both the student and faculty were notified.');
         } catch (\Throwable $exception) {
-            if (DB::transactionLevel() > 0) {
-                DB::rollBack();
-            }
-
             report($exception);
 
             return redirect()
                 ->back()
-                ->with('error', 'The readmission could not be rejected. Please try again.');
+                ->with('error', 'The readmission could not be excused. Please try again.');
         }
+    }
+
+    private function processNegativeDecision(Request $request, int $id, string $outcome, string $reason): RedirectResponse
+    {
+        try {
+            $readmission = DB::transaction(function () use ($request, $id, $outcome, $reason): ?object {
+                $osaStaff = $request->user()->osaStaff()->firstOrCreate();
+                $readmission = $this->readmissionDecisionDetails($id, true);
+
+                if ($readmission === null || $readmission->status !== 'pending') {
+                    return null;
+                }
+
+                DB::table('readmission_requests')
+                    ->where('readmission_id', $id)
+                    ->update([
+                        'status' => 'rejected',
+                        'outcome' => $outcome,
+                        'rejection_reason' => $reason,
+                        'processed_by' => $osaStaff->getKey(),
+                        'processed_date' => now()->toDateString(),
+                        'notice_sent_date' => now()->toDateString(),
+                    ]);
+
+                DB::table('notifications')->insert([
+                    'readmission_id' => $id,
+                    'osa_id' => $osaStaff->getKey(),
+                    'student_id' => $readmission->student_id,
+                    'guardian_id' => null,
+                    'notification_type' => $outcome === ReadmissionRequest::OUTCOME_NOT_EXCUSED
+                        ? 'readmission_not_excused'
+                        : 'readmission_rejected',
+                    'channel' => 'email',
+                    'message' => $outcome === ReadmissionRequest::OUTCOME_NOT_EXCUSED
+                        ? 'Your readmission request was not excused. OSA feedback: '.$reason
+                        : 'Your readmission request has been rejected. OSA feedback: '.$reason,
+                    'sent_at' => now(),
+                ]);
+
+                $readmission->outcome = $outcome;
+                $readmission->rejection_reason = $reason;
+
+                return $readmission;
+            });
+
+            if ($readmission === null) {
+                return redirect()
+                    ->route('osa.readmissions')
+                    ->with('error', 'The readmission request was not found or has already been processed.');
+            }
+
+            try {
+                Mail::to($readmission->student_email)
+                    ->send(new ReadmissionDecisionMail($readmission, $outcome));
+                Mail::to($readmission->faculty_email)
+                    ->send(new ReadmissionDecisionMail($readmission, $outcome, 'faculty'));
+            } catch (\Throwable $exception) {
+                report($exception);
+
+                return redirect()
+                    ->route('osa.readmissions')
+                    ->with('warning', 'The decision was saved, but one or more email notifications could not be sent.');
+            }
+
+            $message = $outcome === ReadmissionRequest::OUTCOME_NOT_EXCUSED
+                ? 'The request was marked Not excused. The student may submit a corrected request; both parties were notified.'
+                : 'The request was rejected for the term. The student remains inactive, and both parties were notified.';
+
+            return redirect()->route('osa.readmissions')->with('success', $message);
+        } catch (\Throwable $exception) {
+            report($exception);
+
+            return redirect()
+                ->back()
+                ->with('error', 'The readmission decision could not be saved. Please try again.');
+        }
+    }
+
+    private function readmissionDecisionDetails(int $id, bool $lockForUpdate = false): ?object
+    {
+        $query = DB::table('readmission_requests')
+            ->join('dropping_transactions', 'readmission_requests.drop_id', '=', 'dropping_transactions.drop_id')
+            ->join('enrollments', 'dropping_transactions.enrollment_id', '=', 'enrollments.enrollment_id')
+            ->join('students', 'enrollments.student_id', '=', 'students.student_id')
+            ->join('users as student_users', 'students.user_id', '=', 'student_users.user_id')
+            ->join('faculty_members', 'dropping_transactions.dropped_by', '=', 'faculty_members.faculty_id')
+            ->join('users as faculty_users', 'faculty_members.user_id', '=', 'faculty_users.user_id')
+            ->join('courses', 'enrollments.course_id', '=', 'courses.course_id')
+            ->where('readmission_requests.readmission_id', $id)
+            ->select(
+                'readmission_requests.*',
+                'dropping_transactions.drop_id',
+                'dropping_transactions.absence_hours_at_drop',
+                'enrollments.enrollment_id',
+                'enrollments.student_id',
+                'student_users.email as student_email',
+                'faculty_users.email as faculty_email',
+                'students.first_name',
+                'students.last_name',
+                'courses.subject_code',
+                'courses.course_name',
+                'faculty_members.full_name as faculty_name',
+            );
+
+        if ($lockForUpdate) {
+            $query->lockForUpdate();
+        }
+
+        return $query->first();
     }
 
     public function dropArchive()

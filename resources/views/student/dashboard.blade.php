@@ -84,13 +84,16 @@
                                                 @if ($enrollment->latest_drop?->readmissionRequest)
                                                     <span class="badge badge-warning shrink-0">
                                                         Attempt {{ $enrollment->latest_drop->readmissionRequest->attempt_number }}:
-                                                        {{ ucfirst($enrollment->latest_drop->readmissionRequest->status) }}
+                                                        {{ ucfirst(str_replace('_', ' ', $enrollment->latest_drop->readmissionRequest->outcome ?? $enrollment->latest_drop->readmissionRequest->status)) }}
                                                     </span>
-                                                    @if ($enrollment->latest_drop->readmissionRequest->status === 'rejected')
+                                                    @if ($enrollment->latest_drop->readmissionRequest->status === 'rejected'
+                                                        && $enrollment->latest_drop->readmissionRequest->outcome !== \App\Models\ReadmissionRequest::OUTCOME_REJECTED)
                                                         <a href="{{ route('student.readmissions.create', $enrollment) }}"
                                                            class="btn btn-primary btn-sm shrink-0">
                                                             Submit another attempt
                                                         </a>
+                                                    @elseif ($enrollment->latest_drop->readmissionRequest->outcome === \App\Models\ReadmissionRequest::OUTCOME_REJECTED)
+                                                        <span class="muted text-xs">OSA denied readmission for this term.</span>
                                                     @endif
                                                 @else
                                                     <a href="{{ route('student.readmissions.create', $enrollment) }}"
@@ -167,66 +170,38 @@
                                     :excused="$enrollment->excused_count" />
                             </summary>
 
-                            <div class="border-t">
-                                @foreach ($enrollment->grading_periods as $gradingPeriod)
-                                    <details class="disclosure @unless ($loop->first) border-t @endunless">
-
-                                        <summary class="flex flex-col gap-2 px-5 py-3 sm:flex-row sm:items-center sm:justify-between">
-                                            <span class="flex items-center gap-2 text-sm font-medium">
-                                                <svg class="chevron muted h-4 w-4 shrink-0" fill="none" stroke="currentColor"
-                                                     stroke-width="1.8" viewBox="0 0 24 24" aria-hidden="true">
-                                                    <path stroke-linecap="round" stroke-linejoin="round" d="M6 9l6 6 6-6" />
-                                                </svg>
-                                                {{ $gradingPeriod['label'] }}
-                                            </span>
-
-                                            <x-attendance-counts
-                                                :total="$gradingPeriod['attendance_records']->count()"
-                                                :present="$gradingPeriod['counts']['present']"
-                                                :late="$gradingPeriod['counts']['late']"
-                                                :absent="$gradingPeriod['counts']['absent']"
-                                                :excused="$gradingPeriod['counts']['excused']" />
-                                        </summary>
-
-                                        <div class="overflow-x-auto border-t">
-                                            <table class="data-table">
-                                                <thead>
-                                                    <tr>
-                                                        <th scope="col">Class day</th>
-                                                        <th scope="col">Status</th>
-                                                        <th scope="col">Remarks</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody>
-                                                    @forelse ($gradingPeriod['attendance_records'] as $record)
-                                                        <tr>
-                                                            <td class="whitespace-nowrap">
-                                                                {{ $record->session_date->format('l, M j, Y') }}
-                                                            </td>
-                                                            <td>
-                                                                <span class="badge {{ $badgeFor[$record->status] ?? 'badge-neutral' }}">
-                                                                    {{ ucfirst($record->status) }}
-                                                                    @if ($record->status === 'absent' && $record->hours_absent !== null)
-                                                                        ({{ $record->hours_absent }}h)
-                                                                    @endif
-                                                                </span>
-                                                            </td>
-                                                            <td class="muted">{{ $record->remarks ?? '—' }}</td>
-                                                        </tr>
-                                                    @empty
-                                                        <tr>
-                                                            <td colspan="3" class="muted py-8 text-center">
-                                                                No class days have been recorded for
-                                                                {{ strtolower($gradingPeriod['label']) }}.
-                                                            </td>
-                                                        </tr>
-                                                    @endforelse
-                                                </tbody>
-                                            </table>
-                                        </div>
-                                    </details>
-                                @endforeach
-
+                            <div class="overflow-x-auto border-t">
+                                <table class="data-table">
+                                    <thead>
+                                        <tr>
+                                            <th scope="col">Class day</th>
+                                            <th scope="col">Status</th>
+                                            <th scope="col">Remarks</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @forelse ($days as $record)
+                                            <tr>
+                                                <td class="whitespace-nowrap">
+                                                    {{ $record->session_date->format('l, M j, Y') }}
+                                                </td>
+                                                <td>
+                                                    <span class="badge {{ $badgeFor[$record->status] ?? 'badge-neutral' }}">
+                                                        {{ ucfirst($record->status) }}
+                                                        @if ($record->status === 'absent' && $record->hours_absent !== null)
+                                                            ({{ $record->hours_absent }}h)
+                                                        @endif
+                                                    </span>
+                                                </td>
+                                                <td class="muted">{{ $record->remarks ?? '—' }}</td>
+                                            </tr>
+                                        @empty
+                                            <tr>
+                                                <td colspan="3" class="muted py-8 text-center">No class days have been recorded.</td>
+                                            </tr>
+                                        @endforelse
+                                    </tbody>
+                                </table>
                             </div>
                         </details>
                     @endforeach

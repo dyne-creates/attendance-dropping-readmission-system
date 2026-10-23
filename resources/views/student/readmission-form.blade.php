@@ -144,7 +144,7 @@
                             <div class="flex flex-wrap items-center gap-2">
                                 <span class="font-medium">Attempt {{ $previousAttempt->attempt_number }}</span>
                                 <span class="badge {{ $previousAttempt->status === 'rejected' ? 'badge-danger' : 'badge-neutral' }}">
-                                    {{ ucfirst($previousAttempt->status) }}
+                                    {{ ucfirst(str_replace('_', ' ', $previousAttempt->outcome ?? $previousAttempt->status)) }}
                                 </span>
                             </div>
                             @if ($previousAttempt->rejection_reason)
@@ -161,32 +161,24 @@
         <section class="card p-5 sm:p-6" aria-labelledby="absence-heading">
             <h2 id="absence-heading" class="text-lg font-semibold">Section 4: Absence and reason information</h2>
             <p class="muted mt-1 text-sm">
-                Absence dates below are taken from recorded attendance and grouped by grading period.
+                Absence dates below are taken from recorded attendance and shown together in date order.
             </p>
 
             <div class="mt-5 space-y-2">
-                @foreach ($absenceDates as $period)
-                    <details class="disclosure rounded-lg border">
-                        <summary class="flex cursor-pointer items-center justify-between gap-3 p-4">
-                            <span class="font-medium">{{ $period['label'] }}</span>
-                            <span class="badge badge-neutral">{{ $period['dates']->count() }} absent</span>
-                        </summary>
-                        @if ($period['dates']->isNotEmpty())
-                            <ul class="space-y-1 border-t px-4 py-3 text-sm">
-                                @foreach ($period['dates'] as $absence)
-                                    <li>{{ $absence->session_date->format('F j, Y') }}</li>
-                                @endforeach
-                            </ul>
-                        @else
-                            <p class="muted border-t px-4 py-3 text-sm">No absences assigned to this period.</p>
+                @forelse ($absenceDates as $absence)
+                    <p class="rounded-lg border px-4 py-3 text-sm">
+                        {{ $absence->session_date->format('l, F j, Y') }}
+                        @if ($absence->hours_absent !== null)
+                            <span class="muted">({{ $absence->hours_absent }} hours)</span>
                         @endif
-                    </details>
-                @endforeach
+                    </p>
+                @empty
+                    <p class="muted rounded-lg border px-4 py-3 text-sm">No absence records have been logged.</p>
+                @endforelse
             </div>
 
             <p class="alert alert-warning mt-4" role="note">
-                Only absences assigned to a grading period are listed. Ask your instructor to assign a grading period
-                if an absence is missing. If a previous attempt was rejected, you may submit a revised request.
+                All recorded absences are listed in date order. If a previous attempt was marked Not excused, you may submit a revised request.
             </p>
 
             <form method="POST"

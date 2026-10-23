@@ -109,6 +109,7 @@
     </x-slot>
 
     <div class="page space-y-6 [zoom:0.9]"
+         x-init="$nextTick(() => sortStudentRows())"
          x-data="facultyDashboard({
              courseId: {{ $selectedCourse ? $selectedCourse->course_id : 'null' }},
              defaultSessionHours: {{ $sessionHours ?? 1.5 }},
@@ -839,53 +840,6 @@
                         </div>
                     </div>
 
-                    @if ($isSelectedDateCancelled)
-                        <p class="alert alert-warning" role="status">
-                            All scheduled meetings on this date have been cancelled. Attendance cannot be changed for this date.
-                        </p>
-                    @else
-                    <section class="card p-4" aria-label="Selected meeting actions">
-                        <div class="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-                            <div class="min-w-0 flex-1">
-                                <label for="overall-meeting" class="field-label mb-1">Selected dated meeting</label>
-                                <select id="overall-meeting" class="field"
-                                        x-model="selectedMeetingKey">
-                                    @foreach ($gridDates as $meeting)
-                                        <option value="{{ $meeting['date'].'|'.($meeting['schedule_id'] ?? '') }}">
-                                            {{ $meeting['header_label'] }}{{ $meeting['schedule_label'] ? ' · '.$meeting['schedule_label'] : ' · Unscheduled' }}
-                                        </option>
-                                    @endforeach
-                                </select>
-                            </div>
-                            <div class="flex flex-wrap gap-2">
-                                <button type="button" class="btn btn-secondary btn-sm" @click="markAll('present')">Mark all present</button>
-                                <button type="button" class="btn btn-secondary btn-sm" @click="markAll('absent')">Mark all absent</button>
-                                <button type="button" class="btn btn-secondary btn-sm" @click="clearSelectedMeeting()">Clear marks</button>
-                                <button type="button" class="btn btn-secondary btn-sm" @click="markAll('excused')">Exempt meeting</button>
-                                <button type="button" class="btn btn-danger btn-sm"
-                                        x-show="selectedMeetingScheduleId"
-                                        @click="deleteSelectedMeeting()">Delete meeting</button>
-                            </div>
-                        </div>
-                        <form x-ref="clearMeetingForm" method="POST"
-                              action="{{ route('faculty.attendance.meeting.clear') }}" class="hidden">
-                            @csrf
-                            @method('DELETE')
-                            <input type="hidden" name="course_id" value="{{ $selectedCourse->course_id }}">
-                            <input type="hidden" name="session_date" :value="selectedMeetingDate">
-                            <input type="hidden" name="schedule_id" :value="selectedMeetingScheduleId">
-                        </form>
-                        <form x-ref="deleteMeetingForm" method="POST"
-                              action="{{ route('faculty.attendance.meeting.delete') }}" class="hidden">
-                            @csrf
-                            @method('DELETE')
-                            <input type="hidden" name="course_id" value="{{ $selectedCourse->course_id }}">
-                            <input type="hidden" name="session_date" :value="selectedMeetingDate">
-                            <input type="hidden" name="schedule_id" :value="selectedMeetingScheduleId">
-                        </form>
-                    </section>
-                    @endif
-
                     <section id="attendance-import" class="card p-4 space-y-3 scroll-mt-6" aria-labelledby="attendance-import-heading">
                         <div>
                             <h3 id="attendance-import-heading" class="font-semibold text-sm">Import attendance file</h3>
@@ -893,22 +847,6 @@
                         <form method="POST" action="{{ route('faculty.attendance.import') }}" enctype="multipart/form-data" class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4 lg:items-end">
                             @csrf
                             <input type="hidden" name="course_id" value="{{ $selectedCourse->course_id }}">
-                            <input type="hidden" name="session_date" :value="selectedMeetingDate">
-                            <input type="hidden" name="schedule_id" :value="selectedMeetingScheduleId">
-                            <div class="sm:col-span-2">
-                                <label for="attendance-import-meeting" class="field-label">Selected dated meeting</label>
-                                <select id="attendance-import-meeting" class="field"
-                                        x-model="selectedMeetingKey">
-                                    @foreach ($importMeetingOptions as $meeting)
-                                        <option value="{{ $meeting['key'] }}">
-                                            {{ $meeting['label'] }}
-                                        </option>
-                                    @endforeach
-                                </select>
-                                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                                    File dates are matched to this course's schedule by weekday. Repeated date columns are assigned to that day's meeting slots in start-time order (first date column to the first slot). This meeting supplies a date when the file has no date column.
-                                </p>
-                            </div>
                             <div class="sm:col-span-2">
                                 <div class="flex items-center justify-between gap-2">
                                     <label for="attendance-import-file" class="field-label">CSV or Excel file</label>
@@ -918,7 +856,7 @@
                                 </div>
                                 <input id="attendance-import-file" name="file" type="file" accept=".csv,.xlsx" required class="field">
                                 <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                                    A date-column file can use student_number first, then one column per meeting date. Use P or Present for present attendance.
+                                    Put student_number first, then use meeting dates as column headings (YYYY-MM-DD). Enter P/Present, A/Absent, L/Late, or E/Excused. Repeat a date column for multiple meetings on the same day.
                                 </p>
                             </div>
                             <div>
@@ -926,10 +864,43 @@
                             </div>
                         </form>
                     </section>
+                    <form x-ref="clearMeetingForm" method="POST"
+                          action="{{ route('faculty.attendance.meeting.clear') }}" class="hidden">
+                        @csrf
+                        @method('DELETE')
+                        <input type="hidden" name="course_id" value="{{ $selectedCourse->course_id }}">
+                        <input type="hidden" name="session_date" :value="selectedMeetingDate">
+                        <input type="hidden" name="schedule_id" :value="selectedMeetingScheduleId">
+                    </form>
+                    <form x-ref="deleteMeetingForm" method="POST"
+                          action="{{ route('faculty.attendance.meeting.delete') }}" class="hidden">
+                        @csrf
+                        @method('DELETE')
+                        <input type="hidden" name="course_id" value="{{ $selectedCourse->course_id }}">
+                        <input type="hidden" name="session_date" :value="selectedMeetingDate">
+                        <input type="hidden" name="schedule_id" :value="selectedMeetingScheduleId">
+                    </form>
+
+                    <div class="flex flex-wrap items-center justify-between gap-3">
+                        <h3 class="font-semibold text-sm">Attendance log</h3>
+                        <div class="flex items-center gap-2">
+                            <label for="student-sort" class="field-label">Sort students</label>
+                            <select id="student-sort" x-model="studentSortBy" @change="sortStudentRows()" class="field w-auto py-1.5 text-sm">
+                                <option value="student_number">Student ID</option>
+                                <option value="name">Name</option>
+                            </select>
+                            <button type="button" class="btn btn-secondary btn-sm"
+                                    @click="toggleStudentSortDirection()"
+                                    x-text="studentSortBy === 'name' ? (studentSortDirection === 1 ? 'A–Z' : 'Z–A') : (studentSortDirection === 1 ? 'ID ↑' : 'ID ↓')">
+                                ID ↑
+                            </button>
+                        </div>
+                    </div>
+
                     {{-- The Blackboard Overall Spreadsheet Grid --}}
                     <div class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded shadow-xs overflow-hidden">
                         <div class="overflow-x-auto max-h-[72vh]">
-                            <table class="bb-grid-table border-collapse w-full">
+                            <table id="attendance-overall-grid" class="bb-grid-table border-collapse w-full">
                                 <thead>
                                     <tr class="bg-white dark:bg-gray-800 sticky top-0 z-20 shadow-xs border-b border-gray-200 dark:border-gray-700">
                                         {{-- Student Column (Sticky left) --}}
@@ -946,7 +917,8 @@
                                                     'bb-header-active' => $d['is_selected'],
                                                     'bg-white dark:bg-gray-800 font-medium text-gray-700 dark:text-gray-300' => ! $d['is_selected']
                                                 ])
-                                                title="{{ $d['full_label'] }} - Click to switch meeting">
+                                                title="{{ $d['full_label'] }} - Click to switch meeting"
+                                                @contextmenu.prevent="openMeetingMenu($event, @js($d['column_key']))">
                                                 <a href="{{ route('faculty.dashboard', [
                                                         'course_id' => $selectedCourse->course_id,
                                                         'date' => $d['date'],
@@ -991,7 +963,9 @@
                                             $initials = strtoupper(substr($student->first_name ?? 'S', 0, 1) . substr($student->last_name ?? 'T', 0, 1));
                                         @endphp
 
-                                        <tr @class(['hover:bg-gray-50/70 dark:hover:bg-gray-800/50 transition-colors', 'opacity-60 bg-gray-50/50' => $isDropped])>
+                                        <tr data-student-number="{{ $student->student_number }}"
+                                            data-student-name="{{ $student->fullName }}"
+                                            @class(['hover:bg-gray-50/70 dark:hover:bg-gray-800/50 transition-colors', 'opacity-60 bg-gray-50/50' => $isDropped])>
 
                                             {{-- Student Name & Info (Sticky Left) --}}
                                             <td class="sticky left-0 z-10 bg-white dark:bg-gray-800 py-3 px-4 border-r border-b border-gray-200 dark:border-gray-700 min-w-[13rem]">
@@ -1065,6 +1039,7 @@
                                                                 </form>
                                                             </details>
                                                         </div>
+
                                                     </div>
                                                 </div>
                                             </td>
@@ -1160,6 +1135,29 @@
                     </div>
                 </div>
 
+                <div
+                    x-show="meetingMenu.open"
+                    x-cloak
+                    x-bind:style="`left: ${meetingMenu.x}px; top: ${meetingMenu.y}px;`"
+                    @click.outside="closeMeetingMenu()"
+                    @keydown.escape.window="closeMeetingMenu()"
+                    class="fixed z-50 min-w-52 rounded-lg border border-gray-200 bg-white p-2 shadow-xl dark:border-gray-700 dark:bg-gray-800"
+                    role="menu"
+                    aria-label="Meeting actions"
+                >
+                    <p class="px-3 py-2 text-xs font-semibold muted" x-text="meetingMenu.key.split('|')[0]"></p>
+                    <button type="button" class="block w-full rounded px-3 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700"
+                            role="menuitem" @click="markMeetingAll('present')">Mark all present</button>
+                    <button type="button" class="block w-full rounded px-3 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700"
+                            role="menuitem" @click="markMeetingAll('absent')">Mark all absent</button>
+                    <button type="button" class="block w-full rounded px-3 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700"
+                            role="menuitem" @click="clearSelectedMeeting()">Clear marks</button>
+                    <button type="button" class="block w-full rounded px-3 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700"
+                            role="menuitem" @click="markMeetingAll('excused')">Exempt meeting</button>
+                    <button type="button" class="mt-1 block w-full rounded px-3 py-2 text-left text-sm text-rose-600 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-950/40"
+                            role="menuitem" x-show="selectedMeetingScheduleId" @click="deleteSelectedMeeting()">Delete meeting</button>
+                </div>
+
             @endif
 
         @endif
@@ -1178,16 +1176,6 @@
 
                 <div class="p-5 space-y-4 text-xs">
                     <div>
-                        <label for="settings-grading-period" class="field-label">Active Grading Period</label>
-                        <select id="settings-grading-period" x-model="activeGradingPeriod" class="field py-1.5 text-xs font-medium">
-                            <option value="first_grading">First Grading</option>
-                            <option value="midterms">Midterms</option>
-                            <option value="finals">Finals</option>
-                        </select>
-                        <p class="muted mt-1 text-[11px]">New attendance records will be tagged with this grading period.</p>
-                    </div>
-
-                    <div class="border-t pt-3">
                         <label class="field-label">Default Class Duration</label>
                         <p class="font-semibold text-sm">{{ $sessionHours }} hours per meeting</p>
                         <p class="muted mt-0.5 text-[11px]">Calculated from {{ $selectedCourse?->subject_code }} schedule.</p>
@@ -1305,7 +1293,9 @@
         function facultyDashboard(config) {
             return {
                 showSettingsModal: false,
-                activeGradingPeriod: 'first_grading',
+                studentSortBy: 'student_number',
+                studentSortDirection: 1,
+                meetingMenu: { open: false, x: 0, y: 0, key: '' },
 
                 // Toast notification
                 toast: {
@@ -1336,8 +1326,7 @@
                     status: 'present',
                     hoursAbsent: config.defaultSessionHours || 1.5,
                     defaultSessionHours: config.defaultSessionHours || 1.5,
-                    remarks: '',
-                    gradingPeriod: 'first_grading'
+                    remarks: ''
                 },
 
                 // Status & hours maps for Meeting view
@@ -1357,6 +1346,46 @@
 
                 get selectedMeetingSessionHours() {
                     return config.meetingHoursByKey[this.selectedMeetingKey] || config.defaultSessionHours || 1.5;
+                },
+
+                toggleStudentSortDirection() {
+                    this.studentSortDirection *= -1;
+                    this.sortStudentRows();
+                },
+
+                sortStudentRows() {
+                    const tableBody = document.querySelector('#attendance-overall-grid tbody');
+                    if (!tableBody) {
+                        return;
+                    }
+
+                    const rows = Array.from(tableBody.querySelectorAll('tr[data-student-number]'));
+                    rows.sort((firstRow, secondRow) => {
+                        const attribute = this.studentSortBy === 'name' ? 'studentName' : 'studentNumber';
+                        const result = firstRow.dataset[attribute].localeCompare(
+                            secondRow.dataset[attribute],
+                            undefined,
+                            { numeric: true, sensitivity: 'base' }
+                        );
+
+                        return result * this.studentSortDirection;
+                    });
+
+                    rows.forEach(row => tableBody.appendChild(row));
+                },
+
+                openMeetingMenu(event, key) {
+                    this.selectedMeetingKey = key;
+                    this.meetingMenu = {
+                        open: true,
+                        x: Math.max(8, Math.min(event.clientX, window.innerWidth - 220)),
+                        y: Math.max(8, Math.min(event.clientY, window.innerHeight - 240)),
+                        key
+                    };
+                },
+
+                closeMeetingMenu() {
+                    this.meetingMenu.open = false;
                 },
 
                 // Reactive grid records & student scores
@@ -1448,8 +1477,7 @@
                             schedule_id: {{ $selectedSchedule ? $selectedSchedule->schedule_id : 'null' }},
                             status: status,
                             hours_absent: hoursAbsent,
-                            remarks: remarks,
-                            grading_period: this.activeGradingPeriod
+                            remarks: remarks
                         })
                     })
                     .then(res => res.json())
@@ -1504,7 +1532,6 @@
                             course_id: config.courseId,
                             session_date: this.selectedMeetingDate,
                             schedule_id: this.selectedMeetingScheduleId || null,
-                            grading_period: this.activeGradingPeriod,
                             tab: config.activeTab,
                             attendance: attendanceEntries
                         })
@@ -1540,6 +1567,7 @@
 
                 clearSelectedMeeting() {
                     if (window.confirm('Clear attendance marks for this dated meeting? This will not delete the meeting.')) {
+                        this.closeMeetingMenu();
                         this.$refs.clearMeetingForm.submit();
                     }
                 },
@@ -1547,8 +1575,62 @@
                 deleteSelectedMeeting() {
                     if (this.selectedMeetingScheduleId
                         && window.confirm('Delete this dated meeting and its attendance marks? The recurring weekly schedule will remain.')) {
+                        this.closeMeetingMenu();
                         this.$refs.deleteMeetingForm.submit();
                     }
+                },
+
+                markMeetingAll(targetStatus) {
+                    const tokenMeta = document.querySelector('meta[name="csrf-token"]');
+                    const csrfToken = tokenMeta ? tokenMeta.getAttribute('content') : '';
+                    const [sessionDate, scheduleValue] = this.meetingMenu.key.split('|');
+                    const scheduleId = scheduleValue ? Number(scheduleValue) : null;
+                    const meetingHours = config.meetingHoursByKey[this.meetingMenu.key] || config.defaultSessionHours || 1.5;
+                    const attendanceEntries = [];
+
+                    @foreach ($enrollmentRows as $row)
+                        attendanceEntries.push({
+                            enrollment_id: {{ $row['enrollment']->enrollment_id }},
+                            status: targetStatus,
+                            hours_absent: targetStatus === 'absent' ? meetingHours : null
+                        });
+                    @endforeach
+
+                    fetch('{{ route("faculty.attendance.store") }}', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Accept': 'application/json',
+                            'X-CSRF-TOKEN': csrfToken,
+                            'X-Requested-With': 'XMLHttpRequest'
+                        },
+                        body: JSON.stringify({
+                            course_id: config.courseId,
+                            session_date: sessionDate,
+                            schedule_id: scheduleId,
+                            attendance: attendanceEntries
+                        })
+                    })
+                    .then(async response => {
+                        const data = await response.json();
+                        if (!response.ok || !data.success) {
+                            throw new Error(data.message || 'Could not update attendance for this meeting.');
+                        }
+
+                        const url = new URL(window.location.href);
+                        url.searchParams.set('date', sessionDate);
+                        url.searchParams.set('tab', config.activeTab);
+                        if (scheduleId) {
+                            url.searchParams.set('schedule_id', scheduleId);
+                        } else {
+                            url.searchParams.delete('schedule_id');
+                        }
+                        window.location.assign(url.toString());
+                    })
+                    .catch(error => {
+                        this.closeMeetingMenu();
+                        alert(error.message);
+                    });
                 },
 
                 openCellModal(enrollmentId, studentName, dateStr, formattedDate, scheduleId, currentStatus, hoursAbsent, remarks, sessionHours) {
@@ -1567,11 +1649,10 @@
                         date: dateStr,
                         scheduleId: scheduleId,
                         formattedDate: formattedDate,
-                        status: currentStatus || 'present',
                         hoursAbsent: (hoursAbsent !== null && hoursAbsent !== undefined) ? hoursAbsent : (sessionHours || 1.5),
                         defaultSessionHours: sessionHours || 1.5,
                         remarks: remarks || '',
-                        gradingPeriod: this.activeGradingPeriod
+                        status: currentStatus || 'present'
                     };
                     this.showCellModal = true;
                 },
@@ -1640,8 +1721,7 @@
                             schedule_id: this.cellData.scheduleId,
                             status: this.cellData.status,
                             hours_absent: this.cellData.status === 'absent' ? parseFloat(this.cellData.hoursAbsent) : null,
-                            remarks: this.cellData.remarks,
-                            grading_period: this.cellData.gradingPeriod
+                            remarks: this.cellData.remarks
                         })
                     })
                     .then(res => res.json())

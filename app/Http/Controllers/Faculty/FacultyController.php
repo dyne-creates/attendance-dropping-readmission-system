@@ -20,7 +20,6 @@ use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 use InvalidArgumentException;
 
@@ -75,7 +74,6 @@ class FacultyController extends Controller
         ];
         $sessionHistory = collect();
         $gridDates = collect();
-        $importMeetingOptions = collect();
         $meetingHoursByKey = collect();
         $sessionHours = 1.5;
         $slotsForDay = collect();
@@ -197,7 +195,6 @@ class FacultyController extends Controller
                         'hours_absent' => $r->hours_absent,
                         'remarks' => $r->remarks,
                         'is_out_of_schedule' => (bool) $r->is_out_of_schedule,
-                        'grading_period' => $r->grading_period,
                         'schedule_id' => $r->schedule_id,
                     ]);
 
@@ -223,7 +220,6 @@ class FacultyController extends Controller
                     'today_hours_absent' => $todayRecord?->hours_absent ?? $sessionHours,
                     'today_remarks' => $todayRecord?->remarks,
                     'today_record_id' => $todayRecord?->attendance_id,
-                    'today_grading_period' => $todayRecord?->grading_period,
                     'records_by_date' => $recordsByDate,
                 ]);
             }
@@ -305,39 +301,6 @@ class FacultyController extends Controller
                     ];
                 });
             });
-            $importMeetingDates = $dateStrings;
-            $termStart = Carbon::parse($course->schoolYear->start_date)->max(Carbon::parse($selectedDate));
-            $termEnd = Carbon::parse($course->schoolYear->end_date);
-
-            if ($termStart->lte($termEnd)) {
-                $scheduledMeetingDates = collect(CarbonPeriod::create($termStart, $termEnd))
-                    ->filter(fn (Carbon $date): bool => $course->schedules->contains('day_of_week', $date->format('D')))
-                    ->map(fn (Carbon $date): string => $date->toDateString());
-
-                $importMeetingDates = $importMeetingDates->merge($scheduledMeetingDates);
-            }
-
-            $importMeetingOptions = $importMeetingDates->unique()->sort()->values()->flatMap(
-                function (string $dateStr) use ($course, $cancelledOccurrenceKeys): Collection {
-                    $carbon = Carbon::parse($dateStr);
-                    $scheduledSlots = $course->schedules
-                        ->filter(fn (CourseSchedule $schedule): bool => $schedule->day_of_week === $carbon->format('D')
-                            && ! $cancelledOccurrenceKeys->has($dateStr.'|'.$schedule->schedule_id));
-                    $scheduleOptions = $scheduledSlots->map(function (CourseSchedule $schedule) use ($carbon, $dateStr): array {
-                        $scheduleLabel = Carbon::parse($schedule->start_time)->format('g:i A').' – '.Carbon::parse($schedule->end_time)->format('g:i A');
-
-                        return [
-                            'key' => $dateStr.'|'.$schedule->schedule_id,
-                            'label' => $carbon->format('n/j/y').' · '.$scheduleLabel,
-                        ];
-                    });
-
-                    return $scheduleOptions->push([
-                        'key' => $dateStr.'|',
-                        'label' => $carbon->format('n/j/y').' · Unscheduled',
-                    ]);
-                }
-            );
             $meetingHoursByKey = $gridDates->mapWithKeys(
                 fn (array $meeting): array => [$meeting['column_key'] => $meeting['session_hours']],
             );
@@ -385,7 +348,6 @@ class FacultyController extends Controller
             'courseStats' => $courseStats,
             'sessionHistory' => $sessionHistory,
             'gridDates' => $gridDates,
-            'importMeetingOptions' => $importMeetingOptions,
             'meetingHoursByKey' => $meetingHoursByKey,
             'activeTab' => $activeTab,
             'prevDate' => $prevDate,
@@ -410,7 +372,6 @@ class FacultyController extends Controller
             'course_id' => ['required', 'integer', 'exists:courses,course_id'],
             'session_date' => ['required', 'date'],
             'schedule_id' => ['nullable', 'integer', 'exists:course_schedules,schedule_id'],
-            'grading_period' => ['required', 'in:first_grading,midterms,finals'],
             'attendance' => ['required', 'array'],
             'attendance.*.enrollment_id' => ['required', 'integer', 'exists:enrollments,enrollment_id'],
             'attendance.*.status' => ['required', 'in:present,late,absent,excused'],
@@ -466,7 +427,7 @@ class FacultyController extends Controller
                     'schedule_id' => $scheduleId,
                     'recorded_by' => $faculty->faculty_id,
                     'status' => $entry['status'],
-                    'grading_period' => $validated['grading_period'],
+                    'grading_period' => null,
                     'hours_absent' => $hoursAbsent,
                     'remarks' => $entry['remarks'] ?? null,
                     'is_out_of_schedule' => $isOutOfSchedule,
@@ -523,48 +484,13 @@ class FacultyController extends Controller
         $validated = $request->validate([
             'course_id' => ['required', 'integer', 'exists:courses,course_id'],
             'file' => ['required', 'file', 'mimes:csv,txt,xlsx', 'extensions:csv,xlsx', 'max:5120'],
-            'session_date' => ['nullable', 'date'],
-            'schedule_id' => ['nullable', 'integer'],
         ]);
 
         $faculty = $request->user()->facultyMember;
         $course = Course::with('schedules')->where('course_id', $validated['course_id'])->firstOrFail();
         abort_unless($course->faculty_id === $faculty?->faculty_id, 403, 'Unauthorized access to this course.');
-        $selectedMeetingDate = filled($validated['session_date'] ?? null)
-            ? Carbon::parse($validated['session_date'])->toDateString()
-            : null;
-        $selectedScheduleId = $validated['schedule_id'] ?? null;
-
-        if ($selectedScheduleId !== null) {
-            if ($selectedMeetingDate === null) {
-                throw ValidationException::withMessages([
-                    'schedule_id' => 'Choose a date for the selected meeting slot.',
-                ]);
-            }
-
-            $selectedSchedule = $course->schedules->firstWhere('schedule_id', (int) $selectedScheduleId);
-            $selectedMeetingDay = Carbon::parse($selectedMeetingDate)->format('D');
-
-            if ($selectedSchedule === null || $selectedSchedule->day_of_week !== $selectedMeetingDay) {
-                throw ValidationException::withMessages([
-                    'schedule_id' => 'Choose a scheduled meeting that belongs to this course and date.',
-                ]);
-            }
-
-            $isCancelledMeeting = DB::table('course_schedule_cancellations')
-                ->where('schedule_id', $selectedSchedule->schedule_id)
-                ->whereDate('session_date', $selectedMeetingDate)
-                ->exists();
-
-            if ($isCancelledMeeting) {
-                throw ValidationException::withMessages([
-                    'schedule_id' => 'The selected meeting has been cancelled.',
-                ]);
-            }
-        }
-
         try {
-            $rows = $importService->rows($validated['file'], $selectedMeetingDate);
+            $rows = $importService->rows($validated['file']);
         } catch (InvalidArgumentException $exception) {
             return back()->withErrors(['file' => $exception->getMessage()])->withInput();
         }
@@ -613,22 +539,18 @@ class FacultyController extends Controller
             }
 
             if ($availableSlots->count() > 1) {
-                $selectedSlot = $sessionDate === $selectedMeetingDate
-                    ? $availableSlots->firstWhere('schedule_id', (int) $selectedScheduleId)
-                    : null;
+                return back()->withErrors([
+                    'file' => "Date {$sessionDate} has multiple scheduled meetings. Use a separate date column for each meeting.",
+                ])->withInput();
+            }
 
-                if ($selectedSlot === null) {
-                    return back()->withErrors([
-                        'file' => "Date {$sessionDate} has multiple scheduled meetings. Select a meeting slot for that date or upload that date separately.",
-                    ])->withInput();
-                }
-
-                $scheduleIdByDate->put($sessionDate, $selectedSlot->schedule_id);
+            if ($availableSlots->count() === 1) {
+                $scheduleIdByDate->put($sessionDate, $availableSlots->first()->schedule_id);
 
                 continue;
             }
 
-            $scheduleIdByDate->put($sessionDate, $availableSlots->first()?->schedule_id);
+            $scheduleIdByDate->put($sessionDate, null);
         }
 
         $studentNumbers = collect($rows)->pluck('student_number')->unique()->values();
@@ -829,7 +751,6 @@ class FacultyController extends Controller
             'status' => ['required', 'in:present,late,absent,excused'],
             'hours_absent' => ['nullable', 'numeric', 'min:0', 'max:24'],
             'remarks' => ['nullable', 'string', 'max:255'],
-            'grading_period' => ['nullable', 'in:first_grading,midterms,finals'],
             'schedule_id' => ['nullable', 'integer', 'exists:course_schedules,schedule_id'],
         ]);
 
@@ -872,8 +793,6 @@ class FacultyController extends Controller
             ? $enrollment->attendanceRecords->first(fn (AttendanceRecord $r): bool => Carbon::parse($r->session_date)->isSameDay($sessionDate) && $r->schedule_id === null)
             : null);
 
-        $gradingPeriod = $validated['grading_period'] ?? $existingRecord?->grading_period ?? 'first_grading';
-
         $hoursAbsent = ($validated['status'] === 'absent' && isset($validated['hours_absent']) && is_numeric($validated['hours_absent']))
             ? (float) $validated['hours_absent']
             : null;
@@ -882,7 +801,7 @@ class FacultyController extends Controller
             'schedule_id' => $scheduleId,
             'recorded_by' => $faculty->faculty_id,
             'status' => $validated['status'],
-            'grading_period' => $gradingPeriod,
+            'grading_period' => null,
             'hours_absent' => $hoursAbsent,
             'remarks' => $validated['remarks'] ?? null,
             'is_out_of_schedule' => $isOutOfSchedule,

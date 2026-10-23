@@ -11,7 +11,7 @@ class AttendanceImportService
     /**
      * @return array<int, array{meeting_date: string, student_number: string, status: string, hours_absent: ?string, remarks: ?string, row: int, date_occurrence: ?int}>
      */
-    public function rows(UploadedFile $file, ?string $defaultMeetingDate = null): array
+    public function rows(UploadedFile $file): array
     {
         $rows = strtolower($file->getClientOriginalExtension()) === 'csv'
             ? $this->csvRows($file->getRealPath())
@@ -21,7 +21,7 @@ class AttendanceImportService
             throw new InvalidArgumentException('The file can contain at most 1,000 source rows.');
         }
 
-        $mapped = $this->mapRows($rows, $defaultMeetingDate);
+        $mapped = $this->mapRows($rows);
         if (count($mapped) > 1000) {
             throw new InvalidArgumentException('The file can contain at most 1,000 attendance marks.');
         }
@@ -59,7 +59,7 @@ class AttendanceImportService
      * @param  array<int, array<int, string>>  $rows
      * @return array<int, array{meeting_date: string, student_number: string, status: string, hours_absent: ?string, remarks: ?string, row: int, date_occurrence: ?int}>
      */
-    private function mapRows(array $rows, ?string $defaultMeetingDate): array
+    private function mapRows(array $rows): array
     {
         if ($rows === []) {
             throw new InvalidArgumentException('The uploaded file is empty.');
@@ -74,13 +74,12 @@ class AttendanceImportService
         array_unshift($rows, $headerRow);
         $headers = array_map(fn (string $header): string => $this->normalizeHeader($header), array_shift($rows));
         foreach (['meeting_date', 'student_number', 'status'] as $requiredHeader) {
-            if (! in_array($requiredHeader, $headers, true) && ! ($requiredHeader === 'meeting_date' && $defaultMeetingDate !== null)) {
-                throw new InvalidArgumentException('The file must include student_number and status columns. Include meeting_date or choose a meeting date when uploading.');
+            if (! in_array($requiredHeader, $headers, true)) {
+                throw new InvalidArgumentException('The file must include meeting_date, student_number, and status columns, or use dates as column headings.');
             }
         }
 
         $mapped = [];
-        $meetingDate = null;
         foreach ($rows as $index => $row) {
             if (count(array_filter($row, static fn (string $value): bool => $value !== '')) === 0) {
                 continue;
@@ -92,12 +91,11 @@ class AttendanceImportService
                 }
             }
 
-            $meetingDate = ($values['meeting_date'] ?? '') !== '' ? $values['meeting_date'] : ($meetingDate ?? $defaultMeetingDate);
-            if ($meetingDate === null) {
-                throw new InvalidArgumentException('A meeting date is required in the first attendance row.');
+            if (($values['meeting_date'] ?? '') === '') {
+                throw new InvalidArgumentException('A meeting date is required in every attendance row.');
             }
 
-            $date = $this->normalizeDate($meetingDate, $index + 2);
+            $date = $this->normalizeDate($values['meeting_date'], $index + 2);
             $status = $this->normalizeStatus($values['status'] ?? '');
             $mapped[] = [
                 'meeting_date' => $date,

@@ -141,7 +141,7 @@ class StudentAttendanceWarningTest extends TestCase
         $this->assertSame('enrolled', $enrollment->fresh()->status);
     }
 
-    public function test_dashboard_displays_only_attendance_assigned_to_a_grading_period(): void
+    public function test_dashboard_displays_all_attendance_logs_without_grading_period_sections(): void
     {
         [$user, $faculty, $enrollment] = $this->createStudentEnrollment();
 
@@ -161,11 +161,11 @@ class StudentAttendanceWarningTest extends TestCase
 
         $response = $this->actingAs($user)->get(route('student.dashboard'));
 
-        $response->assertSee('First Grading');
-        $response->assertSee('Midterms');
+        $response->assertDontSee('First Grading');
+        $response->assertDontSee('Midterms');
         $response->assertSee('Monday, Oct 5, 2026');
         $response->assertSee('Wednesday, Oct 7, 2026');
-        $response->assertDontSee('Friday, Oct 9, 2026');
+        $response->assertSee('Friday, Oct 9, 2026');
         $response->assertDontSee('Attendance without a grading period');
     }
 

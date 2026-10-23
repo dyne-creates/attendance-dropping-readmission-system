@@ -11,12 +11,6 @@ use Illuminate\View\View;
 
 class StudentController extends Controller
 {
-    private const GRADING_PERIODS = [
-        'first_grading' => 'First Grading',
-        'midterms' => 'Midterms',
-        'finals' => 'Finals',
-    ];
-
     public function dashboard(Request $request, AttendanceService $attendanceService): View
     {
         $student = $request->user()->student;
@@ -58,28 +52,6 @@ class StudentController extends Controller
             $enrollment->setAttribute(
                 'overall_score',
                 $attendanceService->calculateOverallScore($enrollment->attendanceRecords)
-            );
-
-            $enrollment->setAttribute(
-                'grading_periods',
-                collect(self::GRADING_PERIODS)
-                    ->map(function (string $label, string $key) use ($enrollment): array {
-                        $attendanceRecords = $enrollment->attendanceRecords
-                            ->where('grading_period', $key);
-
-                        return [
-                            'key' => $key,
-                            'label' => $label,
-                            'attendance_records' => $attendanceRecords,
-                            'counts' => [
-                                'present' => $attendanceRecords->where('status', 'present')->count(),
-                                'absent' => $attendanceRecords->where('status', 'absent')->count(),
-                                'late' => $attendanceRecords->where('status', 'late')->count(),
-                                'excused' => $attendanceRecords->where('status', 'excused')->count(),
-                            ],
-                        ];
-                    })
-                    ->values(),
             );
 
             $absenceHours = $attendanceService->calculateAbsenceHours(

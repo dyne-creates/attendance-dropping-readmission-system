@@ -133,6 +133,16 @@ Route::middleware(['auth', 'staffMiddleware'])->prefix('osa')->name('osa.')->gro
         'rejectReadmission',
     ])->name('readmissions.reject');
 
+    Route::post('/readmissions/{id}/not-excused', [
+        OsaStaffController::class,
+        'notExcusedReadmission',
+    ])->name('readmissions.not-excused');
+
+    Route::post('/readmissions/{id}/excuse', [
+        OsaStaffController::class,
+        'excuseReadmission',
+    ])->name('readmissions.excuse');
+
     // Archives
     Route::get('/archive/drops', [
         OsaStaffController::class,

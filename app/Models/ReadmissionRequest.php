@@ -16,6 +16,14 @@ class ReadmissionRequest extends Model
 {
     use HasFactory;
 
+    public const OUTCOME_APPROVED = 'approved';
+
+    public const OUTCOME_REJECTED = 'rejected';
+
+    public const OUTCOME_EXCUSED = 'excused';
+
+    public const OUTCOME_NOT_EXCUSED = 'not_excused';
+
     public const REASONS = [
         'dental_medical' => 'Dental & Medical Concerns',
         'mental_health' => 'Mental Health Concerns',
@@ -36,6 +44,10 @@ class ReadmissionRequest extends Model
         'reason_code',
         'reason_details',
         'rejection_reason',
+        'outcome',
+        'excused_from',
+        'excused_through',
+        'excused_hours_deducted',
         'policy_acknowledged_at',
         'channel',
         // 'pending' | 'approved' | 'rejected' — defaults to 'pending'
@@ -50,6 +62,9 @@ class ReadmissionRequest extends Model
             'attempt_number' => 'integer',
             'notice_sent_date' => 'date',
             'processed_date' => 'date',
+            'excused_from' => 'date',
+            'excused_through' => 'date',
+            'excused_hours_deducted' => 'decimal:2',
             'policy_acknowledged_at' => 'datetime',
         ];
     }

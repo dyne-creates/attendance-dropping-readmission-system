@@ -120,7 +120,7 @@ class FacultyAttendanceTest extends TestCase
         $response->assertSee('Add Schedule Slot');
         $response->assertSee('Attendance settings');
         $response->assertSee('Attendance Settings');
-        $response->assertSee('settings-grading-period');
+        $response->assertDontSee('grading period');
         $response->assertSee('View Overall Blackboard Grid');
         $response->assertSee('Student status:')
             ->assertSee('Green: below weekly threshold')
@@ -160,7 +160,7 @@ class FacultyAttendanceTest extends TestCase
             ]));
     }
 
-    public function test_attendance_import_meeting_selector_lists_scheduled_meetings(): void
+    public function test_attendance_import_uses_file_dates_and_meeting_actions_are_on_date_headers(): void
     {
         $mondaySchedule = $this->course->schedules()->where('day_of_week', 'Mon')->firstOrFail();
         AttendanceRecord::create([
@@ -178,13 +178,16 @@ class FacultyAttendanceTest extends TestCase
         ]));
         $wednesdaySchedule = $this->course->schedules()->where('day_of_week', 'Wed')->firstOrFail();
 
-        $response->assertSee('Selected dated meeting');
-        $response->assertSee('id="attendance-import-meeting"', false);
-        $response->assertSee('value="2025-08-11|'.$mondaySchedule->schedule_id.'"', false);
-        $response->assertSee('value="2025-08-13|'.$wednesdaySchedule->schedule_id.'"', false);
-        $response->assertSee('8:30 AM – 10:00 AM');
-        $response->assertSee('8/13/25 · 8:30 AM – 10:00 AM');
-        $response->assertSee('8/10/25 · Unscheduled');
+        $response->assertDontSee('Selected dated meeting');
+        $response->assertDontSee('attendance-import-meeting');
+        $response->assertSee('meeting dates as column headings');
+        $response->assertSee('@contextmenu.prevent', false);
+        $response->assertSee('Sort students');
+        $response->assertSee('Mark all present');
+        $response->assertSee('Clear marks');
+        $response->assertSee('Delete meeting');
+        $this->assertNotNull($mondaySchedule);
+        $this->assertNotNull($wednesdaySchedule);
     }
 
     public function test_faculty_can_create_a_subject_with_a_schedule_slot(): void
@@ -600,12 +603,12 @@ class FacultyAttendanceTest extends TestCase
         $this->assertNotNull($record);
         $this->assertEquals($this->faculty->faculty_id, $record->recorded_by);
         $this->assertEquals('present', $record->status);
-        $this->assertSame('first_grading', $record->grading_period);
+        $this->assertNull($record->grading_period);
         $this->assertEquals('On time and engaged', $record->remarks);
         $this->assertFalse((bool) $record->is_out_of_schedule);
     }
 
-    public function test_grading_period_is_required_when_recording_attendance(): void
+    public function test_attendance_recording_does_not_require_a_grading_period(): void
     {
         $response = $this->actingAs($this->facultyUser)
             ->post(route('faculty.attendance.store'), [
@@ -619,10 +622,12 @@ class FacultyAttendanceTest extends TestCase
                 ],
             ]);
 
-        $response->assertSessionHasErrors('grading_period');
-        $this->assertDatabaseMissing('attendance_records', [
+        $response->assertRedirect();
+        $this->assertDatabaseHas('attendance_records', [
             'enrollment_id' => $this->enrollment->enrollment_id,
-            'session_date' => '2026-10-05',
+            'session_date' => '2026-10-05 00:00:00',
+            'status' => 'present',
+            'grading_period' => null,
         ]);
     }
 
@@ -1353,14 +1358,13 @@ class FacultyAttendanceTest extends TestCase
             $statuses[$studentNumber] = $status;
         }
 
-        $csv = "student_number,status\n";
+        $csv = "student_number,2025-08-11\n";
         foreach ($statuses as $studentNumber => $status) {
             $csv .= "{$studentNumber},{$status}\n";
         }
 
         $response = $this->actingAs($this->facultyUser)->post(route('faculty.attendance.import'), [
             'course_id' => $this->course->course_id,
-            'session_date' => '2025-08-11',
             'file' => UploadedFile::fake()->createWithContent('attendance.csv', $csv),
         ]);
 
@@ -1385,20 +1389,84 @@ class FacultyAttendanceTest extends TestCase
                 'session_date' => '2025-08-11 00:00:00',
                 'status' => $expectedStatus,
                 'recorded_by' => $this->faculty->faculty_id,
+                'schedule_id' => $this->course->schedules()->where('day_of_week', 'Mon')->value('schedule_id'),
                 'grading_period' => null,
             ]);
         }
     }
 
-    public function test_attendance_import_saves_records_to_the_selected_scheduled_meeting(): void
+    public function test_downloaded_sample_excel_imports_date_columns_and_full_word_statuses(): void
     {
-        $schedule = $this->course->schedules()->where('day_of_week', 'Mon')->firstOrFail();
-        $csv = "student_number,status\n{$this->student->student_number},P\n";
+        $this->student->update(['student_number' => '20260001']);
+
+        foreach (['20260002', '20260003', '20260004'] as $index => $studentNumber) {
+            $studentUser = User::factory()->create([
+                'name' => 'Sample Student '.($index + 2),
+                'email' => 'sample-student-'.($index + 2).'@s.ubaguio.edu',
+                'role' => 'student',
+            ]);
+            $student = Student::create([
+                'user_id' => $studentUser->user_id,
+                'student_number' => $studentNumber,
+                'last_name' => 'Sample',
+                'first_name' => 'Student '.($index + 2),
+                'department' => 'School of Information Technology',
+                'year_level' => 1,
+                'program' => 'BSCS',
+            ]);
+            Enrollment::create([
+                'student_id' => $student->student_id,
+                'course_id' => $this->course->course_id,
+                'status' => 'enrolled',
+                'cycle_number' => 1,
+            ]);
+        }
+
+        $sampleWorkbook = new UploadedFile(
+            public_path('attendance-import-template.xlsx'),
+            'attendance-import-template.xlsx',
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            UPLOAD_ERR_OK,
+            true,
+        );
 
         $response = $this->actingAs($this->facultyUser)->post(route('faculty.attendance.import'), [
             'course_id' => $this->course->course_id,
-            'session_date' => '2025-08-11',
-            'schedule_id' => $schedule->schedule_id,
+            'file' => $sampleWorkbook,
+        ]);
+
+        $response->assertRedirect(route('faculty.dashboard', [
+            'course_id' => $this->course->course_id,
+            'date' => '2025-10-17',
+            'tab' => 'meeting',
+        ]));
+        $this->assertDatabaseCount('attendance_records', 12);
+        $this->assertDatabaseHas('attendance_records', [
+            'enrollment_id' => $this->enrollment->enrollment_id,
+            'session_date' => '2025-10-13 00:00:00',
+            'status' => 'present',
+        ]);
+        $this->assertDatabaseHas('attendance_records', [
+            'session_date' => '2025-10-15 00:00:00',
+            'status' => 'absent',
+        ]);
+        $this->assertDatabaseHas('attendance_records', [
+            'session_date' => '2025-10-17 00:00:00',
+            'status' => 'excused',
+        ]);
+        $this->assertDatabaseHas('attendance_records', [
+            'session_date' => '2025-10-13 00:00:00',
+            'status' => 'late',
+        ]);
+    }
+
+    public function test_attendance_import_uses_the_date_in_each_row_to_choose_its_schedule(): void
+    {
+        $schedule = $this->course->schedules()->where('day_of_week', 'Mon')->firstOrFail();
+        $csv = "meeting_date,student_number,status\n2025-08-11,{$this->student->student_number},P\n";
+
+        $response = $this->actingAs($this->facultyUser)->post(route('faculty.attendance.import'), [
+            'course_id' => $this->course->course_id,
             'file' => UploadedFile::fake()->createWithContent('attendance.csv', $csv),
         ]);
 
@@ -1415,23 +1483,39 @@ class FacultyAttendanceTest extends TestCase
         ]);
     }
 
-    public function test_attendance_import_rejects_a_schedule_that_does_not_match_the_selected_date(): void
+    public function test_attendance_import_maps_repeated_date_columns_to_ordered_schedule_slots(): void
     {
-        $wednesdaySchedule = $this->course->schedules()->where('day_of_week', 'Wed')->firstOrFail();
-        $csv = "student_number,status\n{$this->student->student_number},P\n";
+        $secondSchedule = CourseSchedule::create([
+            'course_id' => $this->course->course_id,
+            'day_of_week' => 'Mon',
+            'start_time' => '10:30:00',
+            'end_time' => '12:00:00',
+            'room' => 'F-402',
+        ]);
+        $firstSchedule = $this->course->schedules()->where('day_of_week', 'Mon')->orderBy('start_time')->firstOrFail();
+        $csv = "student_number,2025-08-11,2025-08-11\n{$this->student->student_number},P,A\n";
 
         $response = $this->actingAs($this->facultyUser)
-            ->from(route('faculty.dashboard', ['course_id' => $this->course->course_id]))
             ->post(route('faculty.attendance.import'), [
                 'course_id' => $this->course->course_id,
-                'session_date' => '2025-08-11',
-                'schedule_id' => $wednesdaySchedule->schedule_id,
                 'file' => UploadedFile::fake()->createWithContent('attendance.csv', $csv),
             ]);
 
-        $response->assertRedirect(route('faculty.dashboard', ['course_id' => $this->course->course_id]));
-        $response->assertSessionHasErrors('schedule_id');
-        $this->assertDatabaseCount('attendance_records', 0);
+        $response->assertRedirect(route('faculty.dashboard', [
+            'course_id' => $this->course->course_id,
+            'date' => '2025-08-11',
+            'tab' => 'meeting',
+        ]));
+        $this->assertDatabaseHas('attendance_records', [
+            'enrollment_id' => $this->enrollment->enrollment_id,
+            'schedule_id' => $firstSchedule->schedule_id,
+            'status' => 'present',
+        ]);
+        $this->assertDatabaseHas('attendance_records', [
+            'enrollment_id' => $this->enrollment->enrollment_id,
+            'schedule_id' => $secondSchedule->schedule_id,
+            'status' => 'absent',
+        ]);
     }
 
     public function test_csv_attendance_import_rejects_students_outside_the_course_without_saving(): void
@@ -1451,7 +1535,7 @@ class FacultyAttendanceTest extends TestCase
         $this->assertDatabaseCount('attendance_records', 0);
     }
 
-    public function test_attendance_import_requires_a_meeting_date_for_files_without_dates(): void
+    public function test_attendance_import_requires_explicit_meeting_dates_in_the_file(): void
     {
         $csv = "student_number,status\n2025-0001,P\n";
 
@@ -1463,7 +1547,7 @@ class FacultyAttendanceTest extends TestCase
             ]);
 
         $response->assertRedirect(route('faculty.dashboard', ['course_id' => $this->course->course_id]));
-        $response->assertSessionHasErrors('session_date');
+        $response->assertSessionHasErrors('file');
         $this->assertDatabaseCount('attendance_records', 0);
     }
 
@@ -1501,11 +1585,10 @@ class FacultyAttendanceTest extends TestCase
 
     public function test_faculty_can_import_date_columns_with_gender_section_rows(): void
     {
-        $csv = ",10/13/25,10/15/25\nMALE,,\n2025-0001,P,A\nFEMALE,,\n";
+        $csv = "student_number,2025-10-13,2025-10-15\nMALE,,\n2025-0001,P,A\nFEMALE,,\n";
 
         $response = $this->actingAs($this->facultyUser)->post(route('faculty.attendance.import'), [
             'course_id' => $this->course->course_id,
-            'session_date' => '2025-10-11',
             'file' => UploadedFile::fake()->createWithContent('attendance.csv', $csv),
         ]);
 
@@ -1520,14 +1603,14 @@ class FacultyAttendanceTest extends TestCase
             'session_date' => '2025-10-13 00:00:00',
             'status' => 'present',
             'grading_period' => null,
-            'schedule_id' => null,
+            'schedule_id' => $this->course->schedules()->where('day_of_week', 'Mon')->value('schedule_id'),
         ]);
         $this->assertDatabaseHas('attendance_records', [
             'enrollment_id' => $this->enrollment->enrollment_id,
             'session_date' => '2025-10-15 00:00:00',
             'status' => 'absent',
             'grading_period' => null,
-            'schedule_id' => null,
+            'schedule_id' => $this->course->schedules()->where('day_of_week', 'Wed')->value('schedule_id'),
         ]);
     }
 }

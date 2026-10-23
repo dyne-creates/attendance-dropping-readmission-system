@@ -16,7 +16,7 @@
 
         {{-- Key figures --}}
         <section class="card overflow-hidden" aria-label="Summary">
-            <div class="stat-grid grid-cols-2 lg:grid-cols-4">
+            <div class="stat-grid grid-cols-2 lg:grid-cols-5">
 
                 <div>
                     <p class="muted text-sm">Pending readmissions</p>
@@ -31,6 +31,11 @@
                 <div>
                     <p class="muted text-sm">Approved</p>
                     <p class="mt-1 text-3xl font-semibold tabular-nums">{{ $approvedReadmissions }}</p>
+                </div>
+
+                <div>
+                    <p class="muted text-sm">Excused</p>
+                    <p class="mt-1 text-3xl font-semibold tabular-nums">{{ $excusedReadmissions }}</p>
                 </div>
 
                 <div>
@@ -89,7 +94,7 @@
 
                                 <td>
                                     <span class="badge {{ $badgeFor[$request->status] ?? 'badge-neutral' }}">
-                                        {{ ucfirst($request->status) }}
+                                        {{ ucfirst(str_replace('_', ' ', $request->outcome ?? $request->status)) }}
                                     </span>
                                 </td>
 

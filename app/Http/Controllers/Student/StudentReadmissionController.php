@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\DroppingTransaction;
 use App\Models\Enrollment;
 use App\Models\ReadmissionRequest;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -16,12 +17,6 @@ use Symfony\Component\HttpFoundation\File\UploadedFile;
 
 class StudentReadmissionController extends Controller
 {
-    private const GRADING_PERIODS = [
-        'first_grading' => 'First Grading',
-        'midterms' => 'Midterms',
-        'finals' => 'Finals',
-    ];
-
     public function create(Request $request, Enrollment $enrollment): View|RedirectResponse
     {
         $student = $request->user()->student;
@@ -34,10 +29,18 @@ class StudentReadmissionController extends Controller
         );
 
         $drop = $enrollment->droppingTransactions()
-            ->with('readmissionRequests')
+            ->with(['readmissionRequests' => function (HasMany $query): void {
+                $query->orderBy('attempt_number');
+            }])
             ->latest('drop_id')
             ->firstOrFail();
         $latestAttempt = $drop->readmissionRequests->last();
+
+        if ($latestAttempt?->outcome === ReadmissionRequest::OUTCOME_REJECTED) {
+            return redirect()
+                ->route('student.dashboard')
+                ->with('info', 'OSA rejected this readmission request for the term. Contact OSA for guidance.');
+        }
 
         if ($latestAttempt !== null && $latestAttempt->status !== 'rejected') {
             return redirect()
@@ -54,17 +57,9 @@ class StudentReadmissionController extends Controller
             'attendanceRecords',
         ]);
 
-        $absenceDates = collect(self::GRADING_PERIODS)
-            ->map(function (string $label, string $key) use ($enrollment): array {
-                return [
-                    'label' => $label,
-                    'dates' => $enrollment->attendanceRecords
-                        ->where('status', 'absent')
-                        ->where('grading_period', $key)
-                        ->sortBy('session_date')
-                        ->values(),
-                ];
-            })
+        $absenceDates = $enrollment->attendanceRecords
+            ->where('status', 'absent')
+            ->sortBy('session_date')
             ->values();
 
         return view('student.readmission-form', [
@@ -130,6 +125,12 @@ class StudentReadmissionController extends Controller
 
         $latestAttempt = $drop->readmissionRequests()->latest('attempt_number')->first();
 
+        if ($latestAttempt?->outcome === ReadmissionRequest::OUTCOME_REJECTED) {
+            return redirect()
+                ->route('student.dashboard')
+                ->with('info', 'OSA rejected this readmission request for the term. Contact OSA for guidance.');
+        }
+
         if ($latestAttempt !== null && $latestAttempt->status !== 'rejected') {
             return redirect()
                 ->route('student.dashboard')
@@ -160,7 +161,10 @@ class StudentReadmissionController extends Controller
                 ->orderByDesc('attempt_number')
                 ->first();
 
-            if ($latestRequest !== null && $latestRequest->status !== 'rejected') {
+            if ($latestRequest !== null && (
+                $latestRequest->status !== 'rejected'
+                || $latestRequest->outcome === ReadmissionRequest::OUTCOME_REJECTED
+            )) {
                 return false;
             }
 

@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Mail\ReadmissionDecisionMail;
 use App\Models\AttendanceRecord;
 use App\Models\Course;
 use App\Models\CourseSchedule;
@@ -24,7 +25,7 @@ class StudentReadmissionTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_dropped_student_can_view_prefilled_form_with_absences_by_period(): void
+    public function test_dropped_student_can_view_all_recorded_absences_in_date_order(): void
     {
         [$user, $student, $faculty, $enrollment] = $this->createDroppedStudent();
         $this->createAbsence($enrollment, $faculty, '2026-10-05', 'first_grading');
@@ -44,9 +45,10 @@ class StudentReadmissionTest extends TestCase
         $response->assertSee('Professor Example');
         $response->assertSee('Parent Example');
         $response->assertSee('guardian@example.test');
+        $response->assertSee('shown together in date order');
         $response->assertSee('October 5, 2026');
         $response->assertSee('October 7, 2026');
-        $response->assertDontSee('October 9, 2026');
+        $response->assertSee('October 9, 2026');
     }
 
     public function test_student_dashboard_displays_readmission_action_for_dropped_class(): void
@@ -98,7 +100,7 @@ class StudentReadmissionTest extends TestCase
 
     public function test_osa_can_review_readmission_for_a_permanent_drop_case(): void
     {
-        [, , , , $drop] = $this->createDroppedStudent();
+        [$studentUser, , $faculty, , $drop] = $this->createDroppedStudent();
         $drop->update(['drop_type' => DroppingTransaction::TYPE_PERMANENT]);
         $readmission = ReadmissionRequest::create([
             'drop_id' => $drop->drop_id,
@@ -107,6 +109,7 @@ class StudentReadmissionTest extends TestCase
             'channel' => 'online',
         ]);
         $osaUser = User::factory()->osaStaff()->create();
+        $facultyUser = User::query()->findOrFail($faculty->user_id);
 
         $this->actingAs($osaUser)
             ->get(route('osa.readmissions'))
@@ -124,9 +127,11 @@ class StudentReadmissionTest extends TestCase
             ->post(route('osa.readmissions.approve', $readmission->readmission_id))
             ->assertRedirect(route('osa.readmissions'));
 
+        Mail::assertSent(ReadmissionDecisionMail::class, [$studentUser->email, $facultyUser->email]);
         $this->assertDatabaseHas('readmission_requests', [
             'readmission_id' => $readmission->readmission_id,
             'status' => 'approved',
+            'outcome' => ReadmissionRequest::OUTCOME_APPROVED,
         ]);
         $this->assertDatabaseHas('enrollments', [
             'enrollment_id' => $drop->enrollment_id,
@@ -313,22 +318,35 @@ class StudentReadmissionTest extends TestCase
         $this->assertDatabaseCount('readmission_requests', 1);
     }
 
-    public function test_student_can_submit_a_new_numbered_attempt_after_rejection(): void
+    public function test_student_can_resubmit_after_a_not_excused_decision(): void
     {
-        [$user, , , $enrollment, $drop] = $this->createDroppedStudent();
-        ReadmissionRequest::create([
+        [$user, , $faculty, $enrollment, $drop] = $this->createDroppedStudent();
+        $facultyUser = User::query()->findOrFail($faculty->user_id);
+        $readmission = ReadmissionRequest::create([
             'drop_id' => $drop->drop_id,
             'attempt_number' => 1,
             'reason_code' => 'mental_health',
-            'rejection_reason' => 'Please provide additional details.',
             'channel' => 'online',
+        ]);
+
+        Mail::fake();
+        $this->actingAs(User::factory()->osaStaff()->create())
+            ->post(route('osa.readmissions.not-excused', $readmission->readmission_id), [
+                'rejection_reason' => 'Please submit an updated supporting document.',
+            ])
+            ->assertRedirect(route('osa.readmissions'));
+
+        Mail::assertSent(ReadmissionDecisionMail::class, [$user->email, $facultyUser->email]);
+        $this->assertDatabaseHas('readmission_requests', [
+            'readmission_id' => $readmission->readmission_id,
             'status' => 'rejected',
+            'outcome' => ReadmissionRequest::OUTCOME_NOT_EXCUSED,
         ]);
 
         $this->actingAs($user)
             ->get(route('student.readmissions.create', $enrollment))
             ->assertSee('Attempt 1')
-            ->assertSee('Please provide additional details.')
+            ->assertSee('Please submit an updated supporting document.')
             ->assertSee('Submitting attempt 2.');
 
         $response = $this->actingAs($user)
@@ -347,9 +365,91 @@ class StudentReadmissionTest extends TestCase
         $this->assertDatabaseCount('readmission_requests', 2);
     }
 
+    public function test_osa_excused_date_range_reactivates_enrollment_and_deducts_only_matching_absence_hours(): void
+    {
+        [$user, , $faculty, $enrollment, $drop] = $this->createDroppedStudent();
+        $facultyUser = User::query()->findOrFail($faculty->user_id);
+        $withinRange = $this->createAbsence($enrollment, $faculty, '2026-10-05', null);
+        $withinRange->update(['hours_absent' => 1.5]);
+        $outsideRange = $this->createAbsence($enrollment, $faculty, '2026-10-07', null);
+        $outsideRange->update(['hours_absent' => 3]);
+        $readmission = ReadmissionRequest::create([
+            'drop_id' => $drop->drop_id,
+            'reason_code' => 'mental_health',
+            'channel' => 'online',
+        ]);
+        $osaUser = User::factory()->osaStaff()->create();
+
+        Mail::fake();
+        $this->actingAs($osaUser)
+            ->post(route('osa.readmissions.excuse', $readmission->readmission_id), [
+                'excused_from' => '2026-10-05',
+                'excused_through' => '2026-10-06',
+            ])
+            ->assertRedirect(route('osa.readmissions'))
+            ->assertSessionHas('success');
+
+        Mail::assertSent(ReadmissionDecisionMail::class, [$user->email, $facultyUser->email]);
+        $this->assertDatabaseHas('readmission_requests', [
+            'readmission_id' => $readmission->readmission_id,
+            'status' => 'approved',
+            'outcome' => ReadmissionRequest::OUTCOME_EXCUSED,
+            'excused_from' => '2026-10-05',
+            'excused_through' => '2026-10-06',
+            'excused_hours_deducted' => 1.5,
+        ]);
+        $this->assertDatabaseHas('attendance_records', [
+            'attendance_id' => $withinRange->attendance_id,
+            'status' => 'excused',
+            'hours_absent' => null,
+        ]);
+        $this->assertDatabaseHas('attendance_records', [
+            'attendance_id' => $outsideRange->attendance_id,
+            'status' => 'absent',
+            'hours_absent' => 3,
+        ]);
+        $this->assertDatabaseHas('enrollments', [
+            'enrollment_id' => $enrollment->enrollment_id,
+            'status' => 'readmitted',
+        ]);
+        $this->assertDatabaseHas('dropping_transactions', [
+            'drop_id' => $drop->drop_id,
+            'absence_hours_at_drop' => 1.5,
+        ]);
+    }
+
+    public function test_osa_cannot_excuse_a_reversed_date_range(): void
+    {
+        [, , , , $drop] = $this->createDroppedStudent();
+        $readmission = ReadmissionRequest::create([
+            'drop_id' => $drop->drop_id,
+            'reason_code' => 'mental_health',
+            'channel' => 'online',
+        ]);
+
+        $this->actingAs(User::factory()->osaStaff()->create())
+            ->from(route('osa.readmissions.show', $readmission->readmission_id))
+            ->post(route('osa.readmissions.excuse', $readmission->readmission_id), [
+                'excused_from' => '2026-10-07',
+                'excused_through' => '2026-10-05',
+            ])
+            ->assertSessionHasErrors('excused_through');
+
+        $this->assertDatabaseHas('readmission_requests', [
+            'readmission_id' => $readmission->readmission_id,
+            'status' => 'pending',
+            'outcome' => null,
+        ]);
+        $this->assertDatabaseHas('enrollments', [
+            'enrollment_id' => $drop->enrollment_id,
+            'status' => 'dropped',
+        ]);
+    }
+
     public function test_osa_rejection_reason_is_saved_and_shown_to_the_student(): void
     {
-        [$user, , , $enrollment, $drop] = $this->createDroppedStudent();
+        [$user, , $faculty, $enrollment, $drop] = $this->createDroppedStudent();
+        $facultyUser = User::query()->findOrFail($faculty->user_id);
         $readmission = ReadmissionRequest::create([
             'drop_id' => $drop->drop_id,
             'reason_code' => 'mental_health',
@@ -358,15 +458,18 @@ class StudentReadmissionTest extends TestCase
         $osaUser = User::factory()->osaStaff()->create();
         $reason = 'Please include the missing supporting information.';
 
+        Mail::fake();
         $this->actingAs($osaUser)
             ->post(route('osa.readmissions.reject', $readmission->readmission_id), [
                 'rejection_reason' => $reason,
             ])
             ->assertRedirect(route('osa.readmissions'));
 
+        Mail::assertSent(ReadmissionDecisionMail::class, [$user->email, $facultyUser->email]);
         $this->assertDatabaseHas('readmission_requests', [
             'readmission_id' => $readmission->readmission_id,
             'status' => 'rejected',
+            'outcome' => ReadmissionRequest::OUTCOME_REJECTED,
             'rejection_reason' => $reason,
         ]);
         $this->assertDatabaseHas('notifications', [
@@ -381,8 +484,11 @@ class StudentReadmissionTest extends TestCase
 
         $this->actingAs($user)
             ->get(route('student.dashboard'))
-            ->assertSee($reason)
-            ->assertSee('Submit another attempt');
+            ->assertSee($reason);
+        $this->actingAs($user)
+            ->get(route('student.readmissions.create', $enrollment))
+            ->assertRedirect(route('student.dashboard'))
+            ->assertSessionHas('info');
     }
 
     public function test_osa_cannot_reject_a_request_without_feedback(): void

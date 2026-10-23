@@ -11,97 +11,77 @@
     $roleLabel = $roleLabels[$user->role] ?? ucfirst(str_replace('_', ' ', (string) $user->role));
 @endphp
 
-{{-- Shared top navigation for every role: same markup, only the links differ. --}}
-<nav x-data="{ open: false }" class="topbar sticky top-0 z-40">
-    <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        <div class="flex h-16 items-stretch justify-between gap-4">
+<div class="sticky top-0 z-30 flex h-14 items-center justify-between border-b bg-white px-4 dark:border-gray-700 dark:bg-gray-900 lg:hidden">
+    <button type="button" class="btn btn-secondary btn-sm" @click="mobileSidebarOpen = true" aria-label="Open navigation menu">
+        Menu
+    </button>
+    <a href="{{ $home }}" class="text-sm font-semibold">{{ $subtitle ?? 'Attendance System' }}</a>
+    <x-theme-toggle />
+</div>
 
-            <!-- Brand + links -->
-            <div class="flex items-stretch gap-8">
-                <a href="{{ $home }}" class="flex items-center">
-                    <x-application-logo :subtitle="$subtitle" />
-                </a>
+<div x-show="mobileSidebarOpen" x-cloak class="fixed inset-0 z-40 bg-black/50 lg:hidden" @click="mobileSidebarOpen = false"></div>
 
-                <div class="hidden items-stretch gap-6 sm:flex">
-                    @foreach ($links as $link)
-                        <x-nav-link :href="route($link['route'])" :active="request()->routeIs($link['active'] ?? $link['route'])">
-                            {{ $link['label'] }}
-                        </x-nav-link>
-                    @endforeach
-                </div>
-            </div>
+<aside
+    class="fixed inset-y-0 left-0 z-50 flex -translate-x-full flex-col border-r bg-white transition-all duration-200 dark:border-gray-700 dark:bg-gray-900 lg:translate-x-0"
+    :class="{
+        'translate-x-0': mobileSidebarOpen,
+        'w-20': sidebarCollapsed,
+        'w-64': !sidebarCollapsed
+    }"
+    aria-label="Main navigation"
+>
+    <div class="flex h-16 items-center justify-between gap-2 border-b px-4 dark:border-gray-700">
+        <a href="{{ $home }}" class="flex min-w-0 items-center gap-3">
+            <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-rose-600 text-sm font-bold text-white" aria-hidden="true">UB</span>
+            <span x-show="!sidebarCollapsed" class="min-w-0">
+                <span class="block truncate text-sm font-semibold text-rose-600">University of Baguio</span>
+                <span class="block truncate text-xs muted">{{ $subtitle ?? $roleLabel }}</span>
+            </span>
+        </a>
+        <button type="button" class="btn btn-ghost btn-sm lg:hidden" @click="mobileSidebarOpen = false" aria-label="Close navigation menu">
+            &times;
+        </button>
+        <button type="button" class="btn btn-ghost btn-sm hidden lg:inline-flex" @click="sidebarCollapsed = !sidebarCollapsed"
+                :aria-label="sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'"
+                :title="sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'">
+            <span x-text="sidebarCollapsed ? '›' : '‹'">‹</span>
+        </button>
+    </div>
 
-            <!-- Theme + user menu (desktop) -->
-            <div class="hidden items-center gap-3 sm:flex">
-                <x-theme-toggle />
+    <nav class="flex-1 space-y-1 overflow-y-auto p-3">
+        @foreach ($links as $link)
+            <a href="{{ route($link['route']) }}"
+               @class([
+                   'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
+                   'bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300' => request()->routeIs($link['active'] ?? $link['route']),
+                   'muted hover:bg-gray-100 dark:hover:bg-gray-800' => ! request()->routeIs($link['active'] ?? $link['route']),
+               ])
+               :title="sidebarCollapsed ? @js($link['label']) : null">
+                <span class="w-5 shrink-0 text-center" aria-hidden="true">{{ strtoupper(substr($link['label'], 0, 1)) }}</span>
+                <span x-show="!sidebarCollapsed" class="truncate">{{ $link['label'] }}</span>
+            </a>
+        @endforeach
+    </nav>
 
-                <x-dropdown align="right" width="48">
-                    <x-slot name="trigger">
-                        <button type="button" class="btn btn-ghost" aria-haspopup="true">
-                            <span class="block text-left leading-tight">
-                                <span class="block max-w-[12rem] truncate text-sm font-semibold">{{ $user->name }}</span>
-                                <span class="block text-xs font-medium muted">{{ $roleLabel }}</span>
-                            </span>
-                        </button>
-                    </x-slot>
-
-                    <x-slot name="content">
-                        <form method="POST" action="{{ route('logout') }}">
-                            @csrf
-
-                            <x-dropdown-link
-                                :href="route('logout')"
-                                onclick="event.preventDefault(); this.closest('form').submit();"
-                            >
-                                Log out
-                            </x-dropdown-link>
-                        </form>
-                    </x-slot>
-                </x-dropdown>
-            </div>
-
-            <!-- Menu button (mobile) -->
-            <div class="flex items-center sm:hidden">
-                <button type="button" @click="open = ! open" class="btn btn-secondary btn-sm">
-                    <span x-text="open ? 'Close' : 'Menu'">Menu</span>
+    <div class="space-y-3 border-t p-3 dark:border-gray-700">
+        <div class="flex items-center gap-3 px-2">
+            <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gray-100 text-sm font-semibold dark:bg-gray-800">
+                {{ strtoupper(substr($user->name, 0, 1)) }}
+            </span>
+            <span x-show="!sidebarCollapsed" class="min-w-0">
+                <span class="block truncate text-sm font-semibold">{{ $user->name }}</span>
+                <span class="block truncate text-xs muted">{{ $roleLabel }}</span>
+            </span>
+        </div>
+        <div class="flex items-center justify-between gap-2">
+            <form method="POST" action="{{ route('logout') }}">
+                @csrf
+                <button type="submit" class="btn btn-secondary btn-sm" :title="sidebarCollapsed ? 'Log out' : null">
+                    <span aria-hidden="true">↪</span>
+                    <span x-show="!sidebarCollapsed">Log out</span>
                 </button>
-            </div>
-
+            </form>
+            <span x-show="!sidebarCollapsed"><x-theme-toggle /></span>
         </div>
     </div>
-
-    <!-- Mobile menu -->
-    <div x-show="open" style="display: none;" class="border-t sm:hidden">
-        <div class="space-y-1 py-2">
-            @foreach ($links as $link)
-                <x-responsive-nav-link :href="route($link['route'])" :active="request()->routeIs($link['active'] ?? $link['route'])">
-                    {{ $link['label'] }}
-                </x-responsive-nav-link>
-            @endforeach
-        </div>
-
-        <div class="border-t py-4">
-            <div class="px-4">
-                <p class="text-sm font-semibold">{{ $user->name }}</p>
-                <p class="text-xs font-medium muted">{{ $roleLabel }} &middot; {{ $user->email }}</p>
-            </div>
-
-            <div class="mt-3 space-y-1">
-                <form method="POST" action="{{ route('logout') }}">
-                    @csrf
-
-                    <x-responsive-nav-link
-                        :href="route('logout')"
-                        onclick="event.preventDefault(); this.closest('form').submit();"
-                    >
-                        Log out
-                    </x-responsive-nav-link>
-                </form>
-            </div>
-
-            <div class="mt-3 px-4">
-                <x-theme-toggle />
-            </div>
-        </div>
-    </div>
-</nav>
+</aside>

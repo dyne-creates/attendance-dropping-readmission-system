@@ -12,7 +12,7 @@
         <section class="card overflow-hidden">
             <div class="card-header">
                 <h2 class="text-lg font-semibold">Processed requests</h2>
-                <p class="mt-0.5 text-sm muted">Approved and rejected readmission requests.</p>
+                <p class="mt-0.5 text-sm muted">Approved, excused, and rejected readmission requests.</p>
             </div>
 
             <div class="overflow-x-auto">
@@ -61,9 +61,18 @@
                                 <td><span class="badge badge-neutral">{{ strtoupper($record->channel) }}</span></td>
 
                                 <td>
-                                    @if ($record->status === 'approved')
+                                    @if (($record->outcome ?? $record->status) === 'approved')
                                         <span class="badge badge-success">Approved</span>
-                                    @elseif ($record->status === 'rejected')
+                                    @elseif (($record->outcome ?? $record->status) === 'excused')
+                                        <span class="badge badge-success">Excused</span>
+                                        <p class="mt-1 text-xs muted">
+                                            {{ Carbon\Carbon::parse($record->excused_from)->format('M d, Y') }}
+                                            – {{ Carbon\Carbon::parse($record->excused_through)->format('M d, Y') }};
+                                            {{ number_format((float) $record->excused_hours_deducted, 2) }} hrs deducted
+                                        </p>
+                                    @elseif (($record->outcome ?? $record->status) === 'not_excused')
+                                        <span class="badge badge-warning">Not excused</span>
+                                    @elseif (($record->outcome ?? $record->status) === 'rejected')
                                         <span class="badge badge-danger">Rejected</span>
                                     @else
                                         <span class="badge badge-neutral">{{ ucfirst((string) $record->status) }}</span>
