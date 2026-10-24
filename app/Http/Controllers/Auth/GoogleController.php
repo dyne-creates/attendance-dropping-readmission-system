@@ -12,6 +12,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Laravel\Socialite\Facades\Socialite;
+use RuntimeException;
 use Throwable;
 
 class GoogleController extends Controller
@@ -80,7 +81,10 @@ class GoogleController extends Controller
             ->exists();
 
         if ($accountAlreadyExists) {
-            return redirect()->route('login')->with('status', 'An account already exists for this email. Please log in instead.');
+            return redirect()->route('login')->with(
+                'status',
+                'An account already exists for this University email. Please sign in with Google instead. Student accounts may already have been created from a class list.'
+            );
         }
 
         [$name, $firstName, $lastName] = $this->accountNames($googleAccount, $email);

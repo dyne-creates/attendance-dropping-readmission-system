@@ -23,6 +23,21 @@ class StudentMiddleware
             });
         }
 
+        $student = $request->user()->student;
+
+        if (
+            $student !== null
+            && $request->user()->policy_accepted_at !== null
+            && ! $request->routeIs('student.dashboard', 'student.guardian-email.store')
+            && ! $student->guardians()
+                ->whereNotNull('email')
+                ->where('email', '<>', '')
+                ->exists()
+        ) {
+            return redirect()->route('student.dashboard')
+                ->with('info', 'Add a parent or guardian email before continuing.');
+        }
+
         return $next($request);
     }
 }

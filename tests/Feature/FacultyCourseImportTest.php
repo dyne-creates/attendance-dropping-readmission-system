@@ -122,6 +122,50 @@ class FacultyCourseImportTest extends TestCase
         $response->assertSee('passwords');
     }
 
+    public function test_faculty_can_open_the_class_list_import_modal_from_subjects(): void
+    {
+        $facultyUser = $this->createFaculty();
+
+        $response = $this->actingAs($facultyUser)->get(route('faculty.subjects'));
+
+        $response->assertSee('Import subject class list')
+            ->assertSee('@click="$dispatch(\'open-class-list-import\')"', false)
+            ->assertSee('@open-class-list-import.window="showClassListImport = true"', false)
+            ->assertSee('x-data="{ showClassListImport: false }"', false)
+            ->assertSee(route('faculty.courses.import.store'))
+            ->assertSee('class-list-file');
+    }
+
+    public function test_class_list_import_error_reopens_the_modal_on_subjects_page(): void
+    {
+        $facultyUser = $this->createFaculty();
+        $workbookPath = $this->createClassListWorkbook([
+            ['20226648', 'BABAN, ELY HENDRICK MAGUIDE', 'BSIT-SD', 'First Year', $facultyUser->email],
+        ]);
+
+        try {
+            $this->actingAs($facultyUser)
+                ->from(route('faculty.subjects'))
+                ->followingRedirects()
+                ->post(route('faculty.courses.import.store'), [
+                    'file' => new UploadedFile(
+                        $workbookPath,
+                        'class-list.xlsx',
+                        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                        UPLOAD_ERR_OK,
+                        true,
+                    ),
+                ])
+                ->assertSee('showClassListImport: true', false)
+                ->assertSee('class-list-file')
+                ->assertSee('The class list could not be imported:');
+        } finally {
+            if (file_exists($workbookPath)) {
+                unlink($workbookPath);
+            }
+        }
+    }
+
     public function test_class_list_import_reports_the_php_upload_error(): void
     {
         $facultyUser = $this->createFaculty();

@@ -16,10 +16,13 @@ class AttendanceService
     /**
      * Determine the duration in hours for a class session on a given date.
      */
-    public function calculateSessionHours(Course $course, CarbonInterface|string $date): float
+    public function calculateSessionHours(Course $course, CarbonInterface|string $date, ?int $scheduleId = null): float
     {
         $dayOfWeek = Carbon::parse($date)->format('D');
-        $schedule = $course->schedules->firstWhere('day_of_week', $dayOfWeek);
+        $schedule = $scheduleId === null
+            ? null
+            : $course->schedules->firstWhere('schedule_id', $scheduleId);
+        $schedule ??= $course->schedules->firstWhere('day_of_week', $dayOfWeek);
 
         if ($schedule && $schedule->start_time && $schedule->end_time) {
             $start = Carbon::parse($schedule->start_time);
@@ -75,7 +78,7 @@ class AttendanceService
             if ($record->status === 'absent') {
                 $hours = $record->hours_absent !== null
                     ? (float) $record->hours_absent
-                    : $this->calculateSessionHours($course, $record->session_date);
+                    : $this->calculateSessionHours($course, $record->session_date, $record->schedule_id);
                 $totalHours += $hours;
             }
         }

@@ -23,8 +23,13 @@
 
         <section class="card overflow-hidden">
             <div class="card-header flex items-center justify-between gap-4">
-                <h2 class="text-lg font-semibold">Pending requests</h2>
-                <span class="badge badge-neutral">{{ count($requests) }} pending</span>
+                <div>
+                    <h2 class="text-lg font-semibold">Pending requests</h2>
+                    <span class="badge badge-neutral">{{ count($requests) }} pending</span>
+                </div>
+                <a href="{{ route('osa.readmissions.export') }}" class="btn btn-secondary btn-sm">
+                    Export all to Excel
+                </a>
             </div>
 
             <div class="overflow-x-auto">

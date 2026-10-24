@@ -9,6 +9,9 @@ use App\Models\Enrollment;
 use App\Models\ExcuseDocument;
 use App\Models\ReadmissionRequest;
 use App\Services\AttendanceService;
+use App\Services\ReadmissionExportService;
+use Carbon\Carbon;
+use Illuminate\Database\Query\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -147,7 +150,37 @@ class OsaStaffController extends Controller
         return view('osa-staff.readmissions', compact('requests'));
     }
 
-    public function showReadmission($id)
+    public function exportReadmissions(ReadmissionExportService $exportService): BinaryFileResponse
+    {
+        $rows = $this->readmissionExportQuery()
+            ->get()
+            ->map(fn (object $record): array => $this->readmissionExportRow($record))
+            ->prepend($this->readmissionExportHeaders())
+            ->all();
+
+        return $this->downloadReadmissionWorkbook(
+            $exportService,
+            $rows,
+            'readmissions-'.now()->format('Ymd-His').'.xlsx'
+        );
+    }
+
+    public function exportReadmission(int $id, ReadmissionExportService $exportService): BinaryFileResponse
+    {
+        $record = $this->readmissionExportQuery()
+            ->where('readmission_requests.readmission_id', $id)
+            ->firstOrFail();
+
+        $filename = 'readmission-'.$record->readmission_id.'.xlsx';
+
+        return $this->downloadReadmissionWorkbook(
+            $exportService,
+            [$this->readmissionExportHeaders(), $this->readmissionExportRow($record)],
+            $filename
+        );
+    }
+
+    public function showReadmission(int $id)
     {
         $request = DB::table('readmission_requests')
             ->join(
@@ -439,9 +472,15 @@ class OsaStaffController extends Controller
 
     public function excuseReadmission(Request $request, int $id, AttendanceService $attendanceService): RedirectResponse
     {
+        $dateRangeRule = match ($request->input('duration')) {
+            'single' => 'date_equals:excused_from',
+            'multiple' => 'after:excused_from',
+            default => 'after_or_equal:excused_from',
+        };
         $validated = $request->validate([
+            'duration' => ['nullable', 'in:single,multiple'],
             'excused_from' => ['required', 'date'],
-            'excused_through' => ['required', 'date', 'after_or_equal:excused_from'],
+            'excused_through' => ['required', 'date', $dateRangeRule],
         ]);
 
         try {
@@ -749,5 +788,109 @@ class OsaStaffController extends Controller
             'osa-staff.archive-readmissions',
             compact('records')
         );
+    }
+
+    private function readmissionExportQuery(): Builder
+    {
+        return DB::table('readmission_requests')
+            ->join('dropping_transactions', 'readmission_requests.drop_id', '=', 'dropping_transactions.drop_id')
+            ->join('enrollments', 'dropping_transactions.enrollment_id', '=', 'enrollments.enrollment_id')
+            ->join('students', 'enrollments.student_id', '=', 'students.student_id')
+            ->join('courses', 'enrollments.course_id', '=', 'courses.course_id')
+            ->select(
+                'readmission_requests.*',
+                'students.student_number',
+                'students.first_name',
+                'students.last_name',
+                'courses.subject_code',
+                'courses.course_name',
+                'courses.section',
+                'dropping_transactions.drop_type',
+                'dropping_transactions.absence_hours_at_drop',
+                'dropping_transactions.instructor_reason'
+            )
+            ->orderByDesc('readmission_requests.readmission_id');
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function readmissionExportHeaders(): array
+    {
+        return [
+            'Readmission ID',
+            'Student Number',
+            'First Name',
+            'Last Name',
+            'Subject Code',
+            'Course',
+            'Section',
+            'Status',
+            'Outcome',
+            'Attempt',
+            'Reason',
+            'Request Details',
+            'Decision Details',
+            'Channel',
+            'Submitted',
+            'Processed',
+            'Excused From',
+            'Excused Through',
+            'Excused Hours Deducted',
+            'Drop Type',
+            'Absence Hours at Drop',
+            'Instructor Reason',
+        ];
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function readmissionExportRow(object $record): array
+    {
+        return [
+            (string) $record->readmission_id,
+            (string) $record->student_number,
+            (string) $record->first_name,
+            (string) $record->last_name,
+            (string) $record->subject_code,
+            (string) $record->course_name,
+            (string) $record->section,
+            (string) $record->status,
+            (string) ($record->outcome ?? ''),
+            (string) $record->attempt_number,
+            ReadmissionRequest::reasonLabel((string) $record->reason_code),
+            (string) ($record->reason_details ?? ''),
+            (string) ($record->rejection_reason ?? ''),
+            strtoupper((string) $record->channel),
+            $this->formatExportDate($record->created_at),
+            $this->formatExportDate($record->processed_date),
+            $this->formatExportDate($record->excused_from),
+            $this->formatExportDate($record->excused_through),
+            (string) ($record->excused_hours_deducted ?? ''),
+            (string) ($record->drop_type ?? ''),
+            (string) ($record->absence_hours_at_drop ?? ''),
+            (string) ($record->instructor_reason ?? ''),
+        ];
+    }
+
+    private function formatExportDate(?string $date): string
+    {
+        return $date === null ? '' : Carbon::parse($date)->format('Y-m-d');
+    }
+
+    /**
+     * @param  array<int, array<int, string>>  $rows
+     */
+    private function downloadReadmissionWorkbook(
+        ReadmissionExportService $exportService,
+        array $rows,
+        string $filename
+    ): BinaryFileResponse {
+        $path = $exportService->createWorkbook($rows);
+
+        return response()->download($path, $filename, [
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        ])->deleteFileAfterSend(true);
     }
 }

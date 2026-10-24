@@ -37,6 +37,7 @@ class StudentAttendanceWarningTest extends TestCase
         $response->assertSee('Approaching the weekly absence threshold')
             ->assertSee('2.50 of')
             ->assertSee('3.00 weekly hours');
+        $response->assertSee('aria-label="Weekly absence threshold progress"', false);
         $response->assertSee('Absence warning');
         $response->assertSee('ring-amber-500/60');
     }

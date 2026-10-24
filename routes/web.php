@@ -3,6 +3,7 @@
 use App\Http\Controllers\Faculty\FacultyController;
 use App\Http\Controllers\Faculty\FacultyCourseController;
 use App\Http\Controllers\OsaStaff\OsaStaffController;
+use App\Http\Controllers\PolicyAgreementController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\Student\StudentController;
 use App\Http\Controllers\Student\StudentReadmissionController;
@@ -25,9 +26,20 @@ Route::middleware(['auth', 'prevent-back-history'])->group(function () {
         };
     })->name('dashboard');
 
+    Route::post('/policy/accept', [PolicyAgreementController::class, 'accept'])
+        ->name('policy.accept');
+
     Route::get('/student/dashboard', [StudentController::class, 'dashboard'])
         ->middleware('studentMiddleware')
         ->name('student.dashboard');
+
+    Route::post('/student/guardian-email', [StudentController::class, 'storeGuardianEmail'])
+        ->middleware('studentMiddleware')
+        ->name('student.guardian-email.store');
+
+    Route::get('/student/mail', [StudentController::class, 'mail'])
+        ->middleware('studentMiddleware')
+        ->name('student.mail');
 
     Route::get('/student/enrollments/{enrollment}/readmission-request', [StudentReadmissionController::class, 'create'])
         ->middleware('studentMiddleware')
@@ -40,6 +52,10 @@ Route::middleware(['auth', 'prevent-back-history'])->group(function () {
     Route::get('/faculty/dashboard', [FacultyController::class, 'dashboard'])
         ->middleware('facultyMiddleware')
         ->name('faculty.dashboard');
+
+    Route::get('/faculty/subjects', [FacultyController::class, 'subjects'])
+        ->middleware('facultyMiddleware')
+        ->name('faculty.subjects');
 
     Route::post('/faculty/attendance/import', [FacultyController::class, 'importAttendance'])
         ->middleware('facultyMiddleware')
@@ -107,10 +123,20 @@ Route::middleware(['auth', 'staffMiddleware'])->prefix('osa')->name('osa.')->gro
         'readmissions',
     ])->name('readmissions');
 
+    Route::get('/readmissions/export', [
+        OsaStaffController::class,
+        'exportReadmissions',
+    ])->name('readmissions.export');
+
+    Route::get('/readmissions/{id}/export', [
+        OsaStaffController::class,
+        'exportReadmission',
+    ])->whereNumber('id')->name('readmissions.export-one');
+
     Route::get('/readmissions/{id}', [
         OsaStaffController::class,
         'showReadmission',
-    ])->name('readmissions.show');
+    ])->whereNumber('id')->name('readmissions.show');
 
     Route::get('/readmissions/documents/{document}', [
         OsaStaffController::class,

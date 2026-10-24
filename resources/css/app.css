@@ -110,8 +110,17 @@
     }
 
     .page-header {
+        position: sticky;
+        top: 3.5rem;
+        z-index: 30;
         background-color: var(--surface);
         border-bottom: 1px solid var(--border);
+    }
+
+    @media (min-width: 1024px) {
+        .page-header {
+            top: 0;
+        }
     }
 
     .card {

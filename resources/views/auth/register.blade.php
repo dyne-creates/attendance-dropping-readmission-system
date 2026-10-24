@@ -8,7 +8,7 @@
     </a>
 
     <p class="mt-6 text-center text-sm muted">
-        Already have an account?
-        <a href="{{ route('login') }}" class="link font-semibold">Log in</a>
+        Student accounts may already be created from a class list. If your University email already has an account,
+        <a href="{{ route('login') }}" class="link font-semibold">sign in with Google</a>.
     </p>
 </x-guest-layout>

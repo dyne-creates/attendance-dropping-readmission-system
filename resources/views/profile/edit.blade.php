@@ -41,6 +41,12 @@
                     <dt class="text-sm font-medium muted">Account type</dt>
                     <dd class="sm:col-span-2">{{ $roleLabels[$user->role] ?? 'University account' }}</dd>
                 </div>
+                @if ($user->role === 'student')
+                    <div class="grid gap-1 py-4 sm:grid-cols-3">
+                        <dt class="text-sm font-medium muted">Parent / guardian email</dt>
+                        <dd class="sm:col-span-2">{{ $guardian?->email ?: 'Not provided' }}</dd>
+                    </div>
+                @endif
             </dl>
         </section>
     </div>

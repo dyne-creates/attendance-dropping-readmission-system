@@ -32,6 +32,10 @@
             <div class="alert alert-warning mb-4" role="status">{{ session('info') }}</div>
         @endif
 
+        @if ($needsGuardianEmail && auth()->user()->policy_accepted_at)
+            @include('components.student-guardian-email-modal')
+        @endif
+
         @forelse ($groups as $term => $items)
             <section @class(['mt-10' => ! $loop->first]) aria-labelledby="term-{{ $loop->index }}">
 
@@ -51,6 +55,12 @@
                                 : (in_array($enrollment->absence_warning, ['approaching_limit', 'weekly_drop_eligible'], true)
                                     ? 'ring-amber-500/60'
                                     : 'ring-emerald-500/60');
+                            $weeklyAbsenceProgress = $enrollment->weekly_drop_threshold_hours > 0
+                                ? min(100, ($enrollment->absence_hours / $enrollment->weekly_drop_threshold_hours) * 100)
+                                : 0;
+                            $weeklyProgressTone = $weeklyAbsenceProgress >= 100
+                                ? 'progress-bad'
+                                : ($weeklyAbsenceProgress >= 80 ? 'progress-warn' : '');
                         @endphp
 
                         <details @class(['card disclosure overflow-hidden ring-1 ring-inset', $statusOutlineClass])>
@@ -116,19 +126,37 @@
                                 </div>
 
                                 @if ($enrollment->absence_warning === 'approaching_limit')
-                                    <p class="alert alert-warning mt-4" role="status">
+                                    <div class="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-4 text-amber-900 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200" role="status">
                                         Approaching the weekly absence threshold:
                                         {{ number_format($enrollment->absence_hours, 2) }} of
                                         {{ number_format($enrollment->weekly_drop_threshold_hours, 2) }} weekly hours.
-                                    </p>
+                                        <div class="progress mt-3 h-2"
+                                             role="progressbar"
+                                             aria-label="Weekly absence threshold progress"
+                                             aria-valuemin="0"
+                                             aria-valuemax="100"
+                                             aria-valuenow="{{ round($weeklyAbsenceProgress) }}">
+                                            <div class="progress-bar {{ $weeklyProgressTone }}"
+                                                 style="width: {{ $weeklyAbsenceProgress }}%"></div>
+                                        </div>
+                                    </div>
                                 @elseif ($enrollment->absence_warning === 'weekly_drop_eligible')
-                                    <p class="alert alert-warning mt-4" role="status">
+                                    <div class="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-4 text-amber-900 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200" role="status">
                                         Weekly absence threshold reached:
                                         {{ number_format($enrollment->absence_hours, 2) }} of
                                         {{ number_format($enrollment->weekly_drop_threshold_hours, 2) }} weekly hours.
                                         Your instructor may drop and refer you to OSA for readmission review.
                                         You will not be dropped automatically.
-                                    </p>
+                                        <div class="progress mt-3 h-2"
+                                             role="progressbar"
+                                             aria-label="Weekly absence threshold progress"
+                                             aria-valuemin="0"
+                                             aria-valuemax="100"
+                                             aria-valuenow="{{ round($weeklyAbsenceProgress) }}">
+                                            <div class="progress-bar {{ $weeklyProgressTone }}"
+                                                 style="width: {{ $weeklyAbsenceProgress }}%"></div>
+                                        </div>
+                                    </div>
                                 @elseif ($enrollment->absence_warning === 'limit_reached')
                                     <p class="alert alert-danger mt-4" role="alert">
                                         Permanent-drop level reached at 20% of semester hours:

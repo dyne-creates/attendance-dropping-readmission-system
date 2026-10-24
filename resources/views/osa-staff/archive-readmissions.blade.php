@@ -10,9 +10,14 @@
     <div class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
 
         <section class="card overflow-hidden">
-            <div class="card-header">
-                <h2 class="text-lg font-semibold">Processed requests</h2>
-                <p class="mt-0.5 text-sm muted">Approved, excused, and rejected readmission requests.</p>
+            <div class="card-header flex flex-wrap items-center justify-between gap-3">
+                <div>
+                    <h2 class="text-lg font-semibold">Processed requests</h2>
+                    <p class="mt-0.5 text-sm muted">Approved, excused, and rejected readmission requests.</p>
+                </div>
+                <a href="{{ route('osa.readmissions.export') }}" class="btn btn-secondary btn-sm">
+                    Export all to Excel
+                </a>
             </div>
 
             <div class="overflow-x-auto">

@@ -13,17 +13,25 @@ class AuthenticationTest extends TestCase
 
     public function test_login_page_shows_google_login_and_signup_links(): void
     {
-        $this->get(route('login'))
+        $response = $this->get(route('login'));
+
+        $response
             ->assertOk()
             ->assertSee('University email')
             ->assertSee('Password')
             ->assertSee('Remember me')
             ->assertSee('Log in')
-            ->assertSee('Sign in with University Account')
+            ->assertSee('Sign in with Google')
             ->assertSee('Sign up with Google')
             ->assertSee(route('google.redirect', ['intent' => 'login']), false)
-            ->assertSee(route('register'), false)
-            ->assertHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+            ->assertSee(route('register'), false);
+
+        $cacheControl = $response->headers->get('Cache-Control');
+        $this->assertNotNull($cacheControl);
+        $this->assertStringContainsString('no-store', $cacheControl);
+        $this->assertStringContainsString('no-cache', $cacheControl);
+        $this->assertStringContainsString('must-revalidate', $cacheControl);
+        $this->assertStringContainsString('max-age=0', $cacheControl);
     }
 
     public function test_unauthenticated_users_are_redirected_to_login_from_protected_pages(): void

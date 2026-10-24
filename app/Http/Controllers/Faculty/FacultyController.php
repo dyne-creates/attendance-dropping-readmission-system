@@ -147,7 +147,7 @@ class FacultyController extends Controller
                     Carbon::parse($selectedSchedule->start_time)->diffInMinutes(Carbon::parse($selectedSchedule->end_time)) / 60.0,
                     2
                 )
-                : $this->attendanceService->calculateSessionHours($course, $selectedDate);
+                : $this->attendanceService->calculateSessionHours($course, $selectedDate, $selectedSchedule?->schedule_id);
 
             // Load enrollments with student and attendance records
             $enrollments = Enrollment::with(['student.user', 'attendanceRecords'])
@@ -285,7 +285,7 @@ class FacultyController extends Controller
                         : null;
                     $sessionHours = $schedule
                         ? round(Carbon::parse($schedule->start_time)->diffInMinutes(Carbon::parse($schedule->end_time)) / 60.0, 2)
-                        : $this->attendanceService->calculateSessionHours($course, $dateStr);
+                        : $this->attendanceService->calculateSessionHours($course, $dateStr, $scheduleId);
 
                     return [
                         'date' => $dateStr,
@@ -361,6 +361,29 @@ class FacultyController extends Controller
             'nextWeekDate' => $nextWeekDate,
             'weeklySchedule' => $weeklySchedule,
         ]);
+    }
+
+    public function subjects(Request $request): View
+    {
+        $user = $request->user();
+
+        /** @var FacultyMember $faculty */
+        $faculty = $user->facultyMember ?? FacultyMember::firstOrCreate(
+            ['user_id' => $user->user_id],
+            [
+                'full_name' => $user->name,
+                'department' => 'School of Information Technology',
+                'suppress_schedule_warnings' => false,
+            ]
+        );
+
+        $courses = Course::with(['schoolYear', 'schedules'])
+            ->withCount('enrollments')
+            ->where('faculty_id', $faculty->faculty_id)
+            ->orderBy('subject_code')
+            ->get();
+
+        return view('faculty.subjects', compact('courses'));
     }
 
     /**

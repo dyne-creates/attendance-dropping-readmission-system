@@ -23,6 +23,9 @@
                 <a href="{{ route('osa.readmissions') }}" class="btn btn-secondary btn-sm">
                     Back to requests
                 </a>
+                <a href="{{ route('osa.readmissions.export-one', $request->readmission_id) }}" class="btn btn-primary btn-sm">
+                    Export this form to Excel
+                </a>
             </x-slot>
         </x-page-header>
     </x-slot>
@@ -201,19 +204,19 @@
                     @if ($guardian)
                         <div>
                             <dt class="text-sm font-medium muted">Name</dt>
-                            <dd class="mt-1 text-sm">{{ $guardian->full_name }}</dd>
+                            <dd class="mt-1 text-sm">{{ $guardian->full_name ?: '—' }}</dd>
                         </div>
                         <div>
                             <dt class="text-sm font-medium muted">Relationship</dt>
-                            <dd class="mt-1 text-sm">{{ $guardian->relationship }}</dd>
+                            <dd class="mt-1 text-sm">{{ $guardian->relationship ?: '—' }}</dd>
                         </div>
                         <div>
                             <dt class="text-sm font-medium muted">Email</dt>
-                            <dd class="mt-1 text-sm">{{ $guardian->email ?? '—' }}</dd>
+                            <dd class="mt-1 text-sm">{{ $guardian->email ?: '—' }}</dd>
                         </div>
                         <div>
                             <dt class="text-sm font-medium muted">Contact number</dt>
-                            <dd class="mt-1 text-sm">{{ $guardian->phone_number }}</dd>
+                            <dd class="mt-1 text-sm">{{ $guardian->phone_number ?: '—' }}</dd>
                         </div>
                     @else
                         <div class="sm:col-span-2">
@@ -281,44 +284,67 @@
                 </div>
 
                 <div class="card-body space-y-5">
-                    <form method="POST" action="{{ route('osa.readmissions.approve', $request->readmission_id) }}">
+                    <form method="POST" action="{{ route('osa.readmissions.approve', $request->readmission_id) }}"
+                          data-confirm="Are you sure you want to approve this readmission request?">
                         @csrf
 
                         <button type="submit"
-                                onclick="return confirm('Are you sure you want to approve this readmission request?')"
                                 class="btn btn-success w-full sm:w-auto">
                             Approve and reactivate
                         </button>
                     </form>
 
                     <form method="POST" action="{{ route('osa.readmissions.excuse', $request->readmission_id) }}"
-                          class="max-w-2xl space-y-3 rounded-lg border p-4">
+                          class="max-w-2xl space-y-3 rounded-lg border p-4"
+                          data-confirm="Excuse absences in this range and reactivate the student?"
+                          x-data="{
+                              duration: @js(old('excused_from') && old('excused_through') && old('excused_from') !== old('excused_through') ? 'multiple' : 'single'),
+                              excusedFrom: @js(old('excused_from', '')),
+                              excusedThrough: @js(old('excused_through', ''))
+                          }"
+                          x-effect="if (duration === 'single') excusedThrough = excusedFrom">
                         @csrf
 
                         <div>
                             <h3 class="font-semibold">Excused absence and readmission</h3>
-                            <p class="muted mt-1 text-sm">Excuses recorded absences in this date range, deducts their hours, and reactivates the student.</p>
+                            <p class="muted mt-1 text-sm">Choose whether the excuse covers one day or multiple days. Recorded absence hours for those dates will be deducted before readmission.</p>
                         </div>
+
+                        <fieldset>
+                            <legend class="field-label mb-2">Excused absence duration</legend>
+                            <div class="flex flex-wrap gap-2">
+                                <label class="inline-flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm"
+                                       :class="duration === 'single' ? 'border-indigo-500 bg-indigo-50 text-indigo-900 dark:bg-indigo-950/40 dark:text-indigo-200' : 'border-gray-300 dark:border-gray-600'">
+                                    <input type="radio" name="duration" value="single" x-model="duration">
+                                    1 day only
+                                </label>
+                                <label class="inline-flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm"
+                                       :class="duration === 'multiple' ? 'border-indigo-500 bg-indigo-50 text-indigo-900 dark:bg-indigo-950/40 dark:text-indigo-200' : 'border-gray-300 dark:border-gray-600'">
+                                    <input type="radio" name="duration" value="multiple" x-model="duration">
+                                    2 days or more
+                                </label>
+                            </div>
+                        </fieldset>
 
                         <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
                             <div>
                                 <label for="excused_from" class="field-label mb-1">Start date <span aria-hidden="true">*</span></label>
-                                <input id="excused_from" name="excused_from" type="date" value="{{ old('excused_from') }}" class="field" required>
+                                <input id="excused_from" name="excused_from" type="date" x-model="excusedFrom" class="field" required>
                                 @error('excused_from')
                                     <p class="field-error mt-1">{{ $message }}</p>
                                 @enderror
                             </div>
                             <div>
                                 <label for="excused_through" class="field-label mb-1">End date <span aria-hidden="true">*</span></label>
-                                <input id="excused_through" name="excused_through" type="date" value="{{ old('excused_through') }}" class="field" required>
+                                <input id="excused_through" name="excused_through" type="date" x-model="excusedThrough"
+                                       :min="excusedFrom" :readonly="duration === 'single'" class="field" required>
                                 @error('excused_through')
                                     <p class="field-error mt-1">{{ $message }}</p>
                                 @enderror
                             </div>
                         </div>
 
-                        <button type="submit" class="btn btn-primary"
-                                onclick="return confirm('Excuse absences in this range and reactivate the student?')">
+                        <button type="submit" class="btn btn-primary">
                             Excuse dates and reactivate
                         </button>
                     </form>
@@ -338,12 +364,12 @@
                         <div class="flex flex-wrap gap-2">
                             <button type="submit" formaction="{{ route('osa.readmissions.reject', $request->readmission_id) }}"
                                     class="btn btn-danger"
-                                    onclick="return confirm('Reject this request for the term? The student will remain inactive and cannot enroll in this course during the term.')">
+                                    data-confirm="Reject this request for the term? The student will remain inactive and cannot enroll in this course during the term.">
                                 Reject for the term
                             </button>
                             <button type="submit" formaction="{{ route('osa.readmissions.not-excused', $request->readmission_id) }}"
                                     class="btn btn-secondary"
-                                    onclick="return confirm('Mark this request Not excused? The student will remain inactive but may submit a corrected request.')">
+                                    data-confirm="Mark this request Not excused? The student will remain inactive but may submit a corrected request.">
                                 Not excused — allow resubmission
                             </button>
                         </div>

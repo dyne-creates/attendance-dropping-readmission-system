@@ -240,19 +240,19 @@
                         <dl class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
                             <div>
                                 <dt class="field-label">Name</dt>
-                                <dd class="mt-1 font-medium">{{ $guardian->full_name }}</dd>
+                                <dd class="mt-1 font-medium">{{ $guardian->full_name ?: 'Not provided' }}</dd>
                             </div>
                             <div>
                                 <dt class="field-label">Relationship</dt>
-                                <dd class="mt-1 font-medium">{{ $guardian->relationship }}</dd>
+                                <dd class="mt-1 font-medium">{{ $guardian->relationship ?: 'Not provided' }}</dd>
                             </div>
                             <div>
                                 <dt class="field-label">Email address</dt>
-                                <dd class="mt-1 font-medium">{{ $guardian->email ?? 'Not provided' }}</dd>
+                                <dd class="mt-1 font-medium">{{ $guardian->email ?: 'Not provided' }}</dd>
                             </div>
                             <div>
                                 <dt class="field-label">Contact number</dt>
-                                <dd class="mt-1 font-medium">{{ $guardian->phone_number }}</dd>
+                                <dd class="mt-1 font-medium">{{ $guardian->phone_number ?: 'Not provided' }}</dd>
                             </div>
                         </dl>
                     @else

@@ -3,10 +3,13 @@
 namespace App\Http\Controllers\Student;
 
 use App\Http\Controllers\Controller;
+use App\Models\Guardian;
 use App\Services\AttendanceService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\View\View;
 
 class StudentController extends Controller
@@ -14,6 +17,13 @@ class StudentController extends Controller
     public function dashboard(Request $request, AttendanceService $attendanceService): View
     {
         $student = $request->user()->student;
+        $guardians = $student?->guardians()->orderBy('guardian_id')->get() ?? collect();
+        $guardian = $guardians->first(
+            fn (Guardian $guardian): bool => filled($guardian->email)
+        ) ?? $guardians->first();
+        $needsGuardianEmail = $student !== null && ! $guardians->contains(
+            fn (Guardian $guardian): bool => filled($guardian->email)
+        );
 
         $enrollments = $student === null
             ? collect()
@@ -73,6 +83,71 @@ class StudentController extends Controller
             $enrollment->setAttribute('absence_warning', $absenceWarning);
         }
 
-        return view('student.dashboard', compact('enrollments'));
+        return view('student.dashboard', compact('enrollments', 'guardian', 'needsGuardianEmail'));
+    }
+
+    public function storeGuardianEmail(Request $request): RedirectResponse
+    {
+        $validated = $request->validate([
+            'email' => ['required', 'email', 'max:255'],
+        ]);
+
+        $student = $request->user()->student;
+        abort_unless($student !== null, 404);
+
+        $guardianWithEmail = $student->guardians()
+            ->whereNotNull('email')
+            ->where('email', '<>', '')
+            ->exists();
+
+        if ($guardianWithEmail) {
+            return redirect()->route('student.dashboard')
+                ->with('info', 'A parent or guardian email is already on file.');
+        }
+
+        $guardian = $student->guardians()->orderBy('guardian_id')->first();
+
+        if ($guardian === null) {
+            $student->guardians()->create(['email' => $validated['email']]);
+        } else {
+            $guardian->update(['email' => $validated['email']]);
+        }
+
+        return redirect()->route('student.dashboard')
+            ->with('success', 'Parent or guardian email saved to your profile.');
+    }
+
+    public function mail(Request $request): View
+    {
+        $student = $request->user()->student;
+
+        $requests = $student === null
+            ? collect()
+            : DB::table('readmission_requests')
+                ->join('dropping_transactions', 'readmission_requests.drop_id', '=', 'dropping_transactions.drop_id')
+                ->join('enrollments', 'dropping_transactions.enrollment_id', '=', 'enrollments.enrollment_id')
+                ->join('courses', 'enrollments.course_id', '=', 'courses.course_id')
+                ->where('enrollments.student_id', $student->student_id)
+                ->select(
+                    'readmission_requests.readmission_id',
+                    'readmission_requests.attempt_number',
+                    'readmission_requests.reason_code',
+                    'readmission_requests.reason_details',
+                    'readmission_requests.rejection_reason',
+                    'readmission_requests.status',
+                    'readmission_requests.outcome',
+                    'readmission_requests.excused_from',
+                    'readmission_requests.excused_through',
+                    'readmission_requests.excused_hours_deducted',
+                    'readmission_requests.created_at',
+                    'readmission_requests.processed_date',
+                    'courses.subject_code',
+                    'courses.course_name',
+                    'courses.section'
+                )
+                ->orderByDesc('readmission_requests.readmission_id')
+                ->get();
+
+        return view('student.mail', compact('requests'));
     }
 }

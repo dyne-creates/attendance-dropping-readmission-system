@@ -57,18 +57,6 @@
                     <span class="text-xs text-gray-500 dark:text-gray-400 font-medium tracking-wide">
                         {{ $selectedCourse ? $selectedCourse->course_name : 'Faculty Portal' }}
                     </span>
-                    @if ($courses->count() > 1)
-                        <span class="text-gray-300 dark:text-gray-600">&bull;</span>
-                        <select onchange="window.location.href=this.value"
-                                class="text-xs font-semibold text-gray-700 dark:text-gray-300 bg-transparent border-0 p-0 cursor-pointer hover:underline focus:ring-0">
-                            @foreach ($courses as $c)
-                                <option value="{{ route('faculty.dashboard', ['course_id' => $c->course_id, 'date' => $selectedDate, 'tab' => $activeTab]) }}"
-                                        @selected($selectedCourse && $selectedCourse->course_id === $c->course_id)>
-                                    {{ $c->subject_code }} (Sec {{ $c->section }})
-                                </option>
-                            @endforeach
-                        </select>
-                    @endif
                 </div>
                 <h1 class="text-3xl md:text-4xl font-normal text-gray-900 dark:text-gray-100 tracking-tight mt-0.5">
                     Attendance
@@ -89,19 +77,9 @@
                         </a>
                     </div>
 
-                    <a href="{{ route('faculty.dashboard', ['course_id' => $selectedCourse->course_id, 'date' => $selectedDate, 'tab' => 'overall']) }}#attendance-import"
-                       class="btn btn-primary btn-sm whitespace-nowrap">
+                    <button type="button" @click="$dispatch('open-attendance-import')"
+                            class="btn btn-primary btn-sm whitespace-nowrap">
                         Import attendance
-                    </a>
-
-                    {{-- Blackboard Settings Gear Button --}}
-                    <button type="button" @click="showSettingsModal = true"
-                            class="h-8 w-8 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white flex items-center justify-center shadow-xs transition-colors"
-                            title="Attendance settings">
-                        <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                        </svg>
                     </button>
                 </div>
             @endif
@@ -109,6 +87,7 @@
     </x-slot>
 
     <div class="page space-y-6 [zoom:0.9]"
+         @open-attendance-import.window="showImportModal = true"
          x-init="$nextTick(() => sortStudentRows())"
          x-data="facultyDashboard({
              courseId: {{ $selectedCourse ? $selectedCourse->course_id : 'null' }},
@@ -121,7 +100,8 @@
              meetingHoursByKey: @js($meetingHoursByKey),
              selectedDate: @js($selectedDate),
              selectedMeetingKey: @js($selectedDate.'|'.($selectedSchedule?->schedule_id ?? '')),
-             activeTab: @js($activeTab)
+             activeTab: @js($activeTab),
+             importHasErrors: @js($errors->has('file'))
          })">
 
         {{-- Toast Notification --}}
@@ -174,126 +154,22 @@
             <span class="sr-only">Attendance records do not automatically drop students.</span>
             <span class="sr-only">{{ $selectedCourse->subject_code }}</span>
 
-            {{-- =========================================================================
-                 ASSIGNED SUBJECTS & SCHEDULE (Simple & Clean, No Clutter)
-                 ========================================================================= --}}
-            <section class="space-y-3" aria-labelledby="assigned-subjects-heading"
-                     x-data="{ subjectSearch: '', subjectCount: {{ $courses->count() }} }"
-                     x-effect="subjectCount = Array.from($el.querySelectorAll('[data-subject-card]')).filter(card => !subjectSearch || card.dataset.subjectSearch.includes(subjectSearch.trim().toLowerCase())).length">
-                <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                    <div class="flex items-center gap-3">
-                        <div>
-                            <h2 id="assigned-subjects-heading" class="font-semibold text-sm text-gray-900 dark:text-gray-100">
-                                Assigned Subjects
-                            </h2>
-                            <p class="muted text-xs">Switch between subjects to manage attendance and view enrolled students.</p>
-                        </div>
-                        <span class="badge badge-neutral text-xs">
-                            <span x-text="subjectCount">{{ $courses->count() }}</span>
-                            <span class="ml-1" x-text="subjectCount === 1 ? 'subject' : 'subjects'">{{ Str::plural('subject', $courses->count()) }}</span>
-                        </span>
+            <section class="space-y-3" aria-label="Selected subject schedule">
+                <div class="card flex flex-wrap items-center justify-between gap-3 p-4">
+                    <div>
+                        <p class="font-semibold text-sm">{{ $selectedCourse->subject_code }} · Section {{ $selectedCourse->section }}</p>
+                        <p class="muted mt-0.5 text-xs">{{ $selectedCourse->course_name }}</p>
                     </div>
-                    <div class="flex flex-wrap items-center gap-2">
-                        <a href="{{ route('faculty.courses.import') }}"
-                           class="inline-flex items-center gap-1 rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-700 shadow-xs transition-colors hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700">
-                            Import Class List
-                        </a>
-                        <a href="{{ route('faculty.courses.create') }}"
-                           class="inline-flex items-center gap-1 rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-700 shadow-xs transition-colors hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700">
-                            <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-                            </svg>
-                            Add Subject
-                        </a>
+                    <div class="flex flex-wrap gap-2">
+                        <form method="POST" action="{{ route('faculty.toggle-schedule-warning') }}">
+                            @csrf
+                            <button type="submit" class="btn btn-secondary btn-sm">
+                                {{ $faculty->suppress_schedule_warnings ? 'Enable' : 'Disable' }} schedule warnings
+                            </button>
+                        </form>
+                        <a href="{{ route('faculty.subjects') }}" class="btn btn-secondary btn-sm">Change subject</a>
                     </div>
                 </div>
-
-                <label class="relative block w-full sm:max-w-sm">
-                    <span class="sr-only">Search subjects</span>
-                    <svg class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24" aria-hidden="true">
-                        <circle cx="11" cy="11" r="7" />
-                        <path stroke-linecap="round" d="m20 20-4-4" />
-                    </svg>
-                    <input type="search"
-                           x-model.debounce.150ms="subjectSearch"
-                           placeholder="Find a subject by code, section, or name"
-                           class="block w-full rounded-md border-gray-300 bg-white py-2 pl-9 pr-3 text-xs text-gray-900 placeholder:text-gray-400 focus:border-gray-500 focus:ring-gray-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 dark:placeholder:text-gray-500 dark:focus:border-gray-400 dark:focus:ring-gray-400">
-                </label>
-
-                {{-- Subject Cards Grid --}}
-                <div class="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-                    @foreach ($courses as $c)
-                        @php
-                            $isSelected = $selectedCourse && $selectedCourse->course_id === $c->course_id;
-                        @endphp
-
-                        <a href="{{ route('faculty.dashboard', ['course_id' => $c->course_id, 'date' => $selectedDate, 'tab' => $activeTab]) }}"
-                           data-subject-card
-                           data-subject-search="{{ Str::lower($c->subject_code.' '.$c->section.' '.$c->course_name) }}"
-                           x-show="!subjectSearch || $el.dataset.subjectSearch.includes(subjectSearch.trim().toLowerCase())"
-                           @class([
-                               'block rounded-md border p-2.5 text-left transition-colors',
-                               'border-gray-900 bg-gray-900 text-white ring-1 ring-gray-900/10 dark:border-gray-100 dark:bg-gray-100 dark:text-gray-900' => $isSelected,
-                               'border-gray-200 bg-white text-gray-800 hover:border-gray-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:border-gray-500' => ! $isSelected,
-                           ])
-                           @if ($isSelected) aria-current="true" @endif>
-
-                            <div class="flex items-center justify-between gap-2">
-                                <div class="min-w-0">
-                                    <span @class([
-                                        'font-semibold text-xs tracking-tight',
-                                        'text-white dark:text-gray-900' => $isSelected,
-                                        'text-gray-900 dark:text-gray-100' => ! $isSelected,
-                                    ])>
-                                        {{ $c->subject_code }}
-                                    </span>
-                                    <span @class([
-                                        'ml-1 text-[11px] font-normal',
-                                        'text-gray-300 dark:text-gray-600' => $isSelected,
-                                        'text-gray-500 dark:text-gray-400' => ! $isSelected,
-                                    ])>
-                                        Sec {{ $c->section }}
-                                    </span>
-                                </div>
-
-                                <span @class([
-                                    'shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium',
-                                    'bg-white/20 text-white dark:bg-gray-900/20 dark:text-gray-900' => $isSelected,
-                                    'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300' => ! $isSelected,
-                                ])>
-                                    {{ $c->enrollments_count }} {{ Str::plural('student', $c->enrollments_count) }}
-                                </span>
-                            </div>
-
-                            <p @class([
-                                'mt-1 truncate text-[11px] font-medium',
-                                'text-gray-200 dark:text-gray-700' => $isSelected,
-                                'text-gray-600 dark:text-gray-400' => ! $isSelected,
-                            ])>
-                                {{ $c->course_name }}
-                            </p>
-
-                            <div @class([
-                                'mt-2 flex items-center justify-between gap-2 text-[10px]',
-                                'text-gray-300 dark:text-gray-600' => $isSelected,
-                                'text-gray-500 dark:text-gray-400' => ! $isSelected,
-                            ])>
-                                <span class="truncate">
-                                    @if ($c->schedules->isNotEmpty())
-                                        {{ $c->schedules->pluck('day_of_week')->join(', ') }}
-                                        · {{ \Carbon\Carbon::parse($c->schedules->first()->start_time)->format('g:i A') }}
-                                    @else
-                                        Schedule TBA
-                                    @endif
-                                </span>
-                                <span class="shrink-0">{{ $c->hours_per_week }}h/wk</span>
-                            </div>
-                        </a>
-                    @endforeach
-                </div>
-                <p x-show="subjectCount === 0" x-cloak class="rounded-md border border-dashed border-gray-300 px-4 py-6 text-center text-xs text-gray-500 dark:border-gray-700 dark:text-gray-400">
-                    No subjects match that search.
-                </p>
 
                 {{-- Selected Subject Schedule Strip --}}
                 @if ($selectedCourse->schedules->isNotEmpty())
@@ -537,6 +413,33 @@
                     </div>
                 @endif
 
+                <div class="flex justify-end">
+                    <button type="button" class="btn btn-secondary btn-sm"
+                            @click="meetingFilterOpen = !meetingFilterOpen"
+                            :aria-expanded="meetingFilterOpen.toString()">
+                        Filter
+                    </button>
+                </div>
+                <div x-show="meetingFilterOpen" x-cloak
+                     class="card grid gap-3 p-4 sm:grid-cols-2">
+                    <label class="space-y-1 text-xs font-medium">
+                        Search students
+                        <input type="search" x-model.debounce.150ms="meetingSearch"
+                               placeholder="Name or student number" class="field mt-1">
+                    </label>
+                    <label class="space-y-1 text-xs font-medium">
+                        Attendance status
+                        <select x-model="meetingStatus" class="field mt-1">
+                            <option value="all">All students</option>
+                            <option value="unmarked">Unmarked</option>
+                            <option value="present">Present</option>
+                            <option value="late">Late</option>
+                            <option value="absent">Absent</option>
+                            <option value="excused">Excused</option>
+                        </select>
+                    </label>
+                </div>
+
                 {{-- The Blackboard Ultra Meeting Grid Table --}}
                 <div class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded shadow-xs overflow-hidden">
                     <div class="overflow-x-auto">
@@ -597,7 +500,8 @@
                                         $initials = strtoupper(substr($student->first_name ?? 'S', 0, 1) . substr($student->last_name ?? 'T', 0, 1));
                                     @endphp
 
-                                    <tr @class(['hover:bg-gray-50/60 dark:hover:bg-gray-700/30 transition-colors', 'opacity-60 bg-gray-50/50' => $isDropped])>
+                                    <tr x-show="meetingStudentMatches({{ $index }}, @js($student->fullName), @js($student->student_number))"
+                                        @class(['hover:bg-gray-50/60 dark:hover:bg-gray-700/30 transition-colors', 'opacity-60 bg-gray-50/50' => $isDropped])>
 
                                         {{-- Column 1: Student (Avatar + Name) --}}
                                         <td class="py-4 px-6 border-r border-b border-gray-200 dark:border-gray-700">
@@ -618,6 +522,20 @@
                                                             <span x-text="Number(studentScores[{{ $enrollment->enrollment_id }}].absence_percentage).toFixed(2)">{{ number_format($row['absence_percentage'], 2) }}</span>% /
                                                             {{ number_format($row['maximum_absence_percentage'], 2) }}% semester
                                                         </span>
+                                                        <div class="mt-1 w-40 max-w-full">
+                                                            <div class="progress h-1.5" role="progressbar"
+                                                                 aria-label="Weekly absence threshold progress"
+                                                                 aria-valuemin="0" aria-valuemax="100"
+                                                                 x-bind:aria-valuenow="Math.round(weeklyProgressPercentage({{ $enrollment->enrollment_id }}))">
+                                                                <div class="progress-bar"
+                                                                     x-bind:class="weeklyProgressClass({{ $enrollment->enrollment_id }})"
+                                                                     x-bind:style="`width: ${weeklyProgressPercentage({{ $enrollment->enrollment_id }})}%`"></div>
+                                                            </div>
+                                                            <p class="muted mt-0.5 text-[10px]">
+                                                                Weekly: <span x-text="Number(studentScores[{{ $enrollment->enrollment_id }}].absent_hours).toFixed(2)"></span> /
+                                                                {{ number_format($row['weekly_drop_threshold_hours'], 2) }}h
+                                                            </p>
+                                                        </div>
                                                         <div x-show="studentScores[{{ $enrollment->enrollment_id }}].is_drop_eligible" x-cloak>
                                                             <span x-show="!studentScores[{{ $enrollment->enrollment_id }}].is_permanent_drop_eligible"
                                                                   class="text-[11px] text-amber-700 dark:text-amber-400 font-medium mt-0.5 block">
@@ -630,7 +548,7 @@
                                                                 20% semester absence reached. OSA may still review readmission.
                                                             </span>
                                                             <form method="POST" action="{{ route('faculty.enrollments.drop', $enrollment) }}"
-                                                                  onsubmit="return confirm(studentScores[{{ $enrollment->enrollment_id }}].is_permanent_drop_eligible ? 'Mark this as a permanent drop and refer the student to OSA? OSA may still review readmission.' : 'Drop this student to OSA for readmission review?')">
+                                                                  x-bind:data-confirm="studentScores[{{ $enrollment->enrollment_id }}].is_permanent_drop_eligible ? 'Mark this as a permanent drop and refer the student to OSA? OSA may still review readmission.' : 'Drop this student to OSA for readmission review?'">
                                                                 @csrf
                                                                 <button type="submit" x-show="!studentScores[{{ $enrollment->enrollment_id }}].is_permanent_drop_eligible"
                                                                         class="mt-1 text-[11px] font-semibold text-amber-700 dark:text-amber-400 underline underline-offset-2 hover:text-amber-900 dark:hover:text-amber-300">
@@ -649,7 +567,7 @@
                                                         </summary>
                                                         <form method="POST" action="{{ route('faculty.enrollments.drop', $enrollment) }}"
                                                               class="mt-2 space-y-2"
-                                                              onsubmit="return confirm('Refer this student to OSA for review of the stated circumstance?')">
+                                                              data-confirm="Refer this student to OSA for review of the stated circumstance?">
                                                             @csrf
                                                             <input type="hidden" name="referral_type" value="circumstance">
                                                             <label class="block text-[11px] font-medium text-gray-700 dark:text-gray-300">
@@ -831,39 +749,8 @@
                             </span>
                         </div>
 
-                        <div class="flex items-center gap-2">
-                            <a href="{{ route('faculty.dashboard', ['course_id' => $selectedCourse->course_id, 'date' => $selectedDate, 'tab' => 'meeting']) }}"
-                               class="btn btn-primary btn-sm flex items-center gap-1.5 font-semibold">
-                                <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
-                                <span>Open Meeting View</span>
-                            </a>
-                        </div>
                     </div>
 
-                    <section id="attendance-import" class="card p-4 space-y-3 scroll-mt-6" aria-labelledby="attendance-import-heading">
-                        <div>
-                            <h3 id="attendance-import-heading" class="font-semibold text-sm">Import attendance file</h3>
-                        </div>
-                        <form method="POST" action="{{ route('faculty.attendance.import') }}" enctype="multipart/form-data" class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4 lg:items-end">
-                            @csrf
-                            <input type="hidden" name="course_id" value="{{ $selectedCourse->course_id }}">
-                            <div class="sm:col-span-2">
-                                <div class="flex items-center justify-between gap-2">
-                                    <label for="attendance-import-file" class="field-label">CSV or Excel file</label>
-                                    <a href="{{ asset('attendance-import-template.xlsx') }}" class="text-xs text-indigo-600 dark:text-indigo-400 hover:underline">
-                                        Download sample Excel
-                                    </a>
-                                </div>
-                                <input id="attendance-import-file" name="file" type="file" accept=".csv,.xlsx" required class="field">
-                                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                                    Put student_number first, then use meeting dates as column headings (YYYY-MM-DD). Enter P/Present, A/Absent, L/Late, or E/Excused. Repeat a date column for multiple meetings on the same day.
-                                </p>
-                            </div>
-                            <div>
-                                <button type="submit" class="btn btn-primary btn-sm w-full">Upload and save attendance</button>
-                            </div>
-                        </form>
-                    </section>
                     <form x-ref="clearMeetingForm" method="POST"
                           action="{{ route('faculty.attendance.meeting.clear') }}" class="hidden">
                         @csrf
@@ -988,6 +875,20 @@
                                                                     <span x-text="Number(studentScores[{{ $enrollmentId }}].absence_percentage).toFixed(2)">{{ number_format($row['absence_percentage'], 2) }}</span>% /
                                                                     {{ number_format($row['maximum_absence_percentage'], 2) }}% semester
                                                                 </span>
+                                                                <div class="mt-1 w-40 max-w-full">
+                                                                    <div class="progress h-1.5" role="progressbar"
+                                                                         aria-label="Weekly absence threshold progress"
+                                                                         aria-valuemin="0" aria-valuemax="100"
+                                                                         x-bind:aria-valuenow="Math.round(weeklyProgressPercentage({{ $enrollmentId }}))">
+                                                                        <div class="progress-bar"
+                                                                             x-bind:class="weeklyProgressClass({{ $enrollmentId }})"
+                                                                             x-bind:style="`width: ${weeklyProgressPercentage({{ $enrollmentId }})}%`"></div>
+                                                                    </div>
+                                                                    <p class="muted mt-0.5 text-[10px]">
+                                                                        Weekly: <span x-text="Number(studentScores[{{ $enrollmentId }}].absent_hours).toFixed(2)"></span> /
+                                                                        {{ number_format($row['weekly_drop_threshold_hours'], 2) }}h
+                                                                    </p>
+                                                                </div>
                                                             @endif
                                                             @if (! $isDropped)
                                                                 <div x-show="studentScores[{{ $enrollmentId }}].is_drop_eligible" x-cloak>
@@ -1002,7 +903,7 @@
                                                                     20% semester absence reached. OSA may still review readmission.
                                                                 </span>
                                                                 <form method="POST" action="{{ route('faculty.enrollments.drop', $row['enrollment']) }}"
-                                                                      onsubmit="return confirm(studentScores[{{ $enrollmentId }}].is_permanent_drop_eligible ? 'Mark this as a permanent drop and refer the student to OSA? OSA may still review readmission.' : 'Drop this student to OSA for readmission review?')">
+                                                                      x-bind:data-confirm="studentScores[{{ $enrollmentId }}].is_permanent_drop_eligible ? 'Mark this as a permanent drop and refer the student to OSA? OSA may still review readmission.' : 'Drop this student to OSA for readmission review?'">
                                                                     @csrf
                                                                     <button type="submit" x-show="!studentScores[{{ $enrollmentId }}].is_permanent_drop_eligible"
                                                                             class="mt-1 text-[11px] font-semibold text-amber-700 dark:text-amber-400 underline underline-offset-2 hover:text-amber-900 dark:hover:text-amber-300">
@@ -1021,7 +922,7 @@
                                                                 </summary>
                                                                 <form method="POST" action="{{ route('faculty.enrollments.drop', $row['enrollment']) }}"
                                                                       class="mt-2 space-y-2"
-                                                                      onsubmit="return confirm('Refer this student to OSA for review of the stated circumstance?')">
+                                                                      data-confirm="Refer this student to OSA for review of the stated circumstance?">
                                                                     @csrf
                                                                     <input type="hidden" name="referral_type" value="circumstance">
                                                                     <label class="block text-[11px] font-medium text-gray-700 dark:text-gray-300">
@@ -1162,54 +1063,55 @@
 
         @endif
 
-        {{-- =========================================================================
-             ATTENDANCE SETTINGS MODAL (GEAR ICON)
-             ========================================================================= --}}
-        <div x-show="showSettingsModal" x-cloak
-             class="fixed inset-0 z-50 overflow-y-auto bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
-            <div class="bg-white dark:bg-gray-800 rounded-lg max-w-md w-full shadow-2xl border border-gray-200 dark:border-gray-700 overflow-hidden"
-                 @click.away="showSettingsModal = false">
-                <div class="card-header flex items-center justify-between border-b pb-3">
-                    <h3 class="font-semibold text-base">Attendance Settings</h3>
-                    <button type="button" @click="showSettingsModal = false" class="text-gray-400 hover:text-gray-700 font-bold text-lg">&times;</button>
-                </div>
-
-                <div class="p-5 space-y-4 text-xs">
-                    <div>
-                        <label class="field-label">Default Class Duration</label>
-                        <p class="font-semibold text-sm">{{ $sessionHours }} hours per meeting</p>
-                        <p class="muted mt-0.5 text-[11px]">Calculated from {{ $selectedCourse?->subject_code }} schedule.</p>
-                    </div>
-
-                    <div class="border-t pt-3 flex items-center justify-between">
+        @if ($selectedCourse)
+            <div x-show="showImportModal" x-cloak
+                 class="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto p-4"
+                 @keydown.escape.window="showImportModal = false">
+                <button type="button" class="modal-scrim absolute inset-0 cursor-default"
+                        aria-label="Close import attendance dialog" @click="showImportModal = false"></button>
+                <section class="modal-panel relative w-full max-w-2xl overflow-hidden shadow-xl"
+                         role="dialog" aria-modal="true" aria-labelledby="attendance-import-heading">
+                    <div class="card-header flex items-start justify-between gap-4">
                         <div>
-                            <p class="font-semibold">Schedule Warnings</p>
-                            <p class="muted text-[11px]">Warn when taking attendance outside scheduled days</p>
+                            <h2 id="attendance-import-heading" class="font-semibold">Import attendance file</h2>
+                            <p class="muted mt-1 text-sm">Upload attendance for {{ $selectedCourse->subject_code }}.</p>
                         </div>
-                        <form method="POST" action="{{ route('faculty.toggle-schedule-warning') }}">
-                            @csrf
-                            <button type="submit" class="btn btn-secondary btn-sm">
-                                {{ $faculty->suppress_schedule_warnings ? 'Enable' : 'Disable' }}
-                            </button>
-                        </form>
+                        <button type="button" class="btn btn-ghost btn-sm" aria-label="Close dialog"
+                                @click="showImportModal = false">&times;</button>
                     </div>
 
-                    <div class="border-t pt-3 flex flex-col gap-2">
-                        <p class="font-semibold">Course Tools</p>
-                        <a href="{{ route('faculty.dashboard', ['course_id' => $selectedCourse?->course_id, 'date' => $selectedDate, 'tab' => 'overall']) }}"
-                           class="link text-xs">
-                            View Overall Blackboard Grid
-                        </a>
-                    </div>
-                </div>
-
-                <div class="card-footer bg-gray-50/70 dark:bg-gray-800/70 flex justify-end p-3">
-                    <button type="button" @click="showSettingsModal = false" class="btn btn-primary btn-sm">
-                        Done
-                    </button>
-                </div>
+                    <form method="POST" action="{{ route('faculty.attendance.import') }}"
+                          enctype="multipart/form-data" class="space-y-4 p-5">
+                        @csrf
+                        <input type="hidden" name="course_id" value="{{ $selectedCourse->course_id }}">
+                        <div>
+                            <div class="flex flex-wrap items-center justify-between gap-2">
+                                <label for="attendance-import-file" class="field-label">CSV or Excel file</label>
+                                <a href="{{ asset('attendance-import-template.xlsx') }}"
+                                   class="text-xs text-indigo-600 hover:underline dark:text-indigo-400">
+                                    Download sample Excel
+                                </a>
+                            </div>
+                            <input id="attendance-import-file" name="file" type="file" accept=".csv,.xlsx"
+                                   required class="field mt-1">
+                            @error('file')
+                                <p class="mt-2 text-sm text-rose-600" role="alert">{{ $message }}</p>
+                            @enderror
+                            <p class="muted mt-2 text-xs">
+                                Put student_number first, then use meeting dates as column headings (YYYY-MM-DD).
+                                Enter P/Present, A/Absent, L/Late, or E/Excused. Repeat a date column for multiple
+                                meetings on the same day.
+                            </p>
+                        </div>
+                        <div class="flex justify-end gap-2">
+                            <button type="button" class="btn btn-secondary"
+                                    @click="showImportModal = false">Cancel</button>
+                            <button type="submit" class="btn btn-primary">Upload and save attendance</button>
+                        </div>
+                    </form>
+                </section>
             </div>
-        </div>
+        @endif
 
         {{-- =========================================================================
              OVERALL GRID CELL EDIT MODAL
@@ -1292,7 +1194,10 @@
     <script>
         function facultyDashboard(config) {
             return {
-                showSettingsModal: false,
+                showImportModal: config.importHasErrors,
+                meetingFilterOpen: false,
+                meetingSearch: '',
+                meetingStatus: 'all',
                 studentSortBy: 'student_number',
                 studentSortDirection: 1,
                 meetingMenu: { open: false, x: 0, y: 0, key: '' },
@@ -1348,6 +1253,16 @@
                     return config.meetingHoursByKey[this.selectedMeetingKey] || config.defaultSessionHours || 1.5;
                 },
 
+                meetingStudentMatches(index, name, studentNumber) {
+                    const search = this.meetingSearch.trim().toLocaleLowerCase();
+                    const matchesSearch = !search
+                        || `${name} ${studentNumber}`.toLocaleLowerCase().includes(search);
+                    const status = this.studentStatuses[index] || 'unmarked';
+
+                    return matchesSearch
+                        && (this.meetingStatus === 'all' || this.meetingStatus === status);
+                },
+
                 toggleStudentSortDirection() {
                     this.studentSortDirection *= -1;
                     this.sortStudentRows();
@@ -1376,10 +1291,19 @@
 
                 openMeetingMenu(event, key) {
                     this.selectedMeetingKey = key;
+                    const rect = event.currentTarget.getBoundingClientRect();
+                    const menuWidth = 208;
+                    const menuHeight = 240;
+                    const left = Math.max(8, Math.min(rect.left, window.innerWidth - menuWidth - 8));
+                    const below = rect.bottom + 4;
+                    const top = below + menuHeight <= window.innerHeight - 8
+                        ? below
+                        : Math.max(8, rect.top - menuHeight - 4);
+
                     this.meetingMenu = {
                         open: true,
-                        x: Math.max(8, Math.min(event.clientX, window.innerWidth - 220)),
-                        y: Math.max(8, Math.min(event.clientY, window.innerHeight - 240)),
+                        x: left,
+                        y: top,
                         key
                     };
                 },
@@ -1408,6 +1332,21 @@
                     }
 
                     return 'border-emerald-500 ring-1 ring-inset ring-emerald-500/40';
+                },
+
+                weeklyProgressPercentage(enrollmentId) {
+                    const score = this.studentScores[enrollmentId] || {};
+                    const threshold = Number(score.weekly_drop_threshold_hours) || 0;
+
+                    return threshold > 0
+                        ? Math.min(100, Math.max(0, (Number(score.absent_hours) / threshold) * 100))
+                        : 0;
+                },
+
+                weeklyProgressClass(enrollmentId) {
+                    const progress = this.weeklyProgressPercentage(enrollmentId);
+
+                    return progress >= 100 ? 'progress-bad' : (progress >= 80 ? 'progress-warn' : '');
                 },
 
                 applyAttendanceStats(enrollmentId, stats) {
@@ -1492,11 +1431,12 @@
                             const statusLabel = status.charAt(0).toUpperCase() + status.slice(1);
                             this.showToast(`${studentName}: ${statusLabel}`);
                         } else {
-                            alert(data.error || 'Failed to save attendance record.');
+                            window.showAppAlert(data.error || 'Failed to save attendance record.', 'Attendance update failed');
                         }
                     })
                     .catch(err => {
                         console.error('Save error:', err);
+                        window.showAppAlert(err.message || 'An error occurred while saving attendance.', 'Attendance update failed');
                     });
                 },
 
@@ -1562,21 +1502,23 @@
                     })
                     .catch(err => {
                         console.error('Mark all error:', err);
+                        window.showAppAlert(err.message || 'Attendance marks could not be saved.', 'Attendance update failed');
                     });
                 },
 
                 clearSelectedMeeting() {
-                    if (window.confirm('Clear attendance marks for this dated meeting? This will not delete the meeting.')) {
+                    window.showAppConfirm('Clear attendance marks for this dated meeting? This will not delete the meeting.', () => {
                         this.closeMeetingMenu();
-                        this.$refs.clearMeetingForm.submit();
-                    }
+                        this.$refs.clearMeetingForm.requestSubmit();
+                    });
                 },
 
                 deleteSelectedMeeting() {
-                    if (this.selectedMeetingScheduleId
-                        && window.confirm('Delete this dated meeting and its attendance marks? The recurring weekly schedule will remain.')) {
+                    if (this.selectedMeetingScheduleId) {
+                        window.showAppConfirm('Delete this dated meeting and its attendance marks? The recurring weekly schedule will remain.', () => {
                         this.closeMeetingMenu();
-                        this.$refs.deleteMeetingForm.submit();
+                            this.$refs.deleteMeetingForm.requestSubmit();
+                        });
                     }
                 },
 
@@ -1629,7 +1571,7 @@
                     })
                     .catch(error => {
                         this.closeMeetingMenu();
-                        alert(error.message);
+                        window.showAppAlert(error.message || 'The meeting could not be updated.', 'Attendance update failed');
                     });
                 },
 
@@ -1746,12 +1688,12 @@
 
                             this.showToast(`Updated ${studentName} to ${data.record.status.toUpperCase()}`);
                         } else {
-                            alert(data.error || 'Failed to save mark.');
+                            window.showAppAlert(data.error || 'Failed to save mark.', 'Attendance update failed');
                         }
                     })
                     .catch(err => {
                         this.cellSaving = false;
-                        alert(err.message || 'An error occurred while saving.');
+                        window.showAppAlert(err.message || 'An error occurred while saving.', 'Attendance update failed');
                     });
                 }
             };

@@ -20,7 +20,7 @@
 
             {{-- Danger zone: delete --}}
             <form method="POST" action="{{ route('faculty.courses.destroy', $course) }}"
-                  onsubmit="return confirm('Delete this subject? This cannot be undone.')">
+                  data-confirm="Delete this subject? This cannot be undone.">
                 @csrf
                 @method('DELETE')
                 <button type="submit"

@@ -151,7 +151,10 @@ class GoogleSignupTest extends TestCase
         $this->withSession(['google_auth_intent' => 'signup'])
             ->get(route('google.callback'))
             ->assertRedirect(route('login'))
-            ->assertSessionHas('status', 'An account already exists for this email. Please log in instead.');
+            ->assertSessionHas(
+                'status',
+                'An account already exists for this University email. Please sign in with Google instead. Student accounts may already have been created from a class list.'
+            );
 
         $this->assertGuest();
         $this->assertDatabaseCount('users', 1);

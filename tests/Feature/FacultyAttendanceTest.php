@@ -118,15 +118,64 @@ class FacultyAttendanceTest extends TestCase
         $response->assertSee('John Doe');
         $response->assertSee('Attendance records do not automatically drop students.');
         $response->assertSee('Add Schedule Slot');
-        $response->assertSee('Attendance settings');
-        $response->assertSee('Attendance Settings');
         $response->assertDontSee('grading period');
-        $response->assertSee('View Overall Blackboard Grid');
+        $response->assertDontSee('Attendance settings');
+        $response->assertDontSee('Open Meeting View');
+        $response->assertSee('CS 101 Schedule:')
+            ->assertSee('Import attendance file')
+            ->assertSee('Weekly absence threshold progress', false);
+        $response->assertSee('@click="$dispatch(\'open-attendance-import\')"', false)
+            ->assertSee('@open-attendance-import.window="showImportModal = true"', false);
+        $response->assertSee(route('faculty.subjects'));
         $response->assertSee('Student status:')
             ->assertSee('Green: below weekly threshold')
             ->assertSee('Yellow: approaching or meeting weekly-hours drop threshold')
             ->assertSee('Red: 20% permanent-drop level or already dropped')
             ->assertSee('studentStatusOutline');
+    }
+
+    public function test_faculty_can_choose_a_subject_on_a_separate_page(): void
+    {
+        $otherFacultyUser = User::factory()->faculty()->create();
+        $otherFaculty = FacultyMember::create([
+            'user_id' => $otherFacultyUser->user_id,
+            'full_name' => 'Other Faculty Member',
+            'department' => 'School of Information Technology',
+            'suppress_schedule_warnings' => false,
+        ]);
+        Course::create([
+            'faculty_id' => $otherFaculty->faculty_id,
+            'school_year_id' => $this->course->school_year_id,
+            'subject_code' => 'BIO 202',
+            'course_name' => 'Unassigned Biology',
+            'section' => 'BIO2A',
+            'hours_per_week' => 3,
+            'total_semester_hours' => 54,
+        ]);
+
+        $response = $this->actingAs($this->facultyUser)->get(route('faculty.subjects'));
+
+        $response->assertOk();
+        $response->assertSee('Subjects');
+        $response->assertSee('Introduction to Computing');
+        $response->assertSee(route('faculty.dashboard', ['course_id' => $this->course->course_id]));
+        $response->assertDontSee('Unassigned Biology');
+        $response->assertDontSee('John Doe');
+    }
+
+    public function test_meeting_view_provides_student_search_and_attendance_filters(): void
+    {
+        $response = $this->actingAs($this->facultyUser)->get(route('faculty.dashboard', [
+            'course_id' => $this->course->course_id,
+            'tab' => 'meeting',
+        ]));
+
+        $response->assertSee('Filter')
+            ->assertSee('Search students')
+            ->assertSee('All students')
+            ->assertSee('Unmarked')
+            ->assertSee('meetingStudentMatches', false)
+            ->assertDontSee('Open Meeting View');
     }
 
     public function test_faculty_can_browse_the_weekly_subject_schedule_and_jump_to_a_date(): void
@@ -1524,15 +1573,17 @@ class FacultyAttendanceTest extends TestCase
 
         $response = $this->actingAs($this->facultyUser)
             ->from(route('faculty.dashboard', ['course_id' => $this->course->course_id]))
+            ->followingRedirects()
             ->post(route('faculty.attendance.import'), [
                 'course_id' => $this->course->course_id,
                 'session_date' => '2025-08-11',
                 'file' => UploadedFile::fake()->createWithContent('attendance.csv', $csv),
             ]);
 
-        $response->assertRedirect(route('faculty.dashboard', ['course_id' => $this->course->course_id]));
-        $response->assertSessionHasErrors('file');
+        $response->assertSee('importHasErrors: true', false)
+            ->assertSee('Upload and save attendance');
         $this->assertDatabaseCount('attendance_records', 0);
+        $response->assertSee('Student 9999-9999 on row 2 is not enrolled in this course.');
     }
 
     public function test_attendance_import_requires_explicit_meeting_dates_in_the_file(): void
