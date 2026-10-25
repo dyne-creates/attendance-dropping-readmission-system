@@ -26,6 +26,8 @@ class ProfileTest extends TestCase
             ->assertSee('20254632@s.ubaguio.edu')
             ->assertSee('Student')
             ->assertSee('https://example.test/avatar.png')
+            ->assertSee('Profile')
+            ->assertSee('Log out')
             ->assertDontSee('Update Password')
             ->assertDontSee('Delete Account')
             ->assertDontSee('profile.update')

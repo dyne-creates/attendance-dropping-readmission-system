@@ -195,8 +195,10 @@ class GoogleController extends Controller
         }
 
         $avatarUrl = $googleAccount->getAvatar();
+        $googleName = trim((string) ($googleAccount->getName() ?? ''));
         $user->forceFill([
             'google_id' => $googleId,
+            'name' => $googleName !== '' ? $googleName : $user->name,
             'avatar_url' => $avatarUrl ?: $user->avatar_url,
             'email_verified_at' => $user->email_verified_at ?? now(),
         ])->save();

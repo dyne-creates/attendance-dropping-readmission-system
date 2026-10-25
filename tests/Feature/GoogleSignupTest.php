@@ -194,11 +194,12 @@ class GoogleSignupTest extends TestCase
         $this->assertDatabaseCount('users', 0);
     }
 
-    public function test_google_login_links_a_matching_legacy_account_without_overwriting_name(): void
+    public function test_google_login_updates_legacy_account_profile_from_google(): void
     {
         $user = User::factory()->create([
             'name' => 'Admin Corrected Name',
             'email' => '20254611@s.ubaguio.edu',
+            'avatar_url' => 'https://example.test/old-avatar.png',
         ]);
         $user->student()->create([
             'student_number' => '20254611',
@@ -212,7 +213,8 @@ class GoogleSignupTest extends TestCase
 
         $response->assertRedirect(route('student.dashboard'));
         $this->assertAuthenticatedAs($user);
-        $this->assertSame('Admin Corrected Name', $user->fresh()->name);
+        $this->assertSame('Dwayne Hinnong', $user->fresh()->name);
+        $this->assertSame('https://example.test/avatar.png', $user->fresh()->avatar_url);
         $this->assertSame('google-user-123', $user->fresh()->google_id);
     }
 
