@@ -16,14 +16,29 @@
     </x-slot>
 
     <div class="mx-auto max-w-7xl space-y-4 px-4 py-8 sm:px-6 lg:px-8"
-         x-data="{ showClassListImport: @js($errors->any()) }"
+         x-data="{ showClassListImport: @js($errors->has('file')) }"
          @open-class-list-import.window="showClassListImport = true"
          @keydown.escape.window="showClassListImport = false">
-        @if ($errors->any())
+        @if (session('success'))
+            <div class="alert alert-success" role="status">{{ session('success') }}</div>
+        @endif
+
+        @if ($errors->has('student_number'))
+            <div class="alert alert-warning" role="alert">
+                <p class="font-semibold">The student could not be added:</p>
+                <ul class="mt-1 list-inside list-disc text-xs font-normal">
+                    @foreach ($errors->get('student_number') as $error)
+                        <li>{{ $error }}</li>
+                    @endforeach
+                </ul>
+            </div>
+        @endif
+
+        @if ($errors->has('file'))
             <div class="alert alert-warning" role="alert">
                 <p class="font-semibold">The class list could not be imported:</p>
                 <ul class="mt-1 list-inside list-disc text-xs font-normal">
-                    @foreach ($errors->all() as $error)
+                    @foreach ($errors->get('file') as $error)
                         <li>{{ $error }}</li>
                     @endforeach
                 </ul>
@@ -52,17 +67,32 @@
                     </div>
                 </div>
 
-                <div class="flex shrink-0 flex-wrap gap-2">
-                    <a href="{{ route('faculty.dashboard', ['course_id' => $course->course_id]) }}"
-                       class="btn btn-primary btn-sm">Open attendance</a>
-                    <a href="{{ route('faculty.courses.edit', $course) }}"
-                       class="btn btn-secondary btn-sm">Edit subject</a>
+                <div class="flex shrink-0 flex-col gap-3">
+                    <div class="flex flex-wrap gap-2">
+                        <a href="{{ route('faculty.dashboard', ['course_id' => $course->course_id]) }}"
+                           class="btn btn-primary btn-sm">Open attendance</a>
+                        <a href="{{ route('faculty.courses.edit', $course) }}"
+                           class="btn btn-secondary btn-sm">Edit subject</a>
+                    </div>
+                    <form method="POST" action="{{ route('faculty.courses.enrollments.store', $course) }}"
+                          class="flex flex-wrap items-end gap-2">
+                        @csrf
+                        <div>
+                            <label for="student-number-{{ $course->course_id }}" class="field-label">
+                                Student ID (student number)
+                            </label>
+                            <input id="student-number-{{ $course->course_id }}" name="student_number"
+                                   type="text" maxlength="50" required autocomplete="off"
+                                   class="field mt-1 w-48">
+                        </div>
+                        <button type="submit" class="btn btn-secondary btn-sm">Add student</button>
+                    </form>
                 </div>
             </article>
         @empty
             <section class="card space-y-3 p-8 text-center">
                 <div>
-                    <h2 class="font-semibold">No subjects assigned</h2>
+                    <h2 class="font-semibold">No active subjects</h2>
                     <p class="mt-1 text-sm muted">Import a class list or add a subject to get started.</p>
                 </div>
                 <div class="flex justify-center gap-2">
@@ -74,6 +104,37 @@
                 </div>
             </section>
         @endforelse
+
+        @if ($archivedCourses->isNotEmpty())
+            <section class="space-y-3 pt-4">
+                <div>
+                    <h2 class="text-lg font-semibold">Archived Classes</h2>
+                    <p class="mt-1 text-sm muted">Archived subjects are hidden from attendance entry. Their records are kept and can be restored.</p>
+                </div>
+
+                @foreach ($archivedCourses as $course)
+                    <article class="card flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
+                        <div class="min-w-0">
+                            <div class="flex flex-wrap items-center gap-2">
+                                <h3 class="text-base font-semibold">{{ $course->subject_code }}</h3>
+                                <span class="badge badge-neutral">Section {{ $course->section }}</span>
+                                <span class="badge badge-warning">Archived</span>
+                            </div>
+                            <p class="mt-1 text-sm muted">{{ $course->course_name }}</p>
+                            <p class="mt-2 text-xs muted">
+                                {{ $course->enrollments_count }} {{ Str::plural('student record', $course->enrollments_count) }}
+                                · {{ $course->schoolYear->semester }} {{ $course->schoolYear->year_label }}
+                            </p>
+                        </div>
+
+                        <form method="POST" action="{{ route('faculty.courses.restore', $course) }}">
+                            @csrf
+                            <button type="submit" class="btn btn-secondary btn-sm">Restore class</button>
+                        </form>
+                    </article>
+                @endforeach
+            </section>
+        @endif
 
         <div x-show="showClassListImport" x-cloak
              class="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto p-4"

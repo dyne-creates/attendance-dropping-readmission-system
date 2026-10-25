@@ -95,11 +95,14 @@ Route::middleware(['auth', 'prevent-back-history'])->group(function () {
         Route::post('/', [FacultyCourseController::class, 'store'])->name('store');
         Route::get('/import', [FacultyCourseController::class, 'importForm'])->name('import');
         Route::post('/import', [FacultyCourseController::class, 'importClassList'])->name('import.store');
+        Route::post('/{course}/enrollments', [FacultyCourseController::class, 'storeEnrollment'])
+            ->name('enrollments.store');
         Route::get('/{course}/schedules/create', [FacultyCourseController::class, 'createSchedule'])->name('schedules.create');
         Route::post('/{course}/schedules', [FacultyCourseController::class, 'storeSchedule'])->name('schedules.store');
         Route::get('/{course}/edit', [FacultyCourseController::class, 'edit'])->name('edit');
         Route::put('/{course}', [FacultyCourseController::class, 'update'])->name('update');
-        Route::delete('/{course}', [FacultyCourseController::class, 'destroy'])->name('destroy');
+        Route::post('/{course}/archive', [FacultyCourseController::class, 'archive'])->name('archive');
+        Route::post('/{course}/restore', [FacultyCourseController::class, 'restore'])->name('restore');
     });
 
     Route::get('/osa-staff/dashboard', [OsaStaffController::class, 'dashboard'])

@@ -87,6 +87,39 @@ class FacultyCourseController extends Controller
         return view('faculty.courses.import');
     }
 
+    public function storeEnrollment(Request $request, Course $course): RedirectResponse
+    {
+        $this->authorizeActiveCourse($request, $course);
+
+        $validated = $request->validate([
+            'student_number' => ['required', 'string', 'max:50', 'exists:students,student_number'],
+        ]);
+
+        $student = Student::with('user')
+            ->where('student_number', $validated['student_number'])
+            ->firstOrFail();
+
+        if ($student->user->role !== 'student') {
+            throw ValidationException::withMessages([
+                'student_number' => 'The ID does not belong to a student account.',
+            ]);
+        }
+
+        $enrollment = $course->enrollments()->firstOrCreate(
+            ['student_id' => $student->student_id],
+            ['status' => 'enrolled', 'cycle_number' => 1],
+        );
+
+        if (! $enrollment->wasRecentlyCreated) {
+            throw ValidationException::withMessages([
+                'student_number' => 'This student already has an enrollment record for this subject.',
+            ]);
+        }
+
+        return redirect()->route('faculty.subjects')
+            ->with('success', "Student {$student->student_number} added to {$course->subject_code}.");
+    }
+
     public function importClassList(Request $request, SubjectClassListImportService $importService): RedirectResponse
     {
         $file = $request->file('file');
@@ -241,7 +274,7 @@ class FacultyCourseController extends Controller
             return $course;
         });
 
-        return redirect()->route('faculty.dashboard', ['course_id' => $course->course_id])
+        return redirect()->route('faculty.subjects')
             ->with('success', "Imported {$classList['subject_code']} with ".count($classList['students']).' students.');
     }
 
@@ -272,7 +305,7 @@ class FacultyCourseController extends Controller
      */
     public function edit(Request $request, Course $course): View
     {
-        $this->authorizeOwnership($request, $course);
+        $this->authorizeActiveCourse($request, $course);
 
         $course->load('schedules');
         $schoolYears = SchoolYear::orderByDesc('school_year_id')->get();
@@ -285,7 +318,7 @@ class FacultyCourseController extends Controller
      */
     public function update(Request $request, Course $course): RedirectResponse
     {
-        $this->authorizeOwnership($request, $course);
+        $this->authorizeActiveCourse($request, $course);
 
         $validated = $request->validate([
             'course_name' => ['required', 'string', 'max:255'],
@@ -335,7 +368,7 @@ class FacultyCourseController extends Controller
      */
     public function createSchedule(Request $request, Course $course): View
     {
-        $this->authorizeOwnership($request, $course);
+        $this->authorizeActiveCourse($request, $course);
         $course->load('schedules');
 
         return view('faculty.courses.schedules.create', compact('course'));
@@ -346,7 +379,7 @@ class FacultyCourseController extends Controller
      */
     public function storeSchedule(Request $request, Course $course): RedirectResponse
     {
-        $this->authorizeOwnership($request, $course);
+        $this->authorizeActiveCourse($request, $course);
 
         $validated = $request->validate([
             'day_of_week' => ['required', 'string', 'in:Mon,Tue,Wed,Thu,Fri,Sat,Sun'],
@@ -380,23 +413,35 @@ class FacultyCourseController extends Controller
         ])->with('success', 'Schedule slot added successfully.');
     }
 
-    /**
-     * Delete a subject. Only allowed if the faculty owns it.
-     */
-    public function destroy(Request $request, Course $course): RedirectResponse
+    public function archive(Request $request, Course $course): RedirectResponse
     {
-        $this->authorizeOwnership($request, $course);
+        $this->authorizeCourseOwnership($request, $course);
+        abort_if($course->is_archived, 404, 'This subject is already archived.');
 
-        $course->delete();
+        $course->update(['is_archived' => true]);
 
-        return redirect()->route('faculty.dashboard')
-            ->with('success', 'Subject deleted successfully.');
+        return redirect()->route('faculty.subjects')
+            ->with('success', "Subject {$course->subject_code} was archived. Its student and attendance records have been kept.");
     }
 
-    /**
-     * Ensure the authenticated faculty member owns the given course.
-     */
-    private function authorizeOwnership(Request $request, Course $course): void
+    public function restore(Request $request, Course $course): RedirectResponse
+    {
+        $this->authorizeCourseOwnership($request, $course);
+        abort_unless($course->is_archived, 404, 'This subject is not archived.');
+
+        $course->update(['is_archived' => false]);
+
+        return redirect()->route('faculty.subjects')
+            ->with('success', "Subject {$course->subject_code} was restored.");
+    }
+
+    private function authorizeActiveCourse(Request $request, Course $course): void
+    {
+        $this->authorizeCourseOwnership($request, $course);
+        abort_if($course->is_archived, 404, 'This subject is archived.');
+    }
+
+    private function authorizeCourseOwnership(Request $request, Course $course): void
     {
         /** @var FacultyMember $faculty */
         $faculty = $request->user()->facultyMember;

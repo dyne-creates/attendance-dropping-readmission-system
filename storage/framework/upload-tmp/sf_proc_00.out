@@ -1,0 +1,26 @@
+[server] php artisan serve
+[queue]  php artisan queue:listen --tries=1 --timeout=0
+[vite]   npm run dev
+
+[vite] 
+[vite] > dev
+[vite] > vite
+[vite] 
+[server] 
+[server]    INFO  Server running on [http://127.0.0.1:8000].  
+[server] 
+[queue] 
+[queue]    INFO  Processing jobs from the [default] queue.  
+[queue] 
+[server]   Press Ctrl+C to stop the server
+[server] 
+[vite] Port 5173 is in use, trying another one...
+[vite] 
+[vite]   [32m[1mVITE[22m v8.3.2[39m  [2mready in [0m[1m2157[22m[2m[0m ms[22m
+[vite] 
+[vite]   [32m➜[39m  [1mLocal[22m:   [36mhttp://localhost:[1m5174[22m/[39m
+[vite] [2m  [32m➜[39m  [1mNetwork[22m[2m: use [22m[1m--host[22m[2m to expose[22m
+[vite] 
+[vite]   [31m[1mLARAVEL[22m v13.33.0[39m  [2mplugin[22m [1mv3.2.0[22m
+[vite] 
+[vite]   [32m➜[39m  [1mAPP_URL[22m: [36mhttp://localhost:[1m8000[22m[39m

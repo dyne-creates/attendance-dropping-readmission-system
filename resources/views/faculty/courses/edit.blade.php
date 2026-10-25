@@ -18,14 +18,12 @@
                 </div>
             </div>
 
-            {{-- Danger zone: delete --}}
-            <form method="POST" action="{{ route('faculty.courses.destroy', $course) }}"
-                  data-confirm="Delete this subject? This cannot be undone.">
+            <form method="POST" action="{{ route('faculty.courses.archive', $course) }}"
+                  data-confirm="Archive this subject? It will be hidden from active subjects, but its students and attendance history will be kept. You can restore it later.">
                 @csrf
-                @method('DELETE')
                 <button type="submit"
-                        class="btn text-xs px-3 py-1.5 bg-red-50 dark:bg-red-950/30 text-red-700 dark:text-red-400 border border-red-200 dark:border-red-800 hover:bg-red-100 dark:hover:bg-red-900/40 transition-colors rounded">
-                    Delete Subject
+                        class="btn btn-secondary btn-sm">
+                    Archive Subject
                 </button>
             </form>
         </div>
