@@ -267,9 +267,24 @@
                             Download document
                         </a>
                     </div>
-                    <img src="{{ route('osa.readmissions.documents.preview', $document->document_id) }}"
-                         alt="Supporting document for readmission attempt {{ $request->attempt_number }}"
-                         class="max-h-96 max-w-full rounded-lg border object-contain">
+                    @php
+                        $documentExtension = strtolower(pathinfo($document->file_path, PATHINFO_EXTENSION));
+                    @endphp
+
+                    @if ($documentExtension === 'pdf')
+                        <iframe src="{{ route('osa.readmissions.documents.preview', $document->document_id) }}"
+                                title="Supporting PDF for readmission attempt {{ $request->attempt_number }}"
+                                class="h-96 w-full rounded-lg border"
+                                loading="lazy"></iframe>
+                    @elseif (in_array($documentExtension, ['jpg', 'jpeg', 'png'], true))
+                        <img src="{{ route('osa.readmissions.documents.preview', $document->document_id) }}"
+                             alt="Supporting document for readmission attempt {{ $request->attempt_number }}"
+                             class="max-h-96 max-w-full rounded-lg border object-contain">
+                    @else
+                        <p class="text-sm muted">
+                            Preview is not available for this file type. Download the document to review it.
+                        </p>
+                    @endif
                 @empty
                     <p class="text-sm muted">No supporting documents were uploaded.</p>
                 @endforelse

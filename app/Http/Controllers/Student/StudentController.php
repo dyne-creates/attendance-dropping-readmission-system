@@ -31,7 +31,7 @@ class StudentController extends Controller
                 ->with([
                     'course.schoolYear',
                     'course.schedules',
-                    'droppingTransactions.readmissionRequest',
+                    'droppingTransactions.readmissionRequests',
                     'attendanceRecords' => function (HasMany $query): void {
                         $query->orderBy('session_date');
                     },
@@ -54,10 +54,18 @@ class StudentController extends Controller
                 ->get();
 
         foreach ($enrollments as $enrollment) {
-            $drops = $enrollment->droppingTransactions->sortByDesc('drop_id');
+            $drops = $enrollment->droppingTransactions
+                ->sortByDesc('drop_id')
+                ->values();
+
+            foreach ($drops as $drop) {
+                $drop->setRelation('readmissionRequest', $drop->readmissionRequests->last());
+            }
+
             $latestDrop = $drops->first();
 
             $enrollment->setAttribute('drop_count', $drops->count());
+            $enrollment->setAttribute('drop_history', $drops);
             $enrollment->setAttribute('latest_drop', $latestDrop);
             $enrollment->setAttribute(
                 'overall_score',

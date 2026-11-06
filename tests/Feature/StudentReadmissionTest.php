@@ -18,6 +18,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Symfony\Component\HttpFoundation\File\UploadedFile as SymfonyUploadedFile;
 use Tests\TestCase;
@@ -47,6 +48,7 @@ class StudentReadmissionTest extends TestCase
         $response->assertSee('Parent Example');
         $response->assertSee('guardian@example.test');
         $response->assertSee('shown together in date order');
+        $response->assertSee('Submit legitimate supporting documents only');
         $response->assertSee('October 5, 2026');
         $response->assertSee('October 7, 2026');
         $response->assertSee('October 9, 2026');
@@ -62,6 +64,51 @@ class StudentReadmissionTest extends TestCase
         $response->assertSee('Request readmission');
         $response->assertSee('Permanent-drop case · OSA may review readmission');
         $response->assertSee(route('student.readmissions.create', $enrollment));
+    }
+
+    public function test_student_dashboard_shows_drop_reasons_history_and_readmission_outcomes(): void
+    {
+        [$user, , $faculty, $enrollment, $firstDrop] = $this->createDroppedStudent();
+        $firstDrop->update([
+            'drop_type' => DroppingTransaction::TYPE_INSTRUCTOR_REFERRAL,
+            'instructor_reason' => 'The student needs additional academic support.',
+        ]);
+        ReadmissionRequest::create([
+            'drop_id' => $firstDrop->drop_id,
+            'reason_code' => 'mental_health',
+            'channel' => 'online',
+            'status' => 'rejected',
+            'outcome' => ReadmissionRequest::OUTCOME_NOT_EXCUSED,
+            'rejection_reason' => 'Please provide more information.',
+        ]);
+
+        $secondDrop = DroppingTransaction::create([
+            'enrollment_id' => $enrollment->enrollment_id,
+            'dropped_by' => $faculty->faculty_id,
+            'absence_hours_at_drop' => 6,
+            'sequence_in_cycle' => 2,
+            'drop_date' => '2026-10-10',
+            'drop_type' => DroppingTransaction::TYPE_PERMANENT,
+        ]);
+        ReadmissionRequest::create([
+            'drop_id' => $secondDrop->drop_id,
+            'reason_code' => 'dental_medical',
+            'channel' => 'online',
+            'status' => 'approved',
+            'outcome' => ReadmissionRequest::OUTCOME_EXCUSED,
+        ]);
+
+        $response = $this->actingAs($user)->get(route('student.dashboard'));
+
+        $response->assertSee('Drop history');
+        $response->assertSee('Total drops: 2');
+        $response->assertSee('Faculty referral reason');
+        $response->assertSee('The student needs additional academic support.');
+        $response->assertSee('Absence hours reached the permanent-drop threshold.');
+        $response->assertSee('2 total drops');
+        $response->assertSee('Please provide more information.');
+        $response->assertSee('Not excused');
+        $response->assertSee('Excused');
     }
 
     public function test_osa_review_includes_guardian_absences_and_policy_consent(): void
@@ -148,7 +195,7 @@ class StudentReadmissionTest extends TestCase
             ->assertSee('Permanent');
     }
 
-    public function test_dropped_student_can_submit_a_readmission_request_with_a_supporting_image(): void
+    public function test_dropped_student_can_submit_a_readmission_request_with_a_pdf_supporting_document(): void
     {
         [$user, $student, , $enrollment] = $this->createDroppedStudent();
         Storage::fake();
@@ -158,7 +205,7 @@ class StudentReadmissionTest extends TestCase
                 'reason_code' => 'dental_medical',
                 'reason_details' => 'I was unable to attend due to a medical concern.',
                 'consent' => '1',
-                'attachment' => UploadedFile::fake()->image('medical-certificate.png'),
+                'attachment' => UploadedFile::fake()->create('medical-certificate.pdf', 10, 'application/pdf'),
                 'student_id' => 999999,
                 'section' => 'FORGED',
             ]);
@@ -179,6 +226,29 @@ class StudentReadmissionTest extends TestCase
 
         $document = $readmission->excuseDocuments()->firstOrFail();
         $this->assertSame('supporting_document', $document->document_type);
+        Storage::assertExists($document->file_path);
+    }
+
+    public function test_dropped_student_can_submit_a_readmission_request_with_a_docx_supporting_document(): void
+    {
+        [$user, , , $enrollment] = $this->createDroppedStudent();
+        Storage::fake();
+
+        $response = $this->actingAs($user)
+            ->post(route('student.readmissions.store', $enrollment), [
+                'reason_code' => 'dental_medical',
+                'consent' => '1',
+                'attachment' => UploadedFile::fake()->create(
+                    'medical-certificate.docx',
+                    10,
+                    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                ),
+            ]);
+
+        $response->assertRedirect(route('student.dashboard'));
+        $response->assertSessionHas('success');
+
+        $document = ReadmissionRequest::query()->firstOrFail()->excuseDocuments()->firstOrFail();
         Storage::assertExists($document->file_path);
     }
 
@@ -211,7 +281,8 @@ class StudentReadmissionTest extends TestCase
         $this->assertDatabaseCount('readmission_requests', 0);
     }
 
-    public function test_supporting_document_must_be_a_jpeg_or_png_image(): void
+    #[DataProvider('unsupportedSupportingDocuments')]
+    public function test_supporting_document_rejects_jpeg_and_png_uploads(string $fileName): void
     {
         [$user, , , $enrollment] = $this->createDroppedStudent();
         Storage::fake();
@@ -221,15 +292,25 @@ class StudentReadmissionTest extends TestCase
             ->post(route('student.readmissions.store', $enrollment), [
                 'reason_code' => 'mental_health',
                 'consent' => '1',
-                'attachment' => UploadedFile::fake()->create('document.pdf', 10, 'application/pdf'),
+                'attachment' => UploadedFile::fake()->image($fileName),
             ]);
 
-        $response->assertSessionHasErrors('attachment');
+        $response->assertSessionHasErrors([
+            'attachment' => 'The supporting document must be a PDF or DOCX file.',
+        ]);
         $this->assertDatabaseCount('readmission_requests', 0);
         $this->assertSame([], Storage::allFiles('readmission-documents'));
     }
 
-    public function test_dental_medical_and_personal_family_reasons_require_an_image(): void
+    public static function unsupportedSupportingDocuments(): array
+    {
+        return [
+            'JPEG' => ['medical-certificate.jpg'],
+            'PNG' => ['medical-certificate.png'],
+        ];
+    }
+
+    public function test_dental_medical_and_personal_family_reasons_require_a_document(): void
     {
         [$user, , , $enrollment] = $this->createDroppedStudent();
 
@@ -240,7 +321,9 @@ class StudentReadmissionTest extends TestCase
                 'consent' => '1',
             ]);
 
-        $response->assertSessionHasErrors('attachment');
+        $response->assertSessionHasErrors([
+            'attachment' => 'Please upload a PDF or DOCX supporting document for this reason.',
+        ]);
         $this->assertDatabaseCount('readmission_requests', 0);
     }
 
@@ -251,8 +334,8 @@ class StudentReadmissionTest extends TestCase
         file_put_contents($temporaryFile, 'invalid upload');
         $failedUpload = new SymfonyUploadedFile(
             $temporaryFile,
-            'medical.jpg',
-            'image/jpeg',
+            'medical.pdf',
+            'application/pdf',
             UPLOAD_ERR_INI_SIZE,
             true,
         );
@@ -267,7 +350,7 @@ class StudentReadmissionTest extends TestCase
                 ]);
 
             $response->assertSessionHasErrors([
-                'attachment' => 'The image exceeds the server upload limit. Choose a smaller image or increase upload_max_filesize and restart PHP.',
+                'attachment' => 'The supporting document exceeds the server upload limit. Choose a smaller PDF or DOCX file or increase upload_max_filesize and restart PHP.',
             ]);
             $this->assertDatabaseCount('readmission_requests', 0);
         } finally {
@@ -326,7 +409,8 @@ class StudentReadmissionTest extends TestCase
         $readmission = ReadmissionRequest::create([
             'drop_id' => $drop->drop_id,
             'attempt_number' => 1,
-            'reason_code' => 'mental_health',
+            'reason_code' => 'other',
+            'reason_details' => 'My original explanation.',
             'channel' => 'online',
         ]);
 
@@ -348,11 +432,16 @@ class StudentReadmissionTest extends TestCase
             ->get(route('student.readmissions.create', $enrollment))
             ->assertSee('Attempt 1')
             ->assertSee('Please submit an updated supporting document.')
+            ->assertSee('OSA requested corrections')
+            ->assertSee('option value="other" selected', false)
+            ->assertSee('My original explanation.')
+            ->assertSee('Submit corrected request')
             ->assertSee('Submitting attempt 2.');
 
         $response = $this->actingAs($user)
             ->post(route('student.readmissions.store', $enrollment), [
-                'reason_code' => 'mental_health',
+                'reason_code' => 'other',
+                'reason_details' => 'My updated explanation.',
                 'consent' => '1',
             ]);
 
@@ -360,7 +449,8 @@ class StudentReadmissionTest extends TestCase
         $this->assertDatabaseHas('readmission_requests', [
             'drop_id' => $drop->drop_id,
             'attempt_number' => 2,
-            'reason_code' => 'mental_health',
+            'reason_code' => 'other',
+            'reason_details' => 'My updated explanation.',
             'status' => 'pending',
         ]);
         $this->assertDatabaseCount('readmission_requests', 2);
@@ -650,6 +740,61 @@ class StudentReadmissionTest extends TestCase
             ->get(route('osa.readmissions.documents.preview', $document->document_id))
             ->assertOk()
             ->assertHeader('X-Content-Type-Options', 'nosniff');
+    }
+
+    public function test_osa_can_preview_pdf_supporting_documents(): void
+    {
+        [, , , , $drop] = $this->createDroppedStudent();
+        Storage::fake('local');
+        $filePath = UploadedFile::fake()->create('medical.pdf', 10, 'application/pdf')
+            ->store('readmission-documents', 'local');
+        $readmission = ReadmissionRequest::create([
+            'drop_id' => $drop->drop_id,
+            'reason_code' => 'dental_medical',
+            'channel' => 'online',
+            'status' => 'rejected',
+        ]);
+        $document = $readmission->excuseDocuments()->create([
+            'document_type' => 'supporting_document',
+            'file_path' => $filePath,
+        ]);
+        $osaUser = User::factory()->osaStaff()->create();
+
+        $response = $this->actingAs($osaUser)
+            ->get(route('osa.readmissions.show', $readmission->readmission_id));
+
+        $response->assertSee('<iframe', false)
+            ->assertSee(route('osa.readmissions.documents.preview', $document->document_id));
+    }
+
+    public function test_osa_can_download_docx_supporting_documents_without_an_image_preview(): void
+    {
+        [, , , , $drop] = $this->createDroppedStudent();
+        Storage::fake('local');
+        Storage::disk('local')->put('readmission-documents/medical.docx', 'private Word document');
+        $readmission = ReadmissionRequest::create([
+            'drop_id' => $drop->drop_id,
+            'reason_code' => 'dental_medical',
+            'channel' => 'online',
+            'status' => 'rejected',
+        ]);
+        $document = $readmission->excuseDocuments()->create([
+            'document_type' => 'supporting_document',
+            'file_path' => 'readmission-documents/medical.docx',
+        ]);
+        $osaUser = User::factory()->osaStaff()->create();
+
+        $response = $this->actingAs($osaUser)
+            ->get(route('osa.readmissions.show', $readmission->readmission_id));
+
+        $response->assertSee('Download document')
+            ->assertSee('Preview is not available for this file type.')
+            ->assertDontSee(route('osa.readmissions.documents.preview', $document->document_id));
+
+        $this->actingAs($osaUser)
+            ->get(route('osa.readmissions.documents.download', $document))
+            ->assertOk()
+            ->assertStreamedContent('private Word document');
     }
 
     public function test_student_cannot_download_an_osa_only_supporting_document(): void

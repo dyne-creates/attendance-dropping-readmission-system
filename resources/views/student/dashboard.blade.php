@@ -46,6 +46,12 @@
                             $score = $enrollment->overall_score ?? 100.0;
                             $pillClass = $score >= 90 ? 'bb-pill-green' : ($score >= 80 ? 'bb-pill-lime' : ($score >= 70 ? 'bb-pill-yellow' : 'bb-pill-red'));
                             $scoreText = ($score == 100) ? '100 / 100' : number_format($score, 2) . ' / 100';
+                            $latestDropReason = match ($enrollment->latest_drop?->drop_type) {
+                                \App\Models\DroppingTransaction::TYPE_PERMANENT => 'Absence hours reached the permanent-drop threshold.',
+                                \App\Models\DroppingTransaction::TYPE_INSTRUCTOR_REFERRAL => 'The instructor referred the case to OSA.',
+                                \App\Models\DroppingTransaction::TYPE_WEEKLY_HOURS => 'The weekly absence-hours threshold was reached.',
+                                default => 'No dropping reason was recorded.',
+                            };
                             $statusOutlineClass = $enrollment->status === 'dropped' || $enrollment->absence_warning === 'limit_reached'
                                 ? 'ring-rose-500/60'
                                 : (in_array($enrollment->absence_warning, ['approaching_limit', 'weekly_drop_eligible'], true)
@@ -71,6 +77,7 @@
 
                                             @if ($enrollment->status === 'dropped')
                                                 <span class="badge badge-neutral">Dropped</span>
+                                                <span class="badge badge-neutral">{{ $enrollment->drop_count }} total drops</span>
                                                 @if ($enrollment->latest_drop?->drop_type === \App\Models\DroppingTransaction::TYPE_PERMANENT)
                                                     <span class="badge badge-danger">Permanent-drop case · OSA may review readmission</span>
                                                 @elseif ($enrollment->latest_drop?->drop_type === \App\Models\DroppingTransaction::TYPE_INSTRUCTOR_REFERRAL)
@@ -113,6 +120,17 @@
                                         <p class="muted mt-0.5 text-sm">
                                             {{ $enrollment->course->subject_code }}, section {{ $enrollment->course->section }}
                                         </p>
+                                        @if ($enrollment->status === 'dropped')
+                                            <p class="muted mt-2 text-sm">
+                                                <span class="font-medium">Latest dropping reason:</span> {{ $latestDropReason }}
+                                            </p>
+                                            @if ($enrollment->latest_drop?->instructor_reason)
+                                                <p class="muted mt-1 whitespace-pre-line text-sm">
+                                                    <span class="font-medium">Faculty referral reason:</span>
+                                                    {{ $enrollment->latest_drop->instructor_reason }}
+                                                </p>
+                                            @endif
+                                        @endif
                                     </div>
 
                                     <svg class="chevron muted mt-1 h-5 w-5 shrink-0" fill="none" stroke="currentColor"
@@ -193,6 +211,83 @@
                                     :absent="$enrollment->absent_count"
                                     :excused="$enrollment->excused_count" />
                             </summary>
+
+                            @if ($enrollment->drop_history->isNotEmpty())
+                                <section class="space-y-4 border-t p-5" aria-labelledby="drop-history-{{ $enrollment->enrollment_id }}">
+                                    <div>
+                                        <h4 id="drop-history-{{ $enrollment->enrollment_id }}" class="font-semibold">
+                                            Drop history
+                                        </h4>
+                                        <p class="muted mt-1 text-sm">
+                                            Total drops: {{ $enrollment->drop_count }}
+                                        </p>
+                                    </div>
+
+                                    <ol class="space-y-3">
+                                        @foreach ($enrollment->drop_history as $drop)
+                                            @php
+                                                $latestReadmission = $drop->readmissionRequest;
+                                                $dropReason = match ($drop->drop_type) {
+                                                    \App\Models\DroppingTransaction::TYPE_PERMANENT => 'Absence hours reached the permanent-drop threshold.',
+                                                    \App\Models\DroppingTransaction::TYPE_INSTRUCTOR_REFERRAL => 'The instructor referred the case to OSA.',
+                                                    default => 'The weekly absence-hours threshold was reached.',
+                                                };
+                                                [$readmissionStatus, $readmissionStatusClass] = match ($latestReadmission?->outcome) {
+                                                    \App\Models\ReadmissionRequest::OUTCOME_EXCUSED => ['Excused', 'badge-success'],
+                                                    \App\Models\ReadmissionRequest::OUTCOME_NOT_EXCUSED => ['Not excused', 'badge-warning'],
+                                                    \App\Models\ReadmissionRequest::OUTCOME_REJECTED => ['Unexcused — rejected', 'badge-danger'],
+                                                    \App\Models\ReadmissionRequest::OUTCOME_APPROVED => ['Approved', 'badge-success'],
+                                                    default => match ($latestReadmission?->status) {
+                                                        'pending' => ['Pending OSA review', 'badge-warning'],
+                                                        'approved' => ['Approved', 'badge-success'],
+                                                        'rejected' => ['Rejected', 'badge-danger'],
+                                                        default => ['No request submitted', 'badge-neutral'],
+                                                    },
+                                                };
+                                            @endphp
+
+                                            <li class="rounded-lg border p-4">
+                                                <div class="flex flex-wrap items-center justify-between gap-2">
+                                                    <p class="font-medium">
+                                                        Drop on {{ $drop->drop_date->format('F j, Y') }}
+                                                    </p>
+                                                    <span class="badge {{ $readmissionStatusClass }}">
+                                                        {{ $readmissionStatus }}
+                                                    </span>
+                                                </div>
+
+                                                <dl class="mt-3 grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
+                                                    <div>
+                                                        <dt class="field-label">Dropping reason</dt>
+                                                        <dd class="mt-1">{{ $dropReason }}</dd>
+                                                    </div>
+                                                    <div>
+                                                        <dt class="field-label">Absence hours at drop</dt>
+                                                        <dd class="mt-1">{{ number_format((float) $drop->absence_hours_at_drop, 2) }} hours</dd>
+                                                    </div>
+                                                    @if ($drop->instructor_reason)
+                                                        <div class="sm:col-span-2">
+                                                            <dt class="field-label">Faculty referral reason</dt>
+                                                            <dd class="mt-1 whitespace-pre-line">{{ $drop->instructor_reason }}</dd>
+                                                        </div>
+                                                    @endif
+                                                    @if ($latestReadmission)
+                                                        <div class="sm:col-span-2">
+                                                            <dt class="field-label">Readmission attempt</dt>
+                                                            <dd class="mt-1">
+                                                                Attempt {{ $latestReadmission->attempt_number }}
+                                                                @if ($latestReadmission->rejection_reason)
+                                                                    <span class="muted">— {{ $latestReadmission->rejection_reason }}</span>
+                                                                @endif
+                                                            </dd>
+                                                        </div>
+                                                    @endif
+                                                </dl>
+                                            </li>
+                                        @endforeach
+                                    </ol>
+                                </section>
+                            @endif
 
                             <div class="overflow-x-auto border-t">
                                 <table class="data-table">

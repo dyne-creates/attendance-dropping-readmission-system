@@ -69,6 +69,9 @@ class StudentReadmissionController extends Controller
             'dropCount' => $enrollment->droppingTransactions()->count(),
             'attemptNumber' => ($latestAttempt?->attempt_number ?? 0) + 1,
             'previousAttempts' => $drop->readmissionRequests,
+            'correctionAttempt' => $latestAttempt?->outcome === ReadmissionRequest::OUTCOME_NOT_EXCUSED
+                ? $latestAttempt
+                : null,
             'absenceDates' => $absenceDates,
             'reasons' => ReadmissionRequest::REASONS,
             'guardian' => $student->guardians->first(),
@@ -90,13 +93,13 @@ class StudentReadmissionController extends Controller
 
         if ($attachment instanceof UploadedFile && ! $attachment->isValid()) {
             $message = match ($attachment->getError()) {
-                UPLOAD_ERR_INI_SIZE => 'The image exceeds the server upload limit. Choose a smaller image or increase upload_max_filesize and restart PHP.',
-                UPLOAD_ERR_FORM_SIZE => 'The image exceeds the maximum size allowed by this form.',
-                UPLOAD_ERR_PARTIAL => 'The image upload was interrupted. Please select it again and retry.',
+                UPLOAD_ERR_INI_SIZE => 'The supporting document exceeds the server upload limit. Choose a smaller PDF or DOCX file or increase upload_max_filesize and restart PHP.',
+                UPLOAD_ERR_FORM_SIZE => 'The supporting document exceeds the maximum size allowed by this form.',
+                UPLOAD_ERR_PARTIAL => 'The document upload was interrupted. Please select it again and retry.',
                 UPLOAD_ERR_NO_TMP_DIR => 'The server is missing its temporary upload folder. Please contact the administrator.',
-                UPLOAD_ERR_CANT_WRITE => 'The server could not save the uploaded image. Please contact the administrator.',
-                UPLOAD_ERR_EXTENSION => 'A server extension stopped the image upload. Please contact the administrator.',
-                default => 'The image could not be uploaded. Please select it again and retry.',
+                UPLOAD_ERR_CANT_WRITE => 'The server could not save the uploaded document. Please contact the administrator.',
+                UPLOAD_ERR_EXTENSION => 'A server extension stopped the document upload. Please contact the administrator.',
+                default => 'The document could not be uploaded. Please select it again and retry.',
             };
 
             return back()
@@ -111,12 +114,15 @@ class StudentReadmissionController extends Controller
                 Rule::requiredIf(in_array($request->input('reason_code'), ['dental_medical', 'personal_family'], true)),
                 'nullable',
                 'file',
-                'image',
-                'mimes:jpg,jpeg,png',
-                'extensions:jpg,jpeg,png',
+                'mimes:pdf,docx',
+                'extensions:pdf,docx',
                 'max:5120',
             ],
             'consent' => ['accepted'],
+        ], [
+            'attachment.required' => 'Please upload a PDF or DOCX supporting document for this reason.',
+            'attachment.mimes' => 'The supporting document must be a PDF or DOCX file.',
+            'attachment.extensions' => 'The supporting document must be a PDF or DOCX file.',
         ]);
 
         $drop = $enrollment->droppingTransactions()

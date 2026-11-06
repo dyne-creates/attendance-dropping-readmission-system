@@ -23,6 +23,15 @@
             </div>
         @endif
 
+        @if ($correctionAttempt)
+            <div class="alert alert-warning whitespace-pre-line" role="status">
+                OSA requested corrections to attempt {{ $correctionAttempt->attempt_number }}.
+                {{ $correctionAttempt->rejection_reason }}
+                Review your previous answers below, make the requested changes, and submit a corrected request.
+                This will be saved as a new attempt so your request history remains available.
+            </div>
+        @endif
+
         <section class="card p-5 sm:p-6" aria-labelledby="policy-heading">
             <h2 id="policy-heading" class="text-lg font-semibold">Section 1: Attendance monitoring and consent</h2>
             <div class="muted mt-3 space-y-3 text-sm leading-6">
@@ -187,10 +196,16 @@
                   action="{{ route('student.readmissions.store', $enrollment) }}"
                   enctype="multipart/form-data"
                   class="mt-6 space-y-5"
-                  x-data="{ imagePreview: null, selectedFileName: '', attachmentRequired: @js(in_array(old('reason_code'), ['dental_medical', 'personal_family'], true)) }">
+                  x-data="{ selectedDocumentName: '', attachmentRequired: @js(in_array(old('reason_code', $correctionAttempt?->reason_code), ['dental_medical', 'personal_family'], true)) }">
                 @csrf
 
                 <p class="muted text-sm">Submitting attempt {{ $attemptNumber }}.</p>
+
+                <div class="alert alert-danger" role="alert">
+                    <strong>Submit legitimate supporting documents only.</strong>
+                    Submitting altered or falsified documents may result in disciplinary action.
+                    Only PDF and DOCX files are accepted, up to 5 MB.
+                </div>
 
                 <div>
                     <label for="reason_code" class="field-label mb-1">Reason for absences <span aria-hidden="true">*</span></label>
@@ -198,7 +213,7 @@
                             @change="attachmentRequired = ['dental_medical', 'personal_family'].includes($event.target.value)">
                         <option value="">Select a reason</option>
                         @foreach ($reasons as $code => $label)
-                            <option value="{{ $code }}" @selected(old('reason_code') === $code)>{{ $label }}</option>
+                            <option value="{{ $code }}" @selected(old('reason_code', $correctionAttempt?->reason_code) === $code)>{{ $label }}</option>
                         @endforeach
                     </select>
                     @error('reason_code')
@@ -208,7 +223,7 @@
 
                 <div>
                     <label for="reason_details" class="field-label mb-1">Additional details <span class="muted">(required if you select Other)</span></label>
-                    <textarea id="reason_details" name="reason_details" rows="4" maxlength="2000" class="field">{{ old('reason_details') }}</textarea>
+                    <textarea id="reason_details" name="reason_details" rows="4" maxlength="2000" class="field">{{ old('reason_details', $correctionAttempt?->reason_details) }}</textarea>
                     @error('reason_details')
                         <p class="field-error mt-1">{{ $message }}</p>
                     @enderror
@@ -217,18 +232,16 @@
                 <div>
                     <label for="attachment" class="field-label mb-1">
                         Supporting document
-                        <span class="muted">(required for dental/medical and personal/family emergencies; JPEG or PNG only)</span>
+                        <span class="muted">(required for dental/medical and personal/family emergencies; PDF or DOCX only)</span>
                     </label>
-                    <input id="attachment" name="attachment" type="file" accept=".jpg,.jpeg,.png,image/jpeg,image/png"
+                    <input id="attachment" name="attachment" type="file"
+                           accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                            class="field" :required="attachmentRequired"
                            @change="
                                const file = $event.target.files[0];
-                               selectedFileName = file ? file.name : '';
-                               imagePreview = file ? URL.createObjectURL(file) : null;
+                               selectedDocumentName = file ? file.name : '';
                            ">
-                    <p class="muted mt-1 text-sm" x-text="selectedFileName || 'No image selected.'"></p>
-                    <img x-show="imagePreview" x-cloak :src="imagePreview" alt="Selected supporting document preview"
-                         class="mt-3 max-h-72 rounded-lg border object-contain">
+                    <p class="muted mt-1 text-sm" x-text="selectedDocumentName || 'No document selected.'"></p>
                     @error('attachment')
                         <p class="field-error mt-1">{{ $message }}</p>
                     @enderror
@@ -280,7 +293,9 @@
 
                 <div class="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
                     <a href="{{ route('student.dashboard') }}" class="btn btn-secondary">Cancel</a>
-                    <button type="submit" class="btn btn-primary">Submit readmission request</button>
+                    <button type="submit" class="btn btn-primary">
+                        {{ $correctionAttempt ? 'Submit corrected request' : 'Submit readmission request' }}
+                    </button>
                 </div>
             </form>
         </section>
