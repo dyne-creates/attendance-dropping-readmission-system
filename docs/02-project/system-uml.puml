@@ -1,0 +1,238 @@
+@startuml ADRS-Use-Cases
+left to right direction
+skinparam packageStyle rectangle
+
+actor Student
+actor Faculty
+actor "OSA Staff" as OSA
+actor "University of Baguio\nGoogle Account" as Google
+
+rectangle "Attendance, Dropping and Readmission System" {
+    usecase "Register / sign in" as UC_Auth
+    usecase "View own attendance\nand enrollment status" as UC_StudentDashboard
+    usecase "Submit readmission\nrequest" as UC_SubmitReadmission
+    usecase "Track request status" as UC_TrackReadmission
+    usecase "Manage courses,\nclass lists and schedules" as UC_Courses
+    usecase "Record / import\nattendance" as UC_Attendance
+    usecase "Review attendance history" as UC_History
+    usecase "Record a student drop\nor OSA referral" as UC_Drop
+    usecase "Switch OSA department" as UC_Department
+    usecase "Review readmission\nrequest and documents" as UC_Review
+    usecase "Approve, reject,\nor process excuse" as UC_Decision
+    usecase "View drop and\nreadmission archives" as UC_Archive
+    usecase "Export readmission records" as UC_Export
+    usecase "Receive status\nnotifications" as UC_Notify
+}
+
+Student --> UC_Auth
+Student --> UC_StudentDashboard
+Student --> UC_SubmitReadmission
+Student --> UC_TrackReadmission
+Student --> UC_Notify
+
+Faculty --> UC_Auth
+Faculty --> UC_Courses
+Faculty --> UC_Attendance
+Faculty --> UC_History
+Faculty --> UC_Drop
+
+OSA --> UC_Auth
+OSA --> UC_Department
+OSA --> UC_Review
+OSA --> UC_Decision
+OSA --> UC_Archive
+OSA --> UC_Export
+OSA --> UC_Notify
+
+Google --> UC_Auth
+UC_Decision ..> UC_Review : <<include>>
+UC_Notify ..> UC_Decision : follows decision
+
+note right of UC_SubmitReadmission
+Precondition: the student's enrollment
+has already been dropped.
+end note
+
+note right of UC_Department
+Department choices are currently configured
+values. Information Technology (IT) is
+the only configured department.
+end note
+
+@enduml
+
+@startuml ADRS-Class-Model
+skinparam classAttributeIconSize 0
+hide methods
+
+class User {
+    user_id
+    name
+    email
+    role
+    google_id
+    avatar_url
+}
+
+class Student {
+    student_id
+    student_number
+    department
+    program
+    year_level
+}
+
+class FacultyMember {
+    faculty_id
+    full_name
+    department
+}
+
+class OsaStaff {
+    osa_id
+}
+
+class Guardian {
+    guardian_id
+    full_name
+    email
+}
+
+class GuardianConsent {
+    consent_id
+    consent_type
+    status
+}
+
+class SchoolYear {
+    school_year_id
+    year_label
+    semester
+    is_archived
+}
+
+class Course {
+    course_id
+    subject_code
+    course_name
+    section
+}
+
+class CourseSchedule {
+    schedule_id
+    day_of_week
+    start_time
+    end_time
+    room
+}
+
+class Enrollment {
+    enrollment_id
+    status
+    cycle_number
+}
+
+class AttendanceRecord {
+    attendance_id
+    session_date
+    status
+    hours_absent
+    remarks
+}
+
+class DroppingTransaction {
+    drop_id
+    drop_date
+    drop_type
+    absence_hours_at_drop
+}
+
+class ReadmissionRequest {
+    readmission_id
+    attempt_number
+    reason_code
+    status
+    outcome
+}
+
+class ExcuseDocument {
+    document_id
+    document_type
+    file_path
+}
+
+class Notification {
+    notification_id
+    notification_type
+    channel
+    sent_at
+}
+
+User "1" -- "0..1" Student : student profile
+User "1" -- "0..1" FacultyMember : faculty profile
+User "1" -- "0..1" OsaStaff : OSA profile
+
+Student "1" -- "0..*" Guardian
+Guardian "1" -- "0..*" GuardianConsent
+Student "1" -- "0..*" Enrollment
+FacultyMember "1" -- "0..*" Course : teaches
+SchoolYear "1" -- "0..*" Course
+Course "1" -- "0..*" CourseSchedule
+Course "1" -- "0..*" Enrollment
+
+Enrollment "1" -- "0..*" AttendanceRecord
+FacultyMember "1" -- "0..*" AttendanceRecord : records
+Enrollment "1" -- "0..*" DroppingTransaction
+FacultyMember "1" -- "0..*" DroppingTransaction : records drop
+DroppingTransaction "1" -- "0..*" ReadmissionRequest : attempts
+OsaStaff "0..1" -- "0..*" ReadmissionRequest : processes
+ReadmissionRequest "1" -- "0..*" ExcuseDocument
+
+ReadmissionRequest "0..1" -- "0..*" Notification
+OsaStaff "0..1" -- "0..*" Notification : sends
+Student "0..1" -- "0..*" Notification : receives
+Guardian "0..1" -- "0..*" Notification : receives
+
+note bottom of Student
+Department is stored as text on the student
+record; it is not yet a Department entity.
+end note
+
+note bottom of ReadmissionRequest
+Multiple attempts are allowed per drop.
+Each attempt has a unique attempt number
+within that drop.
+end note
+
+@enduml
+
+@startuml ADRS-Readmission-Workflow
+autonumber
+actor Student
+participant "ADRS" as System
+actor Faculty
+actor "OSA Staff" as OSA
+
+Faculty -> System : Record attendance
+Faculty -> System : Record drop / refer student to OSA
+System -> Student : Notify of dropped status
+
+Student -> System : Submit readmission request\n(reason, details, required document, consent)
+System -> System : Validate dropped enrollment and request
+System -> OSA : Add request to selected department's queue
+
+OSA -> System : Review request and supporting documents
+alt Approved
+    OSA -> System : Approve readmission
+    System -> System : Set enrollment to readmitted
+    System -> Student : Send approval notification
+    System -> Faculty : Send approval notification
+else Excused / needs revised request
+    OSA -> System : Record excuse dates or mark not excused
+    System -> Student : Send outcome and next-step notification
+else Rejected
+    OSA -> System : Reject with decision reason
+    System -> Student : Send rejection notification
+end
+
+@enduml
