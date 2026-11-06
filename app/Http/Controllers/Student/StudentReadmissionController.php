@@ -137,61 +137,69 @@ class StudentReadmissionController extends Controller
                 ->with('info', 'A readmission request is already awaiting review or has been approved.');
         }
 
-        $created = DB::transaction(function () use ($request, $validated, $student, $enrollment, $drop): bool {
-            $lockedDrop = DroppingTransaction::query()
-                ->whereKey($drop->drop_id)
-                ->lockForUpdate()
-                ->firstOrFail();
+        try {
+            $created = DB::transaction(function () use ($request, $validated, $student, $enrollment, $drop): bool {
+                $lockedDrop = DroppingTransaction::query()
+                    ->whereKey($drop->drop_id)
+                    ->lockForUpdate()
+                    ->firstOrFail();
 
-            $lockedEnrollment = Enrollment::query()
-                ->whereKey($enrollment->enrollment_id)
-                ->lockForUpdate()
-                ->firstOrFail();
+                $lockedEnrollment = Enrollment::query()
+                    ->whereKey($enrollment->enrollment_id)
+                    ->lockForUpdate()
+                    ->firstOrFail();
 
-            abort_unless(
-                $lockedEnrollment->student_id === $student->student_id
-                    && $lockedEnrollment->status === 'dropped'
-                    && $lockedDrop->enrollment_id === $lockedEnrollment->enrollment_id,
-                404,
-            );
+                abort_unless(
+                    $lockedEnrollment->student_id === $student->student_id
+                        && $lockedEnrollment->status === 'dropped'
+                        && $lockedDrop->enrollment_id === $lockedEnrollment->enrollment_id,
+                    404,
+                );
 
-            $latestRequest = ReadmissionRequest::query()
-                ->where('drop_id', $lockedDrop->drop_id)
-                ->lockForUpdate()
-                ->orderByDesc('attempt_number')
-                ->first();
+                $latestRequest = ReadmissionRequest::query()
+                    ->where('drop_id', $lockedDrop->drop_id)
+                    ->lockForUpdate()
+                    ->orderByDesc('attempt_number')
+                    ->first();
 
-            if ($latestRequest !== null && (
-                $latestRequest->status !== 'rejected'
-                || $latestRequest->outcome === ReadmissionRequest::OUTCOME_REJECTED
-            )) {
-                return false;
-            }
-
-            $readmission = ReadmissionRequest::create([
-                'drop_id' => $lockedDrop->drop_id,
-                'attempt_number' => ($latestRequest?->attempt_number ?? 0) + 1,
-                'reason_code' => $validated['reason_code'],
-                'reason_details' => $validated['reason_details'] ?? null,
-                'policy_acknowledged_at' => now(),
-                'channel' => 'online',
-            ]);
-
-            if ($request->hasFile('attachment')) {
-                $filePath = $request->file('attachment')->store('readmission-documents', 'local');
-
-                if ($filePath === false) {
-                    throw new RuntimeException('The supporting document could not be stored.');
+                if ($latestRequest !== null && (
+                    $latestRequest->status !== 'rejected'
+                    || $latestRequest->outcome === ReadmissionRequest::OUTCOME_REJECTED
+                )) {
+                    return false;
                 }
 
-                $readmission->excuseDocuments()->create([
-                    'document_type' => 'supporting_document',
-                    'file_path' => $filePath,
+                $readmission = ReadmissionRequest::create([
+                    'drop_id' => $lockedDrop->drop_id,
+                    'attempt_number' => ($latestRequest?->attempt_number ?? 0) + 1,
+                    'reason_code' => $validated['reason_code'],
+                    'reason_details' => $validated['reason_details'] ?? null,
+                    'policy_acknowledged_at' => now(),
+                    'channel' => 'online',
                 ]);
-            }
 
-            return true;
-        });
+                if ($request->hasFile('attachment')) {
+                    $filePath = $request->file('attachment')->store('readmission-documents', 'local');
+
+                    if ($filePath === false) {
+                        throw new RuntimeException('The supporting document could not be stored.');
+                    }
+
+                    $readmission->excuseDocuments()->create([
+                        'document_type' => 'supporting_document',
+                        'file_path' => $filePath,
+                    ]);
+                }
+
+                return true;
+            });
+        } catch (\Throwable $exception) {
+            report($exception);
+
+            return back()
+                ->withInput()
+                ->with('error', 'An error occurred while submitting your readmission request. Please try again.');
+        }
 
         if (! $created) {
             return redirect()

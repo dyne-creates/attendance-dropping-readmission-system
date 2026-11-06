@@ -105,16 +105,22 @@ class StudentController extends Controller
                 ->with('info', 'A parent or guardian email is already on file.');
         }
 
-        $guardian = $student->guardians()->orderBy('guardian_id')->first();
+        try {
+            $guardian = $student->guardians()->orderBy('guardian_id')->first();
 
-        if ($guardian === null) {
-            $student->guardians()->create(['email' => $validated['email']]);
-        } else {
-            $guardian->update(['email' => $validated['email']]);
+            if ($guardian === null) {
+                $student->guardians()->create(['email' => $validated['email']]);
+            } else {
+                $guardian->update(['email' => $validated['email']]);
+            }
+
+            return redirect()->route('student.dashboard')
+                ->with('success', 'Parent or guardian email saved to your profile.');
+        } catch (\Throwable $exception) {
+            report($exception);
+
+            return back()->with('error', 'Failed to save parent or guardian email. Please try again.');
         }
-
-        return redirect()->route('student.dashboard')
-            ->with('success', 'Parent or guardian email saved to your profile.');
     }
 
     public function mail(Request $request): View

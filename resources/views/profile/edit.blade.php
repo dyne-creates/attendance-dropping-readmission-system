@@ -12,6 +12,8 @@
     @endphp
 
     <div class="page">
+        <x-flash-messages />
+
         <section class="card mx-auto max-w-2xl p-6 sm:p-8">
             <div class="flex items-center gap-4">
                 @if ($user->avatar_url)

@@ -8,18 +8,7 @@
     </x-slot>
 
     <div class="mx-auto max-w-7xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
-
-        @if (session('success'))
-            <div class="alert alert-success" role="status">{{ session('success') }}</div>
-        @endif
-
-        @if (session('warning'))
-            <div class="alert alert-warning" role="alert">{{ session('warning') }}</div>
-        @endif
-
-        @if (session('error'))
-            <div class="alert alert-danger" role="alert">{{ session('error') }}</div>
-        @endif
+        <x-flash-messages />
 
         <section class="card overflow-hidden">
             <div class="card-header flex items-center justify-between gap-4">

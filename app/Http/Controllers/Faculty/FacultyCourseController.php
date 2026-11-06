@@ -57,29 +57,39 @@ class FacultyCourseController extends Controller
         $this->assertNoDuplicateScheduleInputs($validated['schedules'] ?? []);
         $this->assertNoRoomScheduleConflicts($validated['schedules'] ?? []);
 
-        DB::transaction(function () use ($validated, $faculty): void {
-            $course = Course::create([
-                'faculty_id' => $faculty->faculty_id,
-                'school_year_id' => $validated['school_year_id'],
-                'course_name' => $validated['course_name'],
-                'subject_code' => $validated['subject_code'],
-                'section' => $validated['section'],
-                'hours_per_week' => $validated['hours_per_week'],
-                'total_semester_hours' => $validated['total_semester_hours'],
-            ]);
-
-            foreach ($validated['schedules'] ?? [] as $slot) {
-                $course->schedules()->create([
-                    'day_of_week' => $slot['day_of_week'],
-                    'start_time' => $slot['start_time'].':00',
-                    'end_time' => $slot['end_time'].':00',
-                    'room' => $slot['room'] ?? null,
+        try {
+            $course = DB::transaction(function () use ($validated, $faculty): Course {
+                $course = Course::create([
+                    'faculty_id' => $faculty->faculty_id,
+                    'school_year_id' => $validated['school_year_id'],
+                    'course_name' => $validated['course_name'],
+                    'subject_code' => $validated['subject_code'],
+                    'section' => $validated['section'],
+                    'hours_per_week' => $validated['hours_per_week'],
+                    'total_semester_hours' => $validated['total_semester_hours'],
                 ]);
-            }
-        });
 
-        return redirect()->route('faculty.dashboard')
-            ->with('success', 'Subject created successfully.');
+                foreach ($validated['schedules'] ?? [] as $slot) {
+                    $course->schedules()->create([
+                        'day_of_week' => $slot['day_of_week'],
+                        'start_time' => $slot['start_time'].':00',
+                        'end_time' => $slot['end_time'].':00',
+                        'room' => $slot['room'] ?? null,
+                    ]);
+                }
+
+                return $course;
+            });
+
+            return redirect()->route('faculty.dashboard')
+                ->with('success', 'Subject created successfully.');
+        } catch (\Throwable $exception) {
+            report($exception);
+
+            return back()
+                ->withInput()
+                ->with('error', 'The subject could not be created. Please review the details and try again.');
+        }
     }
 
     public function importForm(): View
@@ -303,31 +313,39 @@ class FacultyCourseController extends Controller
         $this->assertNoDuplicateScheduleInputs($validated['schedules'] ?? []);
         $this->assertNoRoomScheduleConflicts($validated['schedules'] ?? [], $course);
 
-        DB::transaction(function () use ($validated, $course): void {
-            $course->update([
-                'school_year_id' => $validated['school_year_id'],
-                'course_name' => $validated['course_name'],
-                'subject_code' => $validated['subject_code'],
-                'section' => $validated['section'],
-                'hours_per_week' => $validated['hours_per_week'],
-                'total_semester_hours' => $validated['total_semester_hours'],
-            ]);
-
-            // Replace all schedule slots with the new set
-            $course->schedules()->delete();
-
-            foreach ($validated['schedules'] ?? [] as $slot) {
-                $course->schedules()->create([
-                    'day_of_week' => $slot['day_of_week'],
-                    'start_time' => $slot['start_time'].':00',
-                    'end_time' => $slot['end_time'].':00',
-                    'room' => $slot['room'] ?? null,
+        try {
+            DB::transaction(function () use ($validated, $course): void {
+                $course->update([
+                    'school_year_id' => $validated['school_year_id'],
+                    'course_name' => $validated['course_name'],
+                    'subject_code' => $validated['subject_code'],
+                    'section' => $validated['section'],
+                    'hours_per_week' => $validated['hours_per_week'],
+                    'total_semester_hours' => $validated['total_semester_hours'],
                 ]);
-            }
-        });
 
-        return redirect()->route('faculty.dashboard', ['course_id' => $course->course_id])
-            ->with('success', 'Subject updated successfully.');
+                // Replace all schedule slots with the new set
+                $course->schedules()->delete();
+
+                foreach ($validated['schedules'] ?? [] as $slot) {
+                    $course->schedules()->create([
+                        'day_of_week' => $slot['day_of_week'],
+                        'start_time' => $slot['start_time'].':00',
+                        'end_time' => $slot['end_time'].':00',
+                        'room' => $slot['room'] ?? null,
+                    ]);
+                }
+            });
+
+            return redirect()->route('faculty.dashboard', ['course_id' => $course->course_id])
+                ->with('success', "Subject '{$course->subject_code}' updated successfully.");
+        } catch (\Throwable $exception) {
+            report($exception);
+
+            return back()
+                ->withInput()
+                ->with('error', "The subject '{$course->subject_code}' could not be updated. Please try again.");
+        }
     }
 
     /**
@@ -368,16 +386,24 @@ class FacultyCourseController extends Controller
         }
         $this->assertNoRoomScheduleConflicts([$validated], $course, '');
 
-        $course->schedules()->create([
-            ...$validated,
-            'start_time' => $validated['start_time'].':00',
-            'end_time' => $validated['end_time'].':00',
-        ]);
+        try {
+            $course->schedules()->create([
+                ...$validated,
+                'start_time' => $validated['start_time'].':00',
+                'end_time' => $validated['end_time'].':00',
+            ]);
 
-        return redirect()->route('faculty.dashboard', [
-            'course_id' => $course->course_id,
-            'tab' => 'meeting',
-        ])->with('success', 'Schedule slot added successfully.');
+            return redirect()->route('faculty.dashboard', [
+                'course_id' => $course->course_id,
+                'tab' => 'meeting',
+            ])->with('success', 'Schedule slot added successfully.');
+        } catch (\Throwable $exception) {
+            report($exception);
+
+            return back()
+                ->withInput()
+                ->with('error', 'The schedule slot could not be added. Please try again.');
+        }
     }
 
     /**
@@ -387,10 +413,38 @@ class FacultyCourseController extends Controller
     {
         $this->authorizeOwnership($request, $course);
 
-        $course->delete();
+        if ($course->enrollments()->exists()) {
+            $studentCount = $course->enrollments()->count();
+            $label = $studentCount === 1 ? '1 student is' : "{$studentCount} students are";
 
-        return redirect()->route('faculty.dashboard')
-            ->with('success', 'Subject deleted successfully.');
+            return redirect()
+                ->route('faculty.courses.edit', $course)
+                ->with('error', "Cannot delete {$course->subject_code} because {$label} currently enrolled. Enrolled students must be removed before deleting a subject.");
+        }
+
+        try {
+            DB::transaction(function () use ($course): void {
+                $course->schedules()->each(function (CourseSchedule $schedule): void {
+                    $schedule->delete();
+                });
+                $course->delete();
+            });
+
+            return redirect()->route('faculty.subjects')
+                ->with('success', "Subject '{$course->subject_code}' was deleted successfully.");
+        } catch (\Illuminate\Database\QueryException $exception) {
+            report($exception);
+
+            return redirect()
+                ->route('faculty.courses.edit', $course)
+                ->with('error', "Cannot delete {$course->subject_code} because related database records are still linked to it.");
+        } catch (\Throwable $exception) {
+            report($exception);
+
+            return redirect()
+                ->route('faculty.courses.edit', $course)
+                ->with('error', "The subject '{$course->subject_code}' could not be deleted. An error occurred while processing the request.");
+        }
     }
 
     /**

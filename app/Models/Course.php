@@ -31,6 +31,19 @@ class Course extends Model
         ];
     }
 
+    protected static function booted(): void
+    {
+        static::deleting(function (Course $course): void {
+            if ($course->enrollments()->exists()) {
+                throw new \DomainException("Cannot delete subject '{$course->subject_code}' because students are currently enrolled.");
+            }
+
+            $course->schedules()->each(function (CourseSchedule $schedule): void {
+                $schedule->delete();
+            });
+        });
+    }
+
     /** The faculty member teaching this course. */
     public function facultyMember(): BelongsTo
     {

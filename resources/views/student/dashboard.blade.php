@@ -26,11 +26,7 @@
 
     <div class="page">
 
-        @if (session('success'))
-            <div class="alert alert-success mb-4" role="status">{{ session('success') }}</div>
-        @elseif (session('info'))
-            <div class="alert alert-warning mb-4" role="status">{{ session('info') }}</div>
-        @endif
+        <x-flash-messages />
 
         @if ($needsGuardianEmail && auth()->user()->policy_accepted_at)
             @include('components.student-guardian-email-modal')

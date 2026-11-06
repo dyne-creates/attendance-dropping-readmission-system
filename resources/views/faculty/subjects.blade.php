@@ -19,6 +19,8 @@
          x-data="{ showClassListImport: @js($errors->any()) }"
          @open-class-list-import.window="showClassListImport = true"
          @keydown.escape.window="showClassListImport = false">
+        <x-flash-messages />
+
         @if ($errors->any())
             <div class="alert alert-warning" role="alert">
                 <p class="font-semibold">The class list could not be imported:</p>

@@ -19,6 +19,8 @@
     </x-slot>
 
     <div class="page space-y-6">
+        <x-flash-messages />
+
         @if ($errors->any())
             <div class="alert alert-warning" role="alert">
                 <p class="font-semibold">Please fix the following errors:</p>

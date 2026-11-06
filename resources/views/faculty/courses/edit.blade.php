@@ -32,9 +32,7 @@
     </x-slot>
 
     <div class="page">
-        @if (session('success'))
-            <div class="alert alert-success mb-4" role="status">{{ session('success') }}</div>
-        @endif
+        <x-flash-messages />
 
         @if ($errors->any())
             <div class="alert alert-warning mb-4" role="alert">

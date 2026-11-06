@@ -17,6 +17,8 @@
     </x-slot>
 
     <div class="page">
+        <x-flash-messages />
+
         @if ($errors->any())
             <div class="alert alert-warning mb-4" role="alert">
                 <p class="font-semibold">Please fix the following errors:</p>

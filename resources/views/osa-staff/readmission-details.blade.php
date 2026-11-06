@@ -31,6 +31,7 @@
     </x-slot>
 
     <div class="mx-auto max-w-7xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
+        <x-flash-messages />
 
         <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
 

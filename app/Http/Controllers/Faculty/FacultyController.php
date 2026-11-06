@@ -670,18 +670,24 @@ class FacultyController extends Controller
             );
         }
 
-        $enrollmentIds = Enrollment::query()
-            ->where('course_id', $course->course_id)
-            ->select('enrollment_id');
-        $records = AttendanceRecord::query()
-            ->whereIn('enrollment_id', $enrollmentIds)
-            ->whereDate('session_date', Carbon::parse($validated['session_date'])->toDateString());
-        $scheduleId === null
-            ? $records->whereNull('schedule_id')
-            : $records->where('schedule_id', $scheduleId);
-        $deletedCount = $records->delete();
+        try {
+            $enrollmentIds = Enrollment::query()
+                ->where('course_id', $course->course_id)
+                ->select('enrollment_id');
+            $records = AttendanceRecord::query()
+                ->whereIn('enrollment_id', $enrollmentIds)
+                ->whereDate('session_date', Carbon::parse($validated['session_date'])->toDateString());
+            $scheduleId === null
+                ? $records->whereNull('schedule_id')
+                : $records->where('schedule_id', $scheduleId);
+            $deletedCount = $records->delete();
 
-        return back()->with('success', "{$deletedCount} attendance marks cleared for the selected meeting.");
+            return back()->with('success', "{$deletedCount} attendance marks cleared for the selected meeting.");
+        } catch (\Throwable $exception) {
+            report($exception);
+
+            return back()->with('error', 'Failed to clear attendance marks for this meeting. Please try again.');
+        }
     }
 
     public function deleteMeeting(Request $request): RedirectResponse
@@ -699,27 +705,33 @@ class FacultyController extends Controller
 
         abort_unless($schedule->day_of_week === Carbon::parse($sessionDate)->format('D'), 422, 'The schedule does not match the meeting date.');
 
-        DB::transaction(function () use ($request, $course, $schedule, $sessionDate): void {
-            $enrollmentIds = Enrollment::query()
-                ->where('course_id', $course->course_id)
-                ->select('enrollment_id');
-            AttendanceRecord::query()
-                ->whereIn('enrollment_id', $enrollmentIds)
-                ->whereDate('session_date', $sessionDate)
-                ->where('schedule_id', $schedule->schedule_id)
-                ->delete();
+        try {
+            DB::transaction(function () use ($request, $course, $schedule, $sessionDate): void {
+                $enrollmentIds = Enrollment::query()
+                    ->where('course_id', $course->course_id)
+                    ->select('enrollment_id');
+                AttendanceRecord::query()
+                    ->whereIn('enrollment_id', $enrollmentIds)
+                    ->whereDate('session_date', $sessionDate)
+                    ->where('schedule_id', $schedule->schedule_id)
+                    ->delete();
 
-            DB::table('course_schedule_cancellations')->updateOrInsert(
-                ['schedule_id' => $schedule->schedule_id, 'session_date' => $sessionDate],
-                [
-                    'cancelled_by' => $request->user()->facultyMember->faculty_id,
-                    'created_at' => now(),
-                    'updated_at' => now(),
-                ],
-            );
-        });
+                DB::table('course_schedule_cancellations')->updateOrInsert(
+                    ['schedule_id' => $schedule->schedule_id, 'session_date' => $sessionDate],
+                    [
+                        'cancelled_by' => $request->user()->facultyMember->faculty_id,
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ],
+                );
+            });
 
-        return back()->with('success', 'The selected dated meeting was deleted. The recurring weekly schedule remains unchanged.');
+            return back()->with('success', 'The selected dated meeting was deleted. The recurring weekly schedule remains unchanged.');
+        } catch (\Throwable $exception) {
+            report($exception);
+
+            return back()->with('error', 'Failed to delete the scheduled meeting occurrence. Please try again.');
+        }
     }
 
     private function authorizeFacultyCourse(Request $request, Course $course): void
@@ -922,39 +934,45 @@ class FacultyController extends Controller
             ? $validated['instructor_reason']
             : null;
 
-        DB::transaction(function () use ($enrollment, $faculty, $absenceHours, $dropType, $instructorReason): void {
-            $enrollment->update(['status' => 'dropped']);
+        try {
+            DB::transaction(function () use ($enrollment, $faculty, $absenceHours, $dropType, $instructorReason): void {
+                $enrollment->update(['status' => 'dropped']);
 
-            $sequence = DroppingTransaction::where('enrollment_id', $enrollment->enrollment_id)->count() + 1;
+                $sequence = DroppingTransaction::where('enrollment_id', $enrollment->enrollment_id)->count() + 1;
 
-            DroppingTransaction::create([
-                'enrollment_id' => $enrollment->enrollment_id,
-                'dropped_by' => $faculty->faculty_id,
-                'absence_hours_at_drop' => $absenceHours,
-                'sequence_in_cycle' => $sequence,
-                'drop_date' => now()->toDateString(),
-                'drop_type' => $dropType,
-                'instructor_reason' => $instructorReason,
-            ]);
-
-            if ($enrollment->student_id) {
-                Notification::create([
-                    'student_id' => $enrollment->student_id,
-                    'notification_type' => 'student_dropped',
-                    'channel' => 'email',
-                    'message' => "You have been dropped from {$enrollment->course->subject_code} by your faculty member. Contact your faculty member for more information.",
-                    'sent_at' => now(),
+                DroppingTransaction::create([
+                    'enrollment_id' => $enrollment->enrollment_id,
+                    'dropped_by' => $faculty->faculty_id,
+                    'absence_hours_at_drop' => $absenceHours,
+                    'sequence_in_cycle' => $sequence,
+                    'drop_date' => now()->toDateString(),
+                    'drop_type' => $dropType,
+                    'instructor_reason' => $instructorReason,
                 ]);
-            }
-        });
 
-        $message = $dropType === DroppingTransaction::TYPE_PERMANENT
-            ? "Student {$enrollment->student->fullName} has been marked for permanent dropping and referred to OSA. OSA may still review a readmission request."
-            : ($dropType === DroppingTransaction::TYPE_INSTRUCTOR_REFERRAL
-                ? "Student {$enrollment->student->fullName} has been referred to OSA based on the instructor's stated circumstance."
-                : "Student {$enrollment->student->fullName} has been dropped to OSA for readmission review.");
+                if ($enrollment->student_id) {
+                    Notification::create([
+                        'student_id' => $enrollment->student_id,
+                        'notification_type' => 'student_dropped',
+                        'channel' => 'email',
+                        'message' => "You have been dropped from {$enrollment->course->subject_code} by your faculty member. Contact your faculty member for more information.",
+                        'sent_at' => now(),
+                    ]);
+                }
+            });
 
-        return back()->with('success', $message);
+            $message = $dropType === DroppingTransaction::TYPE_PERMANENT
+                ? "Student {$enrollment->student->fullName} has been marked for permanent dropping and referred to OSA. OSA may still review a readmission request."
+                : ($dropType === DroppingTransaction::TYPE_INSTRUCTOR_REFERRAL
+                    ? "Student {$enrollment->student->fullName} has been referred to OSA based on the instructor's stated circumstance."
+                    : "Student {$enrollment->student->fullName} has been dropped to OSA for readmission review.");
+
+            return back()->with('success', $message);
+        } catch (\Throwable $exception) {
+            report($exception);
+
+            return back()->with('error', 'Failed to drop student. Please try again.');
+        }
     }
 
     /**

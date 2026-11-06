@@ -6,6 +6,8 @@
     </x-slot>
 
     <div class="page space-y-6">
+        <x-flash-messages />
+
         @if ($drop->drop_type === \App\Models\DroppingTransaction::TYPE_PERMANENT)
             <div class="alert alert-danger" role="status">
                 This is recorded as a permanent-drop case because absences reached 20% of the subject's semester hours.
