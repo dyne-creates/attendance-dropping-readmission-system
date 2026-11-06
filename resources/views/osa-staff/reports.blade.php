@@ -11,7 +11,7 @@
         <x-flash-messages />
 
         {{-- Filter Panel --}}
-        <section class="card p-5 sm:p-6" aria-labelledby="filter-heading">
+        <section class="card report-filter-panel p-5 sm:p-6" aria-labelledby="filter-heading">
             <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b pb-4 mb-5">
                 <div>
                     <h2 id="filter-heading" class="text-base font-semibold">Report Filters</h2>
@@ -207,37 +207,37 @@
 
         {{-- Summary Statistics Grid --}}
         <section aria-label="Summary Statistics" class="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
-            <div class="card p-4">
+            <div class="card report-kpi p-4">
                 <p class="muted text-xs font-medium uppercase tracking-wider">Total Drops</p>
                 <p class="mt-2 text-2xl font-bold tabular-nums">{{ $summary['total_drops'] }}</p>
                 <p class="muted mt-1 text-xs">{{ $summary['total_students_dropped'] }} distinct students</p>
             </div>
 
-            <div class="card p-4">
+            <div class="card report-kpi p-4">
                 <p class="muted text-xs font-medium uppercase tracking-wider">Referrals</p>
                 <p class="mt-2 text-2xl font-bold tabular-nums">{{ $summary['total_referrals'] }}</p>
                 <p class="muted mt-1 text-xs">Instructor referrals</p>
             </div>
 
-            <div class="card p-4">
+            <div class="card report-kpi p-4">
                 <p class="muted text-xs font-medium uppercase tracking-wider">Readmission Requests</p>
                 <p class="mt-2 text-2xl font-bold tabular-nums">{{ $summary['total_readmissions'] }}</p>
                 <p class="muted mt-1 text-xs">{{ $summary['distinct_readmission_students'] }} students applied</p>
             </div>
 
-            <div class="card p-4">
+            <div class="card report-kpi p-4">
                 <p class="muted text-xs font-medium uppercase tracking-wider">Excused Cases</p>
                 <p class="mt-2 text-2xl font-bold text-green-600 dark:text-green-400 tabular-nums">{{ $summary['excused_cases'] }}</p>
                 <p class="muted mt-1 text-xs">{{ $summary['not_excused_cases'] }} unexcused</p>
             </div>
 
-            <div class="card p-4">
+            <div class="card report-kpi p-4">
                 <p class="muted text-xs font-medium uppercase tracking-wider">Pending Cases</p>
                 <p class="mt-2 text-2xl font-bold text-amber-600 dark:text-amber-400 tabular-nums">{{ $summary['pending_cases'] }}</p>
                 <p class="muted mt-1 text-xs">{{ $summary['approved_cases'] }} regular approved</p>
             </div>
 
-            <div class="card p-4">
+            <div class="card report-kpi p-4">
                 <p class="muted text-xs font-medium uppercase tracking-wider">Absence Hours</p>
                 <p class="mt-2 text-2xl font-bold tabular-nums">{{ $summary['accumulated_absence_hours'] }}</p>
                 <p class="muted mt-1 text-xs">{{ $summary['tardiness_count'] }} lates recorded</p>
@@ -248,7 +248,7 @@
         <section aria-label="Visualizations" class="space-y-6">
             <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
                 {{-- Chart 1: Students by Number of Drops --}}
-                <div class="card p-5">
+                <div class="card report-chart-card p-5">
                     <div class="flex items-center justify-between pb-3 border-b mb-3">
                         <h3 class="text-sm font-semibold">1. Students by Number of Drops</h3>
                         <span class="muted text-xs">Drop distribution</span>
@@ -259,7 +259,7 @@
                 </div>
 
                 {{-- Chart 2: Excused vs Unexcused Cases --}}
-                <div class="card p-5">
+                <div class="card report-chart-card p-5">
                     <div class="flex items-center justify-between pb-3 border-b mb-3">
                         <h3 class="text-sm font-semibold">2. Excused vs. Unexcused Cases</h3>
                         <span class="muted text-xs">Outcome ratio</span>
@@ -270,7 +270,7 @@
                 </div>
 
                 {{-- Chart 3: Referral and Readmission Requests Over Time --}}
-                <div class="card p-5">
+                <div class="card report-chart-card p-5">
                     <div class="flex items-center justify-between pb-3 border-b mb-3">
                         <h3 class="text-sm font-semibold">3. Referrals & Readmission Requests Over Time</h3>
                         <span class="muted text-xs">Monthly breakdown</span>
@@ -281,7 +281,7 @@
                 </div>
 
                 {{-- Chart 4: Requests by Processing Status --}}
-                <div class="card p-5">
+                <div class="card report-chart-card p-5">
                     <div class="flex items-center justify-between pb-3 border-b mb-3">
                         <h3 class="text-sm font-semibold">4. Requests by Processing Status</h3>
                         <span class="muted text-xs">Status categories</span>
@@ -292,7 +292,7 @@
                 </div>
 
                 {{-- Chart 5: Accumulated Absence Hours by Subject --}}
-                <div class="card p-5 lg:col-span-2">
+                <div class="card report-chart-card p-5 lg:col-span-2">
                     <div class="flex items-center justify-between pb-3 border-b mb-3">
                         <h3 class="text-sm font-semibold">5. Accumulated Absence Hours by Subject Code</h3>
                         <span class="muted text-xs">Top subjects by total absences</span>
@@ -308,7 +308,7 @@
         <section id="report-tables" class="card overflow-hidden" aria-label="Detailed Tabular Reports">
             {{-- Tabs Header --}}
             <div class="border-b bg-surface px-4 pt-3 sm:px-6">
-                <nav class="-mb-px flex space-x-6 overflow-x-auto" role="tablist" aria-label="Report Tables">
+                <nav class="report-tab-nav -mb-px flex space-x-6 overflow-x-auto" role="tablist" aria-label="Report Tables">
                     <button type="button" id="report-tab-drops" role="tab" aria-controls="report-panel-drops"
                        aria-selected="{{ $activeTab === 'drops' ? 'true' : 'false' }}" tabindex="{{ $activeTab === 'drops' ? '0' : '-1' }}"
                        data-report-tab="drops"
@@ -368,7 +368,7 @@
             </div>
 
             {{-- Table Content --}}
-            <div class="overflow-x-auto p-0">
+            <div class="report-table-shell p-0">
                 <div id="report-panel-drops" role="tabpanel" aria-labelledby="report-tab-drops" tabindex="0"
                      data-report-panel="drops" @class(['hidden' => $activeTab !== 'drops'])>
                     <table class="data-table">
