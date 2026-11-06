@@ -26,18 +26,21 @@ class FacultyCourseImportTest extends TestCase
         ]);
 
         try {
-            $response = $this->actingAs($facultyUser)->post(route('faculty.courses.import.store'), [
-                'file' => new UploadedFile(
-                    $workbookPath,
-                    'class-list.xlsx',
-                    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                    UPLOAD_ERR_OK,
-                    true,
-                ),
-            ]);
+            $response = $this->actingAs($facultyUser)
+                ->followingRedirects()
+                ->post(route('faculty.courses.import.store'), [
+                    'file' => new UploadedFile(
+                        $workbookPath,
+                        'class-list.xlsx',
+                        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                        UPLOAD_ERR_OK,
+                        true,
+                    ),
+                ]);
 
             $course = Course::where('subject_code', 'AGLDEV1')->firstOrFail();
-            $response->assertRedirect(route('faculty.dashboard', ['course_id' => $course->course_id]));
+            $response->assertSee('Imported AGLDEV1 with 2 students.')
+                ->assertSee('AGLDEV1');
 
             $this->assertSame('AGILE DEVELOPMENT', $course->course_name);
             $this->assertSame('IDB1-SD', $course->section);

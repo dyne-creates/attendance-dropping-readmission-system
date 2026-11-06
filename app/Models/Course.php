@@ -21,6 +21,7 @@ class Course extends Model
         'section',
         'hours_per_week',
         'total_semester_hours',
+        'is_archived',
     ];
 
     protected function casts(): array
@@ -28,6 +29,7 @@ class Course extends Model
         return [
             'hours_per_week' => 'integer',
             'total_semester_hours' => 'decimal:2',
+            'is_archived' => 'boolean',
         ];
     }
 

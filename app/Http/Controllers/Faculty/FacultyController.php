@@ -49,6 +49,7 @@ class FacultyController extends Controller
         $courses = Course::with(['schoolYear', 'schedules'])
             ->withCount('enrollments')
             ->where('faculty_id', $faculty->faculty_id)
+            ->where('is_archived', false)
             ->get();
 
         $selectedCourseId = $request->query('course_id');
@@ -380,10 +381,18 @@ class FacultyController extends Controller
         $courses = Course::with(['schoolYear', 'schedules'])
             ->withCount('enrollments')
             ->where('faculty_id', $faculty->faculty_id)
+            ->where('is_archived', false)
             ->orderBy('subject_code')
             ->get();
 
-        return view('faculty.subjects', compact('courses'));
+        $archivedCourses = Course::with(['schoolYear', 'schedules'])
+            ->withCount('enrollments')
+            ->where('faculty_id', $faculty->faculty_id)
+            ->where('is_archived', true)
+            ->orderBy('subject_code')
+            ->get();
+
+        return view('faculty.subjects', compact('courses', 'archivedCourses'));
     }
 
     /**
@@ -409,6 +418,7 @@ class FacultyController extends Controller
         if ($course->faculty_id !== $faculty->faculty_id) {
             abort(403, 'Unauthorized access to this course.');
         }
+        abort_if($course->is_archived, 404, 'This subject is archived.');
 
         $sessionDate = Carbon::parse($validated['session_date'])->toDateString();
         $scheduleId = $validated['schedule_id'] ?? null;
@@ -512,6 +522,7 @@ class FacultyController extends Controller
         $faculty = $request->user()->facultyMember;
         $course = Course::with('schedules')->where('course_id', $validated['course_id'])->firstOrFail();
         abort_unless($course->faculty_id === $faculty?->faculty_id, 403, 'Unauthorized access to this course.');
+        abort_if($course->is_archived, 404, 'This subject is archived.');
         try {
             $rows = $importService->rows($validated['file']);
         } catch (InvalidArgumentException $exception) {
@@ -737,6 +748,7 @@ class FacultyController extends Controller
     private function authorizeFacultyCourse(Request $request, Course $course): void
     {
         abort_unless($course->faculty_id === $request->user()->facultyMember?->faculty_id, 403, 'Unauthorized access to this course.');
+        abort_if($course->is_archived, 404, 'This subject is archived.');
     }
 
     private function scheduleForCourse(Course $course, int $scheduleId): CourseSchedule
@@ -796,6 +808,7 @@ class FacultyController extends Controller
         if ($course->faculty_id !== $faculty->faculty_id) {
             abort(403, 'Unauthorized access to this course.');
         }
+        abort_if($course->is_archived, 404, 'This subject is archived.');
 
         $enrollment = Enrollment::with('student', 'attendanceRecords')->where('course_id', $course->course_id)
             ->where('enrollment_id', $validated['enrollment_id'])
@@ -907,6 +920,7 @@ class FacultyController extends Controller
         if ($enrollment->course->faculty_id !== $faculty->faculty_id) {
             abort(403, 'Unauthorized access to this student enrollment.');
         }
+        abort_if($enrollment->course->is_archived, 404, 'This subject is archived.');
 
         if ($enrollment->status === 'dropped') {
             return back()->with('info', 'This student is already marked as Dropped.');
