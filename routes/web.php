@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Faculty\FacultyController;
 use App\Http\Controllers\Faculty\FacultyCourseController;
+use App\Http\Controllers\OsaStaff\OsaReportController;
 use App\Http\Controllers\OsaStaff\OsaStaffController;
 use App\Http\Controllers\PolicyAgreementController;
 use App\Http\Controllers\ProfileController;
@@ -183,6 +184,22 @@ Route::middleware(['auth', 'staffMiddleware'])->prefix('osa')->name('osa.')->gro
         OsaStaffController::class,
         'readmissionArchive',
     ])->name('archive.readmissions');
+
+    // Reports
+    Route::get('/reports', [
+        OsaReportController::class,
+        'index',
+    ])->name('reports');
+
+    Route::post('/reports/export-pdf', [
+        OsaReportController::class,
+        'exportPdf',
+    ])->name('reports.export-pdf');
+
+    Route::post('/reports/preview.pdf', [
+        OsaReportController::class,
+        'previewPdf',
+    ])->name('reports.preview-pdf');
 });
 
 require __DIR__.'/auth.php';
