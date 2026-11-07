@@ -206,7 +206,7 @@
         </div>
 
         {{-- Summary Statistics Grid --}}
-        <section aria-label="Summary Statistics" class="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
+        <section aria-label="Summary Statistics" class="grid grid-cols-2 gap-5 sm:grid-cols-3 lg:grid-cols-6">
             <div class="card report-kpi p-4">
                 <p class="muted text-xs font-medium uppercase tracking-wider">Total Drops</p>
                 <p class="mt-2 text-2xl font-bold tabular-nums">{{ $summary['total_drops'] }}</p>
@@ -246,7 +246,7 @@
 
         {{-- Graphs and Charts Section --}}
         <section aria-label="Visualizations" class="space-y-6">
-            <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
+            <div class="grid grid-cols-1 gap-5 lg:grid-cols-2">
                 {{-- Chart 1: Students by Number of Drops --}}
                 <div class="card report-chart-card p-5">
                     <div class="flex items-center justify-between pb-3 border-b mb-3">
@@ -471,6 +471,11 @@
 
                 <div id="report-panel-readmissions" role="tabpanel" aria-labelledby="report-tab-readmissions" tabindex="0"
                      data-report-panel="readmissions" @class(['hidden' => $activeTab !== 'readmissions'])>
+                    <div class="flex justify-end border-b p-4">
+                        <a href="{{ route('osa.reports.readmissions.extract', request()->query()) }}" class="btn btn-secondary btn-sm">
+                            Download readmission data
+                        </a>
+                    </div>
                     <table class="data-table">
                         <thead>
                             <tr>
@@ -597,9 +602,9 @@
         <div id="reportPdfPreview" x-data="{ open: false }" x-show="open"
              @report-preview-open.window="open = true" @keydown.escape.window="open = false"
              @click.self="open = false"
-             class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4"
+             class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
              style="display: none;">
-            <div class="flex h-[85vh] w-full max-w-5xl flex-col overflow-hidden rounded-lg bg-white dark:bg-gray-800"
+            <div class="flex h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-lg bg-white shadow-2xl dark:bg-gray-800"
                  role="dialog" aria-modal="true" aria-labelledby="report-preview-title">
                 <div class="flex flex-col gap-3 border-b p-4 sm:flex-row sm:items-center sm:justify-between">
                     <div>
@@ -627,7 +632,7 @@
                         </button>
                     </div>
                 </div>
-                <iframe name="pdfPreviewIframe" title="PDF report preview" class="min-h-0 w-full flex-1"
+                <iframe name="pdfPreviewIframe" title="PDF report preview" class="min-h-0 w-full flex-1 bg-white"
                         src="about:blank"></iframe>
             </div>
         </div>
@@ -795,6 +800,7 @@
             pdfForm.target = preview ? 'pdfPreviewIframe' : '_self';
 
             if (preview) {
+                document.querySelector('iframe[name="pdfPreviewIframe"]').src = 'about:blank';
                 window.dispatchEvent(new CustomEvent('report-preview-open'));
             }
 

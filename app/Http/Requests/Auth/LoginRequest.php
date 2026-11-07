@@ -3,7 +3,6 @@
 namespace App\Http\Requests\Auth;
 
 use App\Models\User;
-use App\Support\UbAccount;
 use Illuminate\Auth\Events\Lockout;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Facades\Auth;
@@ -38,21 +37,19 @@ class LoginRequest extends FormRequest
         $this->ensureIsNotRateLimited();
 
         $email = $this->string('email')->toString();
-        $ubAccount = UbAccount::resolve($email);
         $dummyAccounts = config('ub.dummy_password_accounts', []);
 
-        if (
-            ! app()->environment(['local', 'testing'])
-            || ! in_array($email, $dummyAccounts, true)
-            || ! in_array($ubAccount['role'] ?? null, ['faculty', 'osa_staff'], true)
-            || ! Auth::attempt($this->only('email', 'password'), $this->boolean('remember'))
-        ) {
+        if (! app()->environment(['local', 'testing']) || ! Auth::attempt($this->only('email', 'password'), $this->boolean('remember'))) {
             $this->rejectCredentials();
         }
 
         $user = Auth::user();
 
-        if (! $user instanceof User || $user->role !== $ubAccount['role']) {
+        if (
+            ! $user instanceof User
+            || ! in_array($user->role, ['faculty', 'osa_staff', 'admin'], true)
+            || ($user->role === 'faculty' && ! in_array($email, $dummyAccounts, true))
+        ) {
             Auth::guard('web')->logout();
             $this->rejectCredentials();
         }

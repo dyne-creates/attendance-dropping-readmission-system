@@ -13,6 +13,11 @@ class User extends Authenticatable
     /** @use HasFactory<UserFactory> */
     use HasFactory, Notifiable;
 
+    public function getRouteKeyName(): string
+    {
+        return 'user_id';
+    }
+
     protected $primaryKey = 'user_id';
 
     protected $fillable = [

@@ -53,8 +53,7 @@
                                 Your readmission request was approved.
                             @elseif ($outcome === 'excused')
                                 @if ($request->excused_from && $request->excused_through)
-                                    Your absence was excused from {{ Carbon\Carbon::parse($request->excused_from)->format('M d, Y') }}
-                                    through {{ Carbon\Carbon::parse($request->excused_through)->format('M d, Y') }}.
+                                    Your absence was excused for {{ Carbon\Carbon::parse($request->excused_from)->format('M d, Y') }}
                                 @else
                                     Your absence was excused.
                                 @endif

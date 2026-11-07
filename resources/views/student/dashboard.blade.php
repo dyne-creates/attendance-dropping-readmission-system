@@ -167,8 +167,7 @@
                                 @if ($enrollment->latest_drop?->readmissionRequest?->status === 'rejected'
                                     && $enrollment->latest_drop->readmissionRequest->rejection_reason)
                                     <p class="alert alert-warning mt-4 whitespace-pre-line" role="status">
-                                        OSA feedback for attempt
-                                        {{ $enrollment->latest_drop->readmissionRequest->attempt_number }}:
+                                        OSA feedback for attempt {{ $enrollment->latest_drop->readmissionRequest->attempt_number }}:
                                         {{ $enrollment->latest_drop->readmissionRequest->rejection_reason }}
                                     </p>
                                 @endif

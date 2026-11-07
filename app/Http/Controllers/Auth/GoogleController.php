@@ -186,7 +186,11 @@ class GoogleController extends Controller
             ]);
         }
 
-        if ($user->role !== $ubAccount['role'] || ! $this->hasRoleProfile($user)) {
+        if (
+            ! $this->hasRoleProfile($user)
+            || ($user->role === 'student' && $user->role !== $ubAccount['role'])
+            || ($user->role === 'faculty' && $user->role !== $ubAccount['role'])
+        ) {
             return $this->rejectGoogleAccount('login', 'This University account is not configured for the account type assigned to its email. Please contact support.');
         }
 
@@ -235,6 +239,7 @@ class GoogleController extends Controller
             'student' => $user->student !== null,
             'faculty' => $user->facultyMember !== null,
             'osa_staff' => $user->osaStaff !== null,
+            'admin' => true,
             default => false,
         };
     }
@@ -245,6 +250,7 @@ class GoogleController extends Controller
             'student' => 'student.dashboard',
             'faculty' => 'faculty.dashboard',
             'osa_staff' => 'osa.dashboard',
+            'admin' => 'admin.osa-accounts.index',
         };
     }
 

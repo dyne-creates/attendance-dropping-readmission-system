@@ -50,6 +50,14 @@ class UserFactory extends Factory
         ]);
     }
 
+    public function admin(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'role' => 'admin',
+            'email' => fake()->unique()->userName().'@e.ubaguio.edu',
+        ]);
+    }
+
     /**
      * Indicate that the model's email address should be unverified.
      */

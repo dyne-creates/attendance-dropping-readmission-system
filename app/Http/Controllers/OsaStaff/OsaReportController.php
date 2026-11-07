@@ -4,12 +4,15 @@ namespace App\Http\Controllers\OsaStaff;
 
 use App\Http\Controllers\Controller;
 use App\Models\SchoolYear;
+use App\Models\ReadmissionRequest;
 use App\Services\OsaPdfReportService;
 use App\Services\OsaReportService;
+use App\Services\ReadmissionExportService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\View\View;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class OsaReportController extends Controller
 {
@@ -81,6 +84,64 @@ class OsaReportController extends Controller
             'Content-Type' => 'application/pdf',
             'Content-Disposition' => 'inline; filename="OSA-Report-'.$report['filenameTimestamp'].'.pdf"',
         ]);
+    }
+
+    /**
+     * Download the filter-matched readmission dataset for institutional reporting.
+     */
+    public function extractReadmissions(
+        Request $request,
+        OsaReportService $reportService,
+        ReadmissionExportService $exportService
+    ): BinaryFileResponse {
+        $filters = $this->validateReportFilters($request);
+        $records = $reportService->getReadmissionExtractionRecords($filters);
+        $headers = [
+            'Readmission ID', 'Attempt', 'Student Number', 'Student Name', 'Program', 'Year Level',
+            'Subject', 'Course', 'Section', 'Faculty', 'Drop Date', 'Drop Type', 'Absence Hours at Drop',
+            'Faculty Referral Note', 'Request Status', 'Outcome', 'Reason', 'Request Details', 'OSA Note',
+            'Channel', 'Submitted', 'Processed', 'Processed By', 'Correction Requested', 'Excused Dates',
+            'Excused Hours Deducted',
+        ];
+        $rows = $records->map(function (object $record): array {
+            $excusedDates = json_decode((string) ($record->excused_dates ?? '[]'), true);
+
+            return [
+                (string) $record->readmission_id,
+                (string) $record->attempt_number,
+                (string) $record->student_number,
+                trim($record->first_name.' '.$record->last_name),
+                (string) ($record->program ?? ''),
+                (string) ($record->year_level ?? ''),
+                (string) $record->subject_code,
+                (string) $record->course_name,
+                (string) ($record->section ?? ''),
+                (string) $record->faculty_name,
+                (string) ($record->drop_date ?? ''),
+                (string) ($record->drop_type ?? ''),
+                (string) ($record->absence_hours_at_drop ?? ''),
+                (string) ($record->instructor_reason ?? ''),
+                (string) $record->status,
+                (string) ($record->outcome ?? ''),
+                ReadmissionRequest::reasonLabel((string) $record->reason_code),
+                (string) ($record->reason_details ?? ''),
+                (string) ($record->rejection_reason ?? ''),
+                strtoupper((string) $record->channel),
+                (string) $record->submission_date,
+                (string) ($record->processed_date ?? ''),
+                (string) ($record->processed_by_name ?? ''),
+                (string) ($record->correction_requested_at ?? ''),
+                implode(', ', is_array($excusedDates) ? $excusedDates : []),
+                (string) ($record->excused_hours_deducted ?? ''),
+            ];
+        })->prepend($headers)->all();
+        $path = $exportService->createWorkbook($rows);
+
+        return response()->download(
+            $path,
+            'readmission-data-extract-'.now('Asia/Manila')->format('Ymd-His').'.xlsx',
+            ['Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
+        )->deleteFileAfterSend(true);
     }
 
     /**

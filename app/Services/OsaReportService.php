@@ -644,6 +644,63 @@ class OsaReportService
     }
 
     /**
+     * Get complete, filter-matched readmission records for the OSA data extraction workbook.
+     *
+     * @param  array<string, mixed>  $filters
+     * @return Collection<int, object>
+     */
+    public function getReadmissionExtractionRecords(array $filters): Collection
+    {
+        [$startDate, $endDate] = $this->resolveDateRange($filters);
+
+        $query = DB::table('readmission_requests')
+            ->join('dropping_transactions', 'readmission_requests.drop_id', '=', 'dropping_transactions.drop_id')
+            ->join('enrollments', 'dropping_transactions.enrollment_id', '=', 'enrollments.enrollment_id')
+            ->join('students', 'enrollments.student_id', '=', 'students.student_id')
+            ->join('courses', 'enrollments.course_id', '=', 'courses.course_id')
+            ->join('faculty_members', 'dropping_transactions.dropped_by', '=', 'faculty_members.faculty_id')
+            ->leftJoin('osa_staff', 'readmission_requests.processed_by', '=', 'osa_staff.osa_id')
+            ->leftJoin('users as osa_users', 'osa_staff.user_id', '=', 'osa_users.user_id')
+            ->select(
+                'readmission_requests.readmission_id',
+                'readmission_requests.attempt_number',
+                'readmission_requests.status',
+                'readmission_requests.outcome',
+                'readmission_requests.reason_code',
+                'readmission_requests.reason_details',
+                'readmission_requests.rejection_reason',
+                'readmission_requests.channel',
+                'readmission_requests.created_at as submission_date',
+                'readmission_requests.processed_date',
+                'readmission_requests.correction_requested_at',
+                'readmission_requests.excused_from',
+                'readmission_requests.excused_through',
+                'readmission_requests.excused_dates',
+                'readmission_requests.excused_hours_deducted',
+                'students.student_number',
+                'students.first_name',
+                'students.last_name',
+                'students.program',
+                'students.year_level',
+                'courses.subject_code',
+                'courses.course_name',
+                'courses.section',
+                'faculty_members.full_name as faculty_name',
+                'osa_users.name as processed_by_name',
+                'dropping_transactions.drop_date',
+                'dropping_transactions.drop_type',
+                'dropping_transactions.absence_hours_at_drop',
+                'dropping_transactions.instructor_reason',
+            )
+            ->orderByDesc('readmission_requests.created_at')
+            ->orderByDesc('readmission_requests.readmission_id');
+
+        $this->applyCommonFilters($query, $filters, 'readmission_requests.created_at', $startDate, $endDate);
+
+        return $query->get();
+    }
+
+    /**
      * Get paginated Absence Records.
      *
      * @param  array<string, mixed>  $filters
@@ -832,7 +889,7 @@ class OsaReportService
             $query->where('courses.faculty_id', (int) $filters['faculty_id']);
         }
 
-        if (! empty($filters['status']) && is_array($filters['status'])) {
+        if (! empty($filters['status']) && is_array($filters['status']) && $this->hasReadmissionJoin($query)) {
             $statuses = array_filter($filters['status']);
             if (! empty($statuses)) {
                 $query->where(function (Builder $sub) use ($statuses): void {
@@ -850,5 +907,11 @@ class OsaReportService
         }
 
         return $query;
+    }
+
+    private function hasReadmissionJoin(Builder $query): bool
+    {
+        return collect($query->getQuery()->joins ?? [])
+            ->contains(fn (object $join): bool => $join->table === 'readmission_requests');
     }
 }

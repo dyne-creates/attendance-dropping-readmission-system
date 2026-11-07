@@ -19,7 +19,7 @@
             </div>
         @else
             <div class="alert alert-warning" role="status">
-                Your instructor referred this weekly-hours drop to OSA for readmission review.
+                Your instructor referred this accumulated-absence-hours drop to OSA for readmission review.
             </div>
         @endif
 
@@ -217,16 +217,16 @@
                 <div>
                     <label for="attachment" class="field-label mb-1">
                         Supporting document
-                        <span class="muted">(required for dental/medical and personal/family emergencies; JPEG or PNG only)</span>
+                        <span class="muted">(required for dental/medical and personal/family emergencies; JPEG, PNG, or PDF)</span>
                     </label>
-                    <input id="attachment" name="attachment" type="file" accept=".jpg,.jpeg,.png,image/jpeg,image/png"
+                    <input id="attachment" name="attachment" type="file" accept=".jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf"
                            class="field" :required="attachmentRequired"
                            @change="
                                const file = $event.target.files[0];
                                selectedFileName = file ? file.name : '';
-                               imagePreview = file ? URL.createObjectURL(file) : null;
+                               imagePreview = file && file.type.startsWith('image/') ? URL.createObjectURL(file) : null;
                            ">
-                    <p class="muted mt-1 text-sm" x-text="selectedFileName || 'No image selected.'"></p>
+                    <p class="muted mt-1 text-sm" x-text="selectedFileName || 'No document selected.'"></p>
                     <img x-show="imagePreview" x-cloak :src="imagePreview" alt="Selected supporting document preview"
                          class="mt-3 max-h-72 rounded-lg border object-contain">
                     @error('attachment')

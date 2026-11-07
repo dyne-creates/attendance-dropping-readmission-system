@@ -7,6 +7,7 @@
         'student'   => 'Student',
         'faculty'   => 'Faculty',
         'osa_staff' => 'OSA Staff',
+        'admin'     => 'Administrator',
     ];
     $roleLabel = $roleLabels[$user->role] ?? ucfirst(str_replace('_', ' ', (string) $user->role));
 @endphp

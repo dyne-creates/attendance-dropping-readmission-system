@@ -129,6 +129,19 @@ class OsaReportTest extends TestCase
         $response->assertSessionHasErrors('date_to');
     }
 
+    public function test_status_filter_does_not_apply_readmission_conditions_to_drop_or_attendance_queries(): void
+    {
+        $osaUser = User::factory()->osaStaff()->create();
+        $this->seedReportData();
+
+        $response = $this->actingAs($osaUser)->get(route('osa.reports', [
+            'status' => ['pending'],
+        ]));
+
+        $response->assertOk();
+        $response->assertSee('Pending Cases');
+    }
+
     public function test_osa_staff_can_export_report_as_pdf(): void
     {
         $osaUser = User::factory()->osaStaff()->create();

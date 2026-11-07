@@ -54,16 +54,16 @@
                                     @if ($record->drop_type === \App\Models\DroppingTransaction::TYPE_PERMANENT)
                                         <span class="badge badge-danger">Permanent · {{ $record->absence_hours_at_drop }} hrs</span>
                                     @elseif ($record->drop_type === \App\Models\DroppingTransaction::TYPE_INSTRUCTOR_REFERRAL)
-                                        <span class="badge badge-neutral">Instructor referral</span>
+                                        <p class="font-medium">Instructor referral</p>
                                     @else
-                                        <span class="badge badge-warning">Weekly hours · {{ $record->absence_hours_at_drop }} hrs</span>
+                                        <span class="badge badge-warning">Accumulated hours · {{ $record->absence_hours_at_drop }} hrs</span>
                                     @endif
                                     @if ($record->instructor_reason)
-                                        <p class="mt-1 text-xs muted">{{ $record->instructor_reason }}</p>
+                                        <p class="mt-1 text-xs muted"><span class="font-medium">Reason:</span> {{ $record->instructor_reason }}</p>
                                     @endif
                                 </td>
 
-                                <td><span class="badge badge-neutral">{{ strtoupper($record->channel) }}</span></td>
+                                <td>{{ strtoupper($record->channel) }}</td>
 
                                 <td>
                                     @if (($record->outcome ?? $record->status) === 'approved')

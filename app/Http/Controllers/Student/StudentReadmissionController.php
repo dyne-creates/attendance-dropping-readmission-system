@@ -111,10 +111,9 @@ class StudentReadmissionController extends Controller
                 Rule::requiredIf(in_array($request->input('reason_code'), ['dental_medical', 'personal_family'], true)),
                 'nullable',
                 'file',
-                'image',
-                'mimes:jpg,jpeg,png',
-                'extensions:jpg,jpeg,png',
-                'max:5120',
+                'mimes:jpg,jpeg,png,pdf',
+                'extensions:jpg,jpeg,png,pdf',
+                'max:10240',
             ],
             'consent' => ['accepted'],
         ]);

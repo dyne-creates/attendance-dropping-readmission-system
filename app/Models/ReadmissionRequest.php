@@ -47,7 +47,9 @@ class ReadmissionRequest extends Model
         'outcome',
         'excused_from',
         'excused_through',
+        'excused_dates',
         'excused_hours_deducted',
+        'correction_requested_at',
         'policy_acknowledged_at',
         'channel',
         // 'pending' | 'approved' | 'rejected' — defaults to 'pending'
@@ -64,7 +66,9 @@ class ReadmissionRequest extends Model
             'processed_date' => 'date',
             'excused_from' => 'date',
             'excused_through' => 'date',
+            'excused_dates' => 'array',
             'excused_hours_deducted' => 'decimal:2',
+            'correction_requested_at' => 'datetime',
             'policy_acknowledged_at' => 'datetime',
         ];
     }

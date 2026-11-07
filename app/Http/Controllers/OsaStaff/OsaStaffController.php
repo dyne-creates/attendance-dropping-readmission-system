@@ -252,15 +252,51 @@ class OsaStaffController extends Controller
             ->orderBy('guardian_id')
             ->first();
 
-        $absenceDates = DB::table('attendance_records')
+        $notifications = DB::table('notifications')
+            ->where('student_id', $request->student_id)
+            ->whereIn('notification_type', ['student_dropped', 'readmission_not_excused', 'readmission_correction_requested'])
+            ->orderByDesc('sent_at')
+            ->get();
+
+        $attendanceRecords = DB::table('attendance_records')
             ->where('enrollment_id', $request->enrollment_id)
-            ->where('status', 'absent')
             ->orderBy('session_date')
             ->get();
 
+        $absenceDates = $attendanceRecords->where('status', 'absent')->values();
+        $weeklyAbsenceHours = $attendanceRecords
+            ->where('status', 'absent')
+            ->groupBy(fn (object $record): string => Carbon::parse($record->session_date)->startOfWeek()->toDateString())
+            ->map(fn ($records): float => round($records->sum(fn (object $record): float => (float) ($record->hours_absent ?? 0)), 2));
+        $studentHistory = DB::table('dropping_transactions')
+            ->join('enrollments', 'dropping_transactions.enrollment_id', '=', 'enrollments.enrollment_id')
+            ->join('courses', 'enrollments.course_id', '=', 'courses.course_id')
+            ->leftJoin('readmission_requests', 'dropping_transactions.drop_id', '=', 'readmission_requests.drop_id')
+            ->where('enrollments.student_id', $request->student_id)
+            ->select(
+                'dropping_transactions.drop_id',
+                'dropping_transactions.drop_date',
+                'dropping_transactions.absence_hours_at_drop',
+                'dropping_transactions.drop_type',
+                'courses.subject_code',
+                'courses.course_name',
+                'readmission_requests.attempt_number',
+                'readmission_requests.status as readmission_status',
+                'readmission_requests.outcome as readmission_outcome',
+            )
+            ->orderByDesc('dropping_transactions.drop_date')
+            ->orderByDesc('readmission_requests.attempt_number')
+            ->get();
+        $historyCounters = [
+            'drops' => $studentHistory->pluck('drop_id')->unique()->count(),
+            'requests' => $studentHistory->whereNotNull('attempt_number')->count(),
+            'excused' => $studentHistory->where('readmission_outcome', ReadmissionRequest::OUTCOME_EXCUSED)->count(),
+            'not_excused' => $studentHistory->where('readmission_outcome', ReadmissionRequest::OUTCOME_NOT_EXCUSED)->count(),
+        ];
+
         return view(
             'osa-staff.readmission-details',
-            compact('request', 'documents', 'guardian', 'absenceDates')
+            compact('request', 'documents', 'guardian', 'notifications', 'absenceDates', 'attendanceRecords', 'weeklyAbsenceHours', 'studentHistory', 'historyCounters')
         );
     }
 
@@ -470,21 +506,37 @@ class OsaStaffController extends Controller
         );
     }
 
-    public function excuseReadmission(Request $request, int $id, AttendanceService $attendanceService): RedirectResponse
+    public function requestCorrection(Request $request, int $id): RedirectResponse
     {
-        $dateRangeRule = match ($request->input('duration')) {
-            'single' => 'date_equals:excused_from',
-            'multiple' => 'after:excused_from',
-            default => 'after_or_equal:excused_from',
-        };
         $validated = $request->validate([
-            'duration' => ['nullable', 'in:single,multiple'],
-            'excused_from' => ['required', 'date'],
-            'excused_through' => ['required', 'date', $dateRangeRule],
+            'correction_note' => ['required', 'string', 'max:2000'],
         ]);
 
+        return $this->processNegativeDecision(
+            $request,
+            $id,
+            ReadmissionRequest::OUTCOME_NOT_EXCUSED,
+            $validated['correction_note'],
+            true,
+        );
+    }
+
+    public function excuseReadmission(Request $request, int $id, AttendanceService $attendanceService): RedirectResponse
+    {
+        $validated = $request->validate([
+            'excused_dates' => ['nullable', 'array'],
+            'excused_dates.*' => ['required', 'date', 'distinct'],
+            'reporting_date' => ['nullable', 'date', 'required_without:excused_dates'],
+        ]);
+
+        $selectedDates = collect($validated['excused_dates'] ?? [])
+            ->when($validated['reporting_date'] ?? null, fn ($dates, string $date) => $dates->push($date))
+            ->unique()
+            ->sort()
+            ->values();
+
         try {
-            $readmission = DB::transaction(function () use ($request, $id, $validated, $attendanceService): ?object {
+            $readmission = DB::transaction(function () use ($request, $id, $selectedDates, $attendanceService): ?object {
                 $osaStaff = $request->user()->osaStaff()->firstOrCreate();
                 $readmission = $this->readmissionDecisionDetails($id, true);
 
@@ -503,14 +555,14 @@ class OsaStaffController extends Controller
                     ->firstOrFail();
                 $absences = $enrollment->attendanceRecords()
                     ->where('status', 'absent')
-                    ->whereBetween('session_date', [$validated['excused_from'], $validated['excused_through']])
+                    ->whereIn('session_date', $selectedDates->all())
                     ->lockForUpdate()
                     ->get();
                 $deductedHours = $attendanceService->calculateAbsenceHours($enrollment->course, $absences);
 
                 $enrollment->attendanceRecords()
                     ->where('status', 'absent')
-                    ->whereBetween('session_date', [$validated['excused_from'], $validated['excused_through']])
+                    ->whereIn('session_date', $selectedDates->all())
                     ->update([
                         'status' => 'excused',
                         'hours_absent' => null,
@@ -527,8 +579,9 @@ class OsaStaffController extends Controller
                     ->update([
                         'status' => 'approved',
                         'outcome' => ReadmissionRequest::OUTCOME_EXCUSED,
-                        'excused_from' => $validated['excused_from'],
-                        'excused_through' => $validated['excused_through'],
+                        'excused_from' => $selectedDates->first(),
+                        'excused_through' => $selectedDates->last(),
+                        'excused_dates' => json_encode($selectedDates->all(), JSON_THROW_ON_ERROR),
                         'excused_hours_deducted' => $deductedHours,
                         'rejection_reason' => null,
                         'processed_by' => $osaStaff->getKey(),
@@ -543,13 +596,13 @@ class OsaStaffController extends Controller
                     'guardian_id' => null,
                     'notification_type' => 'readmission_excused',
                     'channel' => 'email',
-                    'message' => 'OSA readmitted you and excused absences from '.$validated['excused_from'].' through '.$validated['excused_through'].'. '.$deductedHours.' absence hours were deducted.',
+                    'message' => 'OSA readmitted you and excused '.count($selectedDates).' selected absence date(s). '.$deductedHours.' absence hours were deducted.',
                     'sent_at' => now(),
                 ]);
 
                 $readmission->outcome = ReadmissionRequest::OUTCOME_EXCUSED;
-                $readmission->excused_from = $validated['excused_from'];
-                $readmission->excused_through = $validated['excused_through'];
+                $readmission->excused_from = $selectedDates->first();
+                $readmission->excused_through = $selectedDates->last();
                 $readmission->excused_hours_deducted = $deductedHours;
 
                 return $readmission;
@@ -586,10 +639,10 @@ class OsaStaffController extends Controller
         }
     }
 
-    private function processNegativeDecision(Request $request, int $id, string $outcome, string $reason): RedirectResponse
+    private function processNegativeDecision(Request $request, int $id, string $outcome, string $reason, bool $isCorrectionRequest = false): RedirectResponse
     {
         try {
-            $readmission = DB::transaction(function () use ($request, $id, $outcome, $reason): ?object {
+            $readmission = DB::transaction(function () use ($request, $id, $outcome, $reason, $isCorrectionRequest): ?object {
                 $osaStaff = $request->user()->osaStaff()->firstOrCreate();
                 $readmission = $this->readmissionDecisionDetails($id, true);
 
@@ -603,6 +656,7 @@ class OsaStaffController extends Controller
                         'status' => 'rejected',
                         'outcome' => $outcome,
                         'rejection_reason' => $reason,
+                        'correction_requested_at' => $isCorrectionRequest ? now() : null,
                         'processed_by' => $osaStaff->getKey(),
                         'processed_date' => now()->toDateString(),
                         'notice_sent_date' => now()->toDateString(),
@@ -613,13 +667,17 @@ class OsaStaffController extends Controller
                     'osa_id' => $osaStaff->getKey(),
                     'student_id' => $readmission->student_id,
                     'guardian_id' => null,
-                    'notification_type' => $outcome === ReadmissionRequest::OUTCOME_NOT_EXCUSED
+                    'notification_type' => $isCorrectionRequest
+                        ? 'readmission_correction_requested'
+                        : ($outcome === ReadmissionRequest::OUTCOME_NOT_EXCUSED
                         ? 'readmission_not_excused'
-                        : 'readmission_rejected',
+                        : 'readmission_rejected'),
                     'channel' => 'email',
-                    'message' => $outcome === ReadmissionRequest::OUTCOME_NOT_EXCUSED
+                    'message' => $isCorrectionRequest
+                        ? 'OSA asked you to correct and resubmit your readmission request. OSA feedback: '.$reason
+                        : ($outcome === ReadmissionRequest::OUTCOME_NOT_EXCUSED
                         ? 'Your readmission request was not excused. OSA feedback: '.$reason
-                        : 'Your readmission request has been rejected. OSA feedback: '.$reason,
+                        : 'Your readmission request has been rejected. OSA feedback: '.$reason),
                     'sent_at' => now(),
                 ]);
 
@@ -648,9 +706,11 @@ class OsaStaffController extends Controller
                     ->with('warning', 'The decision was saved, but one or more email notifications could not be sent.');
             }
 
-            $message = $outcome === ReadmissionRequest::OUTCOME_NOT_EXCUSED
+            $message = $isCorrectionRequest
+                ? 'A correction request was sent to the student. They may revise and resubmit this request.'
+                : ($outcome === ReadmissionRequest::OUTCOME_NOT_EXCUSED
                 ? 'The request was marked Not excused. The student may submit a corrected request; both parties were notified.'
-                : 'The request was rejected for the term. The student remains inactive, and both parties were notified.';
+                : 'The request was rejected for the term. The student remains inactive, and both parties were notified.');
 
             return redirect()->route('osa.readmissions')->with('success', $message);
         } catch (\Throwable $exception) {
@@ -836,7 +896,9 @@ class OsaStaffController extends Controller
             'Processed',
             'Excused From',
             'Excused Through',
+            'Selected Excused Dates',
             'Excused Hours Deducted',
+            'Correction Requested At',
             'Drop Type',
             'Absence Hours at Drop',
             'Instructor Reason',
@@ -867,7 +929,9 @@ class OsaStaffController extends Controller
             $this->formatExportDate($record->processed_date),
             $this->formatExportDate($record->excused_from),
             $this->formatExportDate($record->excused_through),
+            implode(', ', json_decode((string) ($record->excused_dates ?? '[]'), true) ?: []),
             (string) ($record->excused_hours_deducted ?? ''),
+            $this->formatExportDate($record->correction_requested_at),
             (string) ($record->drop_type ?? ''),
             (string) ($record->absence_hours_at_drop ?? ''),
             (string) ($record->instructor_reason ?? ''),
