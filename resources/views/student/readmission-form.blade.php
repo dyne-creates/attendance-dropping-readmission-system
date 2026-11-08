@@ -232,7 +232,6 @@
                 <div>
                     <label for="attachment" class="field-label mb-1">
                         Supporting document
-<<<<<<< HEAD
                         <span class="muted">(required for dental/medical and personal/family emergencies; PDF or DOCX only)</span>
                     </label>
                     <input id="attachment" name="attachment" type="file"
@@ -243,20 +242,6 @@
                                selectedDocumentName = file ? file.name : '';
                            ">
                     <p class="muted mt-1 text-sm" x-text="selectedDocumentName || 'No document selected.'"></p>
-=======
-                        <span class="muted">(required for dental/medical and personal/family emergencies; JPEG, PNG, or PDF)</span>
-                    </label>
-                    <input id="attachment" name="attachment" type="file" accept=".jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf"
-                           class="field" :required="attachmentRequired"
-                           @change="
-                               const file = $event.target.files[0];
-                               selectedFileName = file ? file.name : '';
-                               imagePreview = file && file.type.startsWith('image/') ? URL.createObjectURL(file) : null;
-                           ">
-                    <p class="muted mt-1 text-sm" x-text="selectedFileName || 'No document selected.'"></p>
-                    <img x-show="imagePreview" x-cloak :src="imagePreview" alt="Selected supporting document preview"
-                         class="mt-3 max-h-72 rounded-lg border object-contain">
->>>>>>> fdb130bc73ef97786f2965b631473463a46e3b60
                     @error('attachment')
                         <p class="field-error mt-1">{{ $message }}</p>
                     @enderror

@@ -141,12 +141,12 @@
 
                                 @if ($enrollment->absence_warning === 'approaching_limit')
                                     <div class="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-4 text-amber-900 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200" role="status">
-                                        Approaching the weekly absence threshold:
+                                        Approaching the 3-hour drop threshold (3 lates = 1 absence):
                                         {{ number_format($enrollment->absence_hours, 2) }} of
-                                        {{ number_format($enrollment->weekly_drop_threshold_hours, 2) }} weekly hours.
+                                        {{ number_format($enrollment->weekly_drop_threshold_hours, 2) }} absence-equivalent hours.
                                         <div class="progress mt-3 h-2"
                                              role="progressbar"
-                                             aria-label="Weekly absence threshold progress"
+                                             aria-label="Drop threshold progress"
                                              aria-valuemin="0"
                                              aria-valuemax="100"
                                              aria-valuenow="{{ round($weeklyAbsenceProgress) }}">
@@ -156,14 +156,14 @@
                                     </div>
                                 @elseif ($enrollment->absence_warning === 'weekly_drop_eligible')
                                     <div class="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-4 text-amber-900 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200" role="status">
-                                        Weekly absence threshold reached:
+                                        3-hour drop threshold reached (3 lates = 1 absence):
                                         {{ number_format($enrollment->absence_hours, 2) }} of
-                                        {{ number_format($enrollment->weekly_drop_threshold_hours, 2) }} weekly hours.
+                                        {{ number_format($enrollment->weekly_drop_threshold_hours, 2) }} absence-equivalent hours.
                                         Your instructor may drop and refer you to OSA for readmission review.
                                         You will not be dropped automatically.
                                         <div class="progress mt-3 h-2"
                                              role="progressbar"
-                                             aria-label="Weekly absence threshold progress"
+                                             aria-label="Drop threshold progress"
                                              aria-valuemin="0"
                                              aria-valuemax="100"
                                              aria-valuenow="{{ round($weeklyAbsenceProgress) }}">

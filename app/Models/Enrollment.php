@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class Enrollment extends Model
 {
@@ -46,5 +47,28 @@ class Enrollment extends Model
     public function droppingTransactions(): HasMany
     {
         return $this->hasMany(DroppingTransaction::class, 'enrollment_id', 'enrollment_id');
+    }
+
+    /** The most recently created drop transaction. */
+    public function latestDroppingTransaction(): HasOne
+    {
+        return $this->hasOne(DroppingTransaction::class, 'enrollment_id', 'enrollment_id')
+            ->latestOfMany('drop_id');
+    }
+
+    /** Whether the latest OSA decision allows attendance to resume after a drop. */
+    public function canRecordAttendance(): bool
+    {
+        if ($this->status !== 'dropped') {
+            return true;
+        }
+
+        $latestOsaOutcome = $this->latestDroppingTransaction?->latestProcessedReadmissionRequest?->outcome;
+
+        return in_array($latestOsaOutcome, [
+            ReadmissionRequest::OUTCOME_APPROVED,
+            ReadmissionRequest::OUTCOME_EXCUSED,
+            ReadmissionRequest::OUTCOME_NOT_EXCUSED,
+        ], true);
     }
 }

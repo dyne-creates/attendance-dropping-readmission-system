@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -54,6 +55,16 @@ class DroppingTransaction extends Model
     public function readmissionRequest(): HasOne
     {
         return $this->hasOne(ReadmissionRequest::class, 'drop_id', 'drop_id')->latestOfMany('attempt_number');
+    }
+
+    /** The latest OSA decision, excluding requests that are still pending. */
+    public function latestProcessedReadmissionRequest(): HasOne
+    {
+        return $this->hasOne(ReadmissionRequest::class, 'drop_id', 'drop_id')
+            ->ofMany(
+                ['attempt_number' => 'MAX'],
+                fn (Builder $query) => $query->whereNotNull('outcome'),
+            );
     }
 
     /** All readmission attempts for this drop, oldest first. */

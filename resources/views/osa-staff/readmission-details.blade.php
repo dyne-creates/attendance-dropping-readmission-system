@@ -305,6 +305,10 @@
 
             <div class="card-body">
                 @forelse ($documents as $document)
+                    @php
+                        $documentExtension = strtolower(pathinfo($document->file_path, PATHINFO_EXTENSION));
+                        $canPreviewDocument = in_array($documentExtension, ['pdf', 'jpg', 'jpeg', 'png'], true);
+                    @endphp
                     <div x-data="{ previewOpen: false }" @keydown.escape.window="previewOpen = false" class="{{ $loop->first ? '' : 'border-t pt-5' }} {{ $loop->last ? '' : 'pb-5' }}">
                         <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                             <div>
@@ -315,44 +319,46 @@
                             </div>
 
                             <div class="flex gap-2">
-                                <button type="button" class="btn btn-primary btn-sm" @click="previewOpen = true">Preview</button>
-                                <a href="{{ route('osa.readmissions.documents.download', $document->document_id) }}" class="btn btn-secondary btn-sm">Download</a>
+                                @if ($canPreviewDocument)
+                                    <button type="button" class="btn btn-primary btn-sm" @click="previewOpen = true">Preview</button>
+                                @endif
+                                <a href="{{ route('osa.readmissions.documents.download', $document->document_id) }}" class="btn btn-secondary btn-sm">Download document</a>
                             </div>
                         </div>
-                        <iframe src="{{ route('osa.readmissions.documents.preview', $document->document_id) }}#view=FitH" title="Supporting document preview" class="mt-4 w-full max-w-4xl rounded-lg border bg-white" style="height: min(72vh, 700px);"></iframe>
-
-                        <div x-show="previewOpen" x-cloak class="fixed inset-0 z-[80] flex items-center justify-center bg-black/90 p-4" role="dialog" aria-modal="true" aria-label="Full-screen document preview">
-                            <button type="button" class="absolute inset-0 cursor-default" aria-label="Close document preview" @click="previewOpen = false"></button>
-                            <section class="relative flex h-full w-full max-w-7xl flex-col rounded-lg bg-white p-3 shadow-2xl">
-                                <div class="mb-3 flex items-center justify-between gap-4">
-                                    <p class="text-sm font-semibold text-gray-900">Document preview</p>
-                                    <button type="button" class="btn btn-secondary btn-sm" @click="previewOpen = false">Close</button>
-                                </div>
-                                <iframe src="{{ route('osa.readmissions.documents.preview', $document->document_id) }}#view=FitH" title="Full-screen supporting document preview" class="min-h-0 flex-1 w-full rounded border bg-white"></iframe>
-                            </section>
-                        </div>
-                    </div>
-<<<<<<< HEAD
-                    @php
-                        $documentExtension = strtolower(pathinfo($document->file_path, PATHINFO_EXTENSION));
-                    @endphp
-
-                    @if ($documentExtension === 'pdf')
-                        <iframe src="{{ route('osa.readmissions.documents.preview', $document->document_id) }}"
+                        @if ($documentExtension === 'pdf')
+                            <iframe src="{{ route('osa.readmissions.documents.preview', $document->document_id) }}"
                                 title="Supporting PDF for readmission attempt {{ $request->attempt_number }}"
-                                class="h-96 w-full rounded-lg border"
+                                class="mt-4 h-96 w-full max-w-4xl rounded-lg border bg-white"
                                 loading="lazy"></iframe>
-                    @elseif (in_array($documentExtension, ['jpg', 'jpeg', 'png'], true))
-                        <img src="{{ route('osa.readmissions.documents.preview', $document->document_id) }}"
+                        @elseif (in_array($documentExtension, ['jpg', 'jpeg', 'png'], true))
+                            <img src="{{ route('osa.readmissions.documents.preview', $document->document_id) }}"
                              alt="Supporting document for readmission attempt {{ $request->attempt_number }}"
-                             class="max-h-96 max-w-full rounded-lg border object-contain">
-                    @else
-                        <p class="text-sm muted">
-                            Preview is not available for this file type. Download the document to review it.
-                        </p>
-                    @endif
-=======
->>>>>>> fdb130bc73ef97786f2965b631473463a46e3b60
+                             class="mt-4 max-h-96 max-w-full rounded-lg border object-contain">
+                        @else
+                            <p class="mt-4 text-sm muted">
+                                Preview is not available for this file type. Download the document to review it.
+                            </p>
+                        @endif
+
+                        @if ($canPreviewDocument)
+                            <div x-show="previewOpen" x-cloak class="fixed inset-0 z-[80] flex items-center justify-center bg-black/90 p-4" role="dialog" aria-modal="true" aria-label="Full-screen document preview">
+                                <button type="button" class="absolute inset-0 cursor-default" aria-label="Close document preview" @click="previewOpen = false"></button>
+                                <section class="relative flex h-full w-full max-w-7xl flex-col rounded-lg bg-white p-3 shadow-2xl">
+                                    <div class="mb-3 flex items-center justify-between gap-4">
+                                        <p class="text-sm font-semibold text-gray-900">Document preview</p>
+                                        <button type="button" class="btn btn-secondary btn-sm" @click="previewOpen = false">Close</button>
+                                    </div>
+                                    @if ($documentExtension === 'pdf')
+                                        <iframe src="{{ route('osa.readmissions.documents.preview', $document->document_id) }}#view=FitH" title="Full-screen supporting document preview" class="min-h-0 flex-1 w-full rounded border bg-white"></iframe>
+                                    @else
+                                        <img src="{{ route('osa.readmissions.documents.preview', $document->document_id) }}"
+                                             alt="Full-screen supporting document preview"
+                                             class="min-h-0 max-h-full max-w-full flex-1 self-center rounded border object-contain">
+                                    @endif
+                                </section>
+                            </div>
+                        @endif
+                    </div>
                 @empty
                     <p class="text-sm muted">No supporting documents were uploaded.</p>
                 @endforelse

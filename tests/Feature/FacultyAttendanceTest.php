@@ -8,6 +8,7 @@ use App\Models\CourseSchedule;
 use App\Models\DroppingTransaction;
 use App\Models\Enrollment;
 use App\Models\FacultyMember;
+use App\Models\ReadmissionRequest;
 use App\Models\SchoolYear;
 use App\Models\Student;
 use App\Models\User;
@@ -123,7 +124,7 @@ class FacultyAttendanceTest extends TestCase
         $response->assertDontSee('Open Meeting View');
         $response->assertSee('CS 101 Schedule:')
             ->assertSee('Import attendance file')
-            ->assertSee('Weekly absence threshold progress', false);
+            ->assertSee('Drop threshold progress', false);
         $response->assertSee('@click="$dispatch(\'open-attendance-import\')"', false)
             ->assertSee('@open-attendance-import.window="showImportModal = true"', false);
         $response->assertSee(route('faculty.subjects'));
@@ -132,6 +133,165 @@ class FacultyAttendanceTest extends TestCase
             ->assertSee('Yellow: approaching or meeting weekly-hours drop threshold')
             ->assertSee('Red: 20% permanent-drop level or already dropped')
             ->assertSee('studentStatusOutline');
+    }
+
+    public function test_faculty_dashboard_shows_current_osa_statuses_beside_student_names(): void
+    {
+        $osaStatuses = [
+            [
+                'name' => 'John Doe',
+                'outcome' => ReadmissionRequest::OUTCOME_EXCUSED,
+                'enrollment_status' => 'readmitted',
+            ],
+            [
+                'name' => 'Jane Smith',
+                'outcome' => ReadmissionRequest::OUTCOME_NOT_EXCUSED,
+                'enrollment_status' => 'dropped',
+                'has_pending_correction' => true,
+            ],
+            [
+                'name' => 'Alex Brown',
+                'outcome' => ReadmissionRequest::OUTCOME_REJECTED,
+                'enrollment_status' => 'dropped',
+            ],
+            [
+                'name' => 'Taylor Green',
+                'outcome' => null,
+                'enrollment_status' => 'dropped',
+            ],
+        ];
+
+        foreach ($osaStatuses as $index => $osaStatus) {
+            if ($index === 0) {
+                $enrollment = $this->enrollment;
+            } else {
+                [$firstName, $lastName] = explode(' ', $osaStatus['name']);
+                $studentUser = User::factory()->create([
+                    'name' => $osaStatus['name'],
+                    'email' => strtolower($firstName).'.'.strtolower($lastName).'@s.ubaguio.edu',
+                    'role' => 'student',
+                ]);
+                $student = Student::create([
+                    'user_id' => $studentUser->user_id,
+                    'student_number' => '2025-000'.($index + 1),
+                    'last_name' => $lastName,
+                    'first_name' => $firstName,
+                    'department' => 'School of Information Technology',
+                    'year_level' => 1,
+                    'program' => 'BSCS',
+                ]);
+                $enrollment = Enrollment::create([
+                    'student_id' => $student->student_id,
+                    'course_id' => $this->course->course_id,
+                    'status' => $osaStatus['enrollment_status'],
+                    'cycle_number' => 1,
+                ]);
+            }
+
+            $enrollment->update(['status' => $osaStatus['enrollment_status']]);
+            if ($osaStatus['outcome'] === null) {
+                $previousDrop = DroppingTransaction::create([
+                    'enrollment_id' => $enrollment->enrollment_id,
+                    'dropped_by' => $this->faculty->faculty_id,
+                    'absence_hours_at_drop' => 2,
+                    'sequence_in_cycle' => 1,
+                    'drop_date' => '2026-09-01',
+                ]);
+                ReadmissionRequest::create([
+                    'drop_id' => $previousDrop->drop_id,
+                    'attempt_number' => 1,
+                    'reason_code' => 'other',
+                    'reason_details' => 'Earlier excused readmission decision.',
+                    'channel' => 'online',
+                    'status' => 'approved',
+                    'outcome' => ReadmissionRequest::OUTCOME_EXCUSED,
+                    'processed_date' => '2026-09-02',
+                ]);
+            }
+
+            $drop = DroppingTransaction::create([
+                'enrollment_id' => $enrollment->enrollment_id,
+                'dropped_by' => $this->faculty->faculty_id,
+                'absence_hours_at_drop' => 2,
+                'sequence_in_cycle' => $osaStatus['outcome'] === null ? 2 : 1,
+                'drop_date' => '2026-10-01',
+            ]);
+
+            ReadmissionRequest::create([
+                'drop_id' => $drop->drop_id,
+                'attempt_number' => 1,
+                'reason_code' => 'other',
+                'reason_details' => 'Student readmission status test.',
+                'channel' => 'online',
+                'status' => $osaStatus['outcome'] === ReadmissionRequest::OUTCOME_EXCUSED
+                    ? 'approved'
+                    : ($osaStatus['outcome'] === null ? 'pending' : 'rejected'),
+                'outcome' => $osaStatus['outcome'],
+                'processed_date' => $osaStatus['outcome'] === null ? null : '2026-10-02',
+            ]);
+
+            if ($osaStatus['has_pending_correction'] ?? false) {
+                ReadmissionRequest::create([
+                    'drop_id' => $drop->drop_id,
+                    'attempt_number' => 2,
+                    'reason_code' => 'other',
+                    'reason_details' => 'Corrected request is awaiting review.',
+                    'channel' => 'online',
+                    'status' => 'pending',
+                ]);
+            }
+        }
+
+        $expectedStatuses = [
+            '2025-0001' => 'Excused',
+            '2025-0002' => 'Unexcused',
+            '2025-0003' => 'Fully Dropped',
+            '2025-0004' => 'Dropped',
+        ];
+
+        foreach (['meeting', 'overall'] as $tab) {
+            $response = $this->actingAs($this->facultyUser)
+                ->get(route('faculty.dashboard', [
+                    'course_id' => $this->course->course_id,
+                    'date' => '2026-10-05',
+                    'tab' => $tab,
+                ]));
+
+            $response->assertViewHas('enrollmentRows', function ($rows) use ($expectedStatuses): bool {
+                $actualStatuses = $rows->mapWithKeys(
+                    fn (array $row): array => [$row['student']->student_number => $row['osa_status']]
+                )->all();
+
+                $attendanceEligibility = $rows->mapWithKeys(
+                    fn (array $row): array => [$row['student']->student_number => $row['can_record_attendance']]
+                )->all();
+                $dropStatuses = $rows->mapWithKeys(
+                    fn (array $row): array => [
+                        $row['student']->student_number => $row['drop_history']
+                            ->mapWithKeys(fn (array $drop): array => [$drop['sequence'] => $drop['status']])
+                            ->all(),
+                    ]
+                )->all();
+
+                $this->assertSame($expectedStatuses, array_intersect_key($actualStatuses, $expectedStatuses));
+                $this->assertTrue($attendanceEligibility['2025-0002']);
+                $this->assertFalse($attendanceEligibility['2025-0003']);
+                $this->assertFalse($attendanceEligibility['2025-0004']);
+                $this->assertSame([1 => 'Excused'], $dropStatuses['2025-0001']);
+                $this->assertSame([1 => 'Unexcused'], $dropStatuses['2025-0002']);
+                $this->assertSame([1 => 'Fully Dropped'], $dropStatuses['2025-0003']);
+                $this->assertSame([1 => 'Excused', 2 => 'Pending OSA'], $dropStatuses['2025-0004']);
+
+                return true;
+            });
+            $response->assertSee('View student details')
+                ->assertSee('Drop 1')
+                ->assertSee('Excused')
+                ->assertSee('Unexcused')
+                ->assertSee('Fully Dropped')
+                ->assertSee('Drop 2')
+                ->assertSee('Pending OSA');
+        }
     }
 
     public function test_faculty_can_choose_a_subject_on_a_separate_page(): void
@@ -176,6 +336,33 @@ class FacultyAttendanceTest extends TestCase
             ->assertSee('Unmarked')
             ->assertSee('meetingStudentMatches', false)
             ->assertDontSee('Open Meeting View');
+    }
+
+    public function test_meeting_view_disables_attendance_entry_on_unscheduled_dates(): void
+    {
+        $response = $this->actingAs($this->facultyUser)->get(route('faculty.dashboard', [
+            'course_id' => $this->course->course_id,
+            'date' => '2026-10-09',
+            'tab' => 'meeting',
+        ]));
+
+        $response->assertSee('No class is scheduled for this date. Attendance can only be recorded on scheduled class dates.')
+            ->assertDontSee('Click to mark all as Present')
+            ->assertDontSee('Mark John Doe as Present')
+            ->assertDontSee('@click="markAll', false)
+            ->assertDontSee('@click="markStudent', false);
+    }
+
+    public function test_overall_view_does_not_make_unscheduled_dates_editable(): void
+    {
+        $response = $this->actingAs($this->facultyUser)->get(route('faculty.dashboard', [
+            'course_id' => $this->course->course_id,
+            'date' => '2026-10-09',
+            'tab' => 'overall',
+        ]));
+
+        $response->assertSee('No class is scheduled for the selected date.')
+            ->assertDontSee('@click="openCellModal', false);
     }
 
     public function test_faculty_can_browse_the_weekly_subject_schedule_and_jump_to_a_date(): void
@@ -680,35 +867,68 @@ class FacultyAttendanceTest extends TestCase
         ]);
     }
 
-    public function test_recording_attendance_on_unscheduled_day_marks_as_out_of_schedule(): void
+    public function test_faculty_cannot_record_attendance_on_an_unscheduled_day(): void
     {
         // Friday date (Course is Mon/Wed)
         $fridayDate = '2026-10-09';
 
-        $payload = [
-            'course_id' => $this->course->course_id,
-            'session_date' => $fridayDate,
-            'grading_period' => 'midterms',
-            'attendance' => [
-                [
-                    'enrollment_id' => $this->enrollment->enrollment_id,
-                    'status' => 'present',
-                    'remarks' => 'Makeup class on Friday',
+        $response = $this->actingAs($this->facultyUser)
+            ->postJson(route('faculty.attendance.store'), [
+                'course_id' => $this->course->course_id,
+                'session_date' => $fridayDate,
+                'attendance' => [
+                    [
+                        'enrollment_id' => $this->enrollment->enrollment_id,
+                        'status' => 'present',
+                    ],
                 ],
-            ],
-        ];
+            ]);
+
+        $response->assertUnprocessable()
+            ->assertJsonPath('error', 'Attendance can only be recorded on scheduled class dates.');
+        $this->assertDatabaseMissing('attendance_records', [
+            'enrollment_id' => $this->enrollment->enrollment_id,
+            'session_date' => $fridayDate,
+        ]);
+    }
+
+    public function test_faculty_cannot_record_single_attendance_on_an_unscheduled_day(): void
+    {
+        $response = $this->actingAs($this->facultyUser)
+            ->postJson(route('faculty.attendance.record'), [
+                'course_id' => $this->course->course_id,
+                'enrollment_id' => $this->enrollment->enrollment_id,
+                'session_date' => '2026-10-09',
+                'status' => 'present',
+            ]);
+
+        $response->assertUnprocessable()
+            ->assertJsonPath('error', 'Attendance can only be recorded on scheduled class dates.');
+        $this->assertDatabaseMissing('attendance_records', [
+            'enrollment_id' => $this->enrollment->enrollment_id,
+            'session_date' => '2026-10-09',
+        ]);
+    }
+
+    public function test_faculty_cannot_record_attendance_for_a_schedule_on_the_wrong_day(): void
+    {
+        $mondaySchedule = $this->course->schedules()->where('day_of_week', 'Mon')->firstOrFail();
 
         $response = $this->actingAs($this->facultyUser)
-            ->post(route('faculty.attendance.store'), $payload);
+            ->postJson(route('faculty.attendance.record'), [
+                'course_id' => $this->course->course_id,
+                'enrollment_id' => $this->enrollment->enrollment_id,
+                'session_date' => '2026-10-09',
+                'schedule_id' => $mondaySchedule->schedule_id,
+                'status' => 'present',
+            ]);
 
-        $response->assertRedirect();
-
-        $record = AttendanceRecord::where('enrollment_id', $this->enrollment->enrollment_id)
-            ->whereDate('session_date', $fridayDate)
-            ->first();
-
-        $this->assertNotNull($record);
-        $this->assertTrue((bool) $record->is_out_of_schedule);
+        $response->assertUnprocessable()
+            ->assertJsonPath('error', 'The schedule does not match the meeting date.');
+        $this->assertDatabaseMissing('attendance_records', [
+            'enrollment_id' => $this->enrollment->enrollment_id,
+            'session_date' => '2026-10-09',
+        ]);
     }
 
     public function test_recording_attendance_does_not_automatically_drop_a_student_after_many_absences(): void
@@ -781,6 +1001,95 @@ class FacultyAttendanceTest extends TestCase
         ]);
     }
 
+    public function test_faculty_can_record_bulk_attendance_after_osa_marks_latest_drop_not_excused(): void
+    {
+        $this->createOsaProcessedDrop($this->enrollment, ReadmissionRequest::OUTCOME_NOT_EXCUSED);
+
+        $response = $this->actingAs($this->facultyUser)
+            ->post(route('faculty.attendance.store'), [
+                'course_id' => $this->course->course_id,
+                'session_date' => '2026-10-05',
+                'attendance' => [
+                    [
+                        'enrollment_id' => $this->enrollment->enrollment_id,
+                        'status' => 'present',
+                    ],
+                ],
+            ]);
+
+        $response->assertRedirect();
+        $this->assertDatabaseHas('attendance_records', [
+            'enrollment_id' => $this->enrollment->enrollment_id,
+            'session_date' => '2026-10-05 00:00:00',
+            'status' => 'present',
+        ]);
+        $this->assertSame('dropped', $this->enrollment->fresh()->status);
+    }
+
+    public function test_faculty_can_record_single_attendance_after_osa_marks_latest_drop_not_excused(): void
+    {
+        $this->createOsaProcessedDrop($this->enrollment, ReadmissionRequest::OUTCOME_NOT_EXCUSED);
+        $schedule = $this->course->schedules()->where('day_of_week', 'Mon')->firstOrFail();
+
+        $response = $this->actingAs($this->facultyUser)
+            ->postJson(route('faculty.attendance.record'), [
+                'course_id' => $this->course->course_id,
+                'enrollment_id' => $this->enrollment->enrollment_id,
+                'session_date' => '2026-10-05',
+                'schedule_id' => $schedule->schedule_id,
+                'status' => 'present',
+            ]);
+
+        $response->assertOk()->assertJsonPath('success', true);
+        $this->assertDatabaseHas('attendance_records', [
+            'enrollment_id' => $this->enrollment->enrollment_id,
+            'session_date' => '2026-10-05 00:00:00',
+            'schedule_id' => $schedule->schedule_id,
+            'status' => 'present',
+        ]);
+    }
+
+    public function test_faculty_can_import_attendance_after_osa_marks_latest_drop_not_excused(): void
+    {
+        $this->createOsaProcessedDrop($this->enrollment, ReadmissionRequest::OUTCOME_NOT_EXCUSED);
+        $csv = "student_number,2025-10-13\n2025-0001,P\n";
+
+        $response = $this->actingAs($this->facultyUser)
+            ->post(route('faculty.attendance.import'), [
+                'course_id' => $this->course->course_id,
+                'file' => UploadedFile::fake()->createWithContent('attendance.csv', $csv),
+            ]);
+
+        $response->assertRedirect();
+        $this->assertDatabaseHas('attendance_records', [
+            'enrollment_id' => $this->enrollment->enrollment_id,
+            'session_date' => '2025-10-13 00:00:00',
+            'status' => 'present',
+        ]);
+    }
+
+    public function test_final_osa_rejection_does_not_unlock_attendance_for_dropped_student(): void
+    {
+        $this->createOsaProcessedDrop($this->enrollment, ReadmissionRequest::OUTCOME_REJECTED);
+
+        $this->actingAs($this->facultyUser)
+            ->post(route('faculty.attendance.store'), [
+                'course_id' => $this->course->course_id,
+                'session_date' => '2026-10-05',
+                'attendance' => [
+                    [
+                        'enrollment_id' => $this->enrollment->enrollment_id,
+                        'status' => 'present',
+                    ],
+                ],
+            ]);
+
+        $this->assertDatabaseMissing('attendance_records', [
+            'enrollment_id' => $this->enrollment->enrollment_id,
+            'session_date' => '2026-10-05 00:00:00',
+        ]);
+    }
+
     public function test_faculty_cannot_drop_student_before_one_week_of_absences(): void
     {
         AttendanceRecord::create([
@@ -800,7 +1109,7 @@ class FacultyAttendanceTest extends TestCase
             ->post(route('faculty.enrollments.drop', $this->enrollment));
 
         $response->assertRedirect();
-        $response->assertSessionHas('error', 'This student can be dropped to OSA after reaching 3.00 absent hours (one week of this subject); current total is 2.99 hours.');
+        $response->assertSessionHas('error', 'This student can be dropped to OSA after reaching 3.00 absence-equivalent hours; current total is 2.99 hours.');
         $this->assertSame('enrolled', $this->enrollment->fresh()->status);
         $this->assertDatabaseMissing('dropping_transactions', [
             'enrollment_id' => $this->enrollment->enrollment_id,
@@ -906,6 +1215,126 @@ class FacultyAttendanceTest extends TestCase
             'student_id' => $this->student->student_id,
             'notification_type' => 'student_dropped',
         ]);
+    }
+
+    public function test_three_lates_equal_one_absence_and_six_lates_reach_the_three_hour_drop_threshold(): void
+    {
+        $this->course->update(['hours_per_week' => 5]);
+        $scheduleIds = $this->course->schedules()->orderBy('schedule_id')->pluck('schedule_id')->all();
+        $lateDates = [
+            '2026-10-05',
+            '2026-10-07',
+            '2026-10-12',
+            '2026-10-14',
+            '2026-10-19',
+            '2026-10-21',
+        ];
+
+        foreach (array_slice($lateDates, 0, 3) as $index => $date) {
+            AttendanceRecord::create([
+                'enrollment_id' => $this->enrollment->enrollment_id,
+                'recorded_by' => $this->faculty->faculty_id,
+                'schedule_id' => $scheduleIds[$index % count($scheduleIds)],
+                'session_date' => $date,
+                'status' => 'late',
+            ]);
+        }
+
+        $this->actingAs($this->facultyUser)
+            ->get(route('faculty.dashboard', ['course_id' => $this->course->course_id]))
+            ->assertViewHas('enrollmentRows', function ($rows): bool {
+                $this->assertSame(1.5, $rows->first()['absent_hours']);
+                $this->assertSame(3.0, $rows->first()['weekly_drop_threshold_hours']);
+                $this->assertFalse($rows->first()['is_drop_eligible']);
+
+                return true;
+            });
+
+        foreach (array_slice($lateDates, 3) as $index => $date) {
+            AttendanceRecord::create([
+                'enrollment_id' => $this->enrollment->enrollment_id,
+                'recorded_by' => $this->faculty->faculty_id,
+                'schedule_id' => $scheduleIds[($index + 1) % count($scheduleIds)],
+                'session_date' => $date,
+                'status' => 'late',
+            ]);
+        }
+
+        $this->actingAs($this->facultyUser)
+            ->get(route('faculty.dashboard', ['course_id' => $this->course->course_id]))
+            ->assertViewHas('enrollmentRows', function ($rows): bool {
+                $this->assertSame(3.0, $rows->first()['absent_hours']);
+                $this->assertSame(3.0, $rows->first()['weekly_drop_threshold_hours']);
+                $this->assertTrue($rows->first()['is_drop_eligible']);
+
+                return true;
+            });
+
+        $this->actingAs($this->facultyUser)
+            ->post(route('faculty.enrollments.drop', $this->enrollment))
+            ->assertRedirect()
+            ->assertSessionHas('success');
+
+        $this->assertSame('dropped', $this->enrollment->fresh()->status);
+        $this->assertDatabaseHas('dropping_transactions', [
+            'enrollment_id' => $this->enrollment->enrollment_id,
+            'drop_type' => DroppingTransaction::TYPE_WEEKLY_HOURS,
+            'absence_hours_at_drop' => 3,
+        ]);
+    }
+
+    public function test_faculty_can_refer_student_for_another_drop_after_osa_marks_previous_drop_not_excused(): void
+    {
+        $this->createOsaProcessedDrop($this->enrollment, ReadmissionRequest::OUTCOME_NOT_EXCUSED);
+        $this->createOsaProcessedDrop($this->enrollment, ReadmissionRequest::OUTCOME_NOT_EXCUSED);
+        AttendanceRecord::create([
+            'enrollment_id' => $this->enrollment->enrollment_id,
+            'recorded_by' => $this->faculty->faculty_id,
+            'session_date' => '2026-10-05',
+            'status' => 'absent',
+            'hours_absent' => 6,
+            'is_out_of_schedule' => false,
+        ]);
+
+        $this->actingAs($this->facultyUser)
+            ->get(route('faculty.dashboard', [
+                'course_id' => $this->course->course_id,
+                'date' => '2026-10-05',
+                'tab' => 'meeting',
+            ]))
+            ->assertViewHas('enrollmentRows', fn ($rows): bool => $rows->first()['drop_count'] === 2
+                && $rows->first()['is_drop_eligible'])
+            ->assertSee('Drop student to OSA');
+
+        $response = $this->actingAs($this->facultyUser)
+            ->post(route('faculty.enrollments.drop', $this->enrollment));
+
+        $response->assertRedirect()->assertSessionHas('success');
+        $this->assertDatabaseHas('dropping_transactions', [
+            'enrollment_id' => $this->enrollment->enrollment_id,
+            'sequence_in_cycle' => 3,
+            'drop_type' => DroppingTransaction::TYPE_WEEKLY_HOURS,
+        ]);
+        $this->assertSame(3, $this->enrollment->droppingTransactions()->count());
+    }
+
+    public function test_faculty_cannot_refer_student_for_another_drop_after_osa_final_rejection(): void
+    {
+        $this->createOsaProcessedDrop($this->enrollment, ReadmissionRequest::OUTCOME_REJECTED);
+        AttendanceRecord::create([
+            'enrollment_id' => $this->enrollment->enrollment_id,
+            'recorded_by' => $this->faculty->faculty_id,
+            'session_date' => '2026-10-05',
+            'status' => 'absent',
+            'hours_absent' => 10.8,
+            'is_out_of_schedule' => false,
+        ]);
+
+        $response = $this->actingAs($this->facultyUser)
+            ->post(route('faculty.enrollments.drop', $this->enrollment));
+
+        $response->assertRedirect()->assertSessionHas('info', 'This student is already marked as Dropped.');
+        $this->assertSame(1, $this->enrollment->droppingTransactions()->count());
     }
 
     public function test_faculty_can_refer_student_to_osa_for_a_circumstance_below_the_absence_threshold(): void
@@ -1108,6 +1537,102 @@ class FacultyAttendanceTest extends TestCase
             ->assertSee('Clear marks')
             ->assertSee('Exempt meeting')
             ->assertSee('Delete meeting');
+    }
+
+    public function test_faculty_dashboard_shows_each_drop_outcome_with_escalating_drop_indicator(): void
+    {
+        $janeEnrollment = $this->createDroppedEnrollmentWithHistory('Jane', 'Smith', '2025-0002', 2);
+        $janeFirstDrop = $janeEnrollment->droppingTransactions()
+            ->where('sequence_in_cycle', 1)
+            ->firstOrFail();
+        ReadmissionRequest::create([
+            'drop_id' => $janeFirstDrop->drop_id,
+            'attempt_number' => 2,
+            'reason_code' => 'other',
+            'reason_details' => 'I am submitting a corrected readmission application.',
+            'channel' => 'online',
+            'status' => 'pending',
+        ]);
+        $this->createDroppedEnrollmentWithHistory('Alex', 'Brown', '2025-0003', 3);
+        $this->createDroppedEnrollmentWithHistory('Taylor', 'Green', '2025-0004', 3, [
+            ReadmissionRequest::OUTCOME_NOT_EXCUSED,
+            ReadmissionRequest::OUTCOME_NOT_EXCUSED,
+            ReadmissionRequest::OUTCOME_NOT_EXCUSED,
+        ]);
+        $this->createDroppedEnrollmentWithHistory('Morgan', 'Lee', '2025-0005', 3, [
+            ReadmissionRequest::OUTCOME_NOT_EXCUSED,
+            ReadmissionRequest::OUTCOME_NOT_EXCUSED,
+            ReadmissionRequest::OUTCOME_EXCUSED,
+        ]);
+        $this->enrollment->update(['status' => 'dropped']);
+        DroppingTransaction::create([
+            'enrollment_id' => $this->enrollment->enrollment_id,
+            'dropped_by' => $this->faculty->faculty_id,
+            'absence_hours_at_drop' => 2,
+            'sequence_in_cycle' => 1,
+            'drop_date' => '2026-10-01',
+        ]);
+
+        foreach (['meeting', 'overall'] as $tab) {
+            $response = $this->actingAs($this->facultyUser)
+                ->get(route('faculty.dashboard', [
+                    'course_id' => $this->course->course_id,
+                    'date' => '2026-10-05',
+                    'tab' => $tab,
+                ]));
+
+            $response->assertSee('aria-label="Dropped 1 time, 0 unexcused"', false)
+                ->assertSee('aria-label="Dropped 2 times, 1 unexcused"', false)
+                ->assertSee('aria-label="Dropped 3 times, 1 unexcused"', false)
+                ->assertSee('aria-label="Dropped 3 times, 2 unexcused"', false)
+                ->assertSee('aria-label="Dropped 3 times, 3 unexcused"', false)
+                ->assertSee('bg-orange-500 dark:bg-orange-400', false)
+                ->assertSee('bg-red-600 dark:bg-red-500', false)
+                ->assertSee('bg-gray-200 dark:bg-gray-600', false)
+                ->assertSee('&times;', false)
+                ->assertSee('View student details')
+                ->assertSee('Drop history')
+                ->assertSee('Oct 1, 2026')
+                ->assertSee('2.00 hours')
+                ->assertSee('Drop type')
+                ->assertSee('Awaiting student request')
+                ->assertSee('must submit a readmission request before OSA review.')
+                ->assertSee('Readmission application')
+                ->assertSee('Submitted · Pending OSA review')
+                ->assertSee('I am submitting a corrected readmission application.');
+
+            if ($tab === 'overall') {
+                $response->assertViewHas('enrollmentRows', function ($rows): bool {
+                    $dropCounts = $rows->mapWithKeys(
+                        fn (array $row): array => [$row['student']->student_number => $row['drop_count']]
+                    )->all();
+                    $unexcusedDropCounts = $rows->mapWithKeys(
+                        fn (array $row): array => [$row['student']->student_number => $row['unexcused_drop_count']]
+                    )->all();
+                    $dropStatuses = $rows->mapWithKeys(
+                        fn (array $row): array => [
+                            $row['student']->student_number => $row['drop_history']
+                                ->pluck('status')
+                                ->all(),
+                        ]
+                    )->all();
+
+                    $this->assertSame(1, $dropCounts['2025-0001']);
+                    $this->assertSame(2, $dropCounts['2025-0002']);
+                    $this->assertSame(3, $dropCounts['2025-0003']);
+                    $this->assertSame(0, $unexcusedDropCounts['2025-0001']);
+                    $this->assertSame(1, $unexcusedDropCounts['2025-0002']);
+                    $this->assertSame(1, $unexcusedDropCounts['2025-0003']);
+                    $this->assertSame(3, $dropCounts['2025-0004']);
+                    $this->assertSame(3, $unexcusedDropCounts['2025-0004']);
+                    $this->assertSame(['Awaiting student request'], $dropStatuses['2025-0001']);
+                    $this->assertSame(['Excused', 'Unexcused'], $dropStatuses['2025-0002']);
+                    $this->assertSame(['Excused', 'Unexcused', 'Fully Dropped'], $dropStatuses['2025-0003']);
+
+                    return true;
+                });
+            }
+        }
     }
 
     public function test_faculty_can_clear_only_the_selected_dated_meeting_marks(): void
@@ -1447,6 +1972,13 @@ class FacultyAttendanceTest extends TestCase
     public function test_downloaded_sample_excel_imports_date_columns_and_full_word_statuses(): void
     {
         $this->student->update(['student_number' => '20260001']);
+        CourseSchedule::create([
+            'course_id' => $this->course->course_id,
+            'day_of_week' => 'Fri',
+            'start_time' => '08:30:00',
+            'end_time' => '10:00:00',
+            'room' => 'F-401',
+        ]);
 
         foreach (['20260002', '20260003', '20260004'] as $index => $studentNumber) {
             $studentUser = User::factory()->create([
@@ -1529,6 +2061,26 @@ class FacultyAttendanceTest extends TestCase
             'schedule_id' => $schedule->schedule_id,
             'session_date' => '2025-08-11 00:00:00',
             'status' => 'present',
+        ]);
+    }
+
+    public function test_attendance_import_rejects_unscheduled_dates_without_saving_records(): void
+    {
+        $csv = "meeting_date,student_number,status\n2025-08-15,{$this->student->student_number},P\n";
+
+        $response = $this->actingAs($this->facultyUser)
+            ->post(route('faculty.attendance.import'), [
+                'course_id' => $this->course->course_id,
+                'file' => UploadedFile::fake()->createWithContent('attendance.csv', $csv),
+            ]);
+
+        $response->assertRedirect()
+            ->assertSessionHasErrors([
+                'file' => 'Attendance can only be recorded on scheduled class dates.',
+            ]);
+        $this->assertDatabaseMissing('attendance_records', [
+            'enrollment_id' => $this->enrollment->enrollment_id,
+            'session_date' => '2025-08-15',
         ]);
     }
 
@@ -1663,5 +2215,89 @@ class FacultyAttendanceTest extends TestCase
             'grading_period' => null,
             'schedule_id' => $this->course->schedules()->where('day_of_week', 'Wed')->value('schedule_id'),
         ]);
+    }
+
+    private function createOsaProcessedDrop(Enrollment $enrollment, string $outcome): DroppingTransaction
+    {
+        $enrollment->update(['status' => 'dropped']);
+        $drop = DroppingTransaction::create([
+            'enrollment_id' => $enrollment->enrollment_id,
+            'dropped_by' => $this->faculty->faculty_id,
+            'absence_hours_at_drop' => 2,
+            'sequence_in_cycle' => $enrollment->droppingTransactions()->count() + 1,
+            'drop_date' => '2026-10-01',
+        ]);
+
+        ReadmissionRequest::create([
+            'drop_id' => $drop->drop_id,
+            'attempt_number' => 1,
+            'reason_code' => 'other',
+            'reason_details' => 'OSA processing attendance access test.',
+            'channel' => 'online',
+            'status' => in_array($outcome, [
+                ReadmissionRequest::OUTCOME_APPROVED,
+                ReadmissionRequest::OUTCOME_EXCUSED,
+            ], true) ? 'approved' : 'rejected',
+            'outcome' => $outcome,
+            'processed_date' => '2026-10-02',
+        ]);
+
+        return $drop;
+    }
+
+    private function createDroppedEnrollmentWithHistory(
+        string $firstName,
+        string $lastName,
+        string $studentNumber,
+        int $dropCount,
+        array $outcomes = [],
+    ): Enrollment {
+        $studentUser = User::factory()->create([
+            'name' => "{$firstName} {$lastName}",
+            'email' => strtolower($studentNumber).'@s.ubaguio.edu',
+            'role' => 'student',
+        ]);
+        $student = Student::create([
+            'user_id' => $studentUser->user_id,
+            'student_number' => $studentNumber,
+            'last_name' => $lastName,
+            'first_name' => $firstName,
+            'department' => 'School of Information Technology',
+            'year_level' => 1,
+            'program' => 'BSCS',
+        ]);
+        $enrollment = Enrollment::create([
+            'student_id' => $student->student_id,
+            'course_id' => $this->course->course_id,
+            'status' => 'dropped',
+            'cycle_number' => 1,
+        ]);
+
+        for ($dropNumber = 1; $dropNumber <= $dropCount; $dropNumber++) {
+            $drop = DroppingTransaction::create([
+                'enrollment_id' => $enrollment->enrollment_id,
+                'dropped_by' => $this->faculty->faculty_id,
+                'absence_hours_at_drop' => 2,
+                'sequence_in_cycle' => $dropNumber,
+                'drop_date' => '2026-10-01',
+            ]);
+            $outcome = $outcomes[$dropNumber - 1] ?? match ($dropNumber) {
+                1 => ReadmissionRequest::OUTCOME_EXCUSED,
+                2 => ReadmissionRequest::OUTCOME_NOT_EXCUSED,
+                default => ReadmissionRequest::OUTCOME_REJECTED,
+            };
+            ReadmissionRequest::create([
+                'drop_id' => $drop->drop_id,
+                'attempt_number' => 1,
+                'reason_code' => 'other',
+                'reason_details' => 'OSA outcome drop indicator test.',
+                'channel' => 'online',
+                'status' => $outcome === ReadmissionRequest::OUTCOME_EXCUSED ? 'approved' : 'rejected',
+                'outcome' => $outcome,
+                'processed_date' => '2026-10-02',
+            ]);
+        }
+
+        return $enrollment;
     }
 }

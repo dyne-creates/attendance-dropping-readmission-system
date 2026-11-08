@@ -13,6 +13,8 @@ class AttendanceService
 {
     private const MAXIMUM_ABSENCE_PERCENTAGE = 0.20;
 
+    private const WEEKLY_DROP_THRESHOLD_HOURS = 3.0;
+
     /**
      * Determine the duration in hours for a class session on a given date.
      */
@@ -55,8 +57,8 @@ class AttendanceService
     public function calculateStudentAbsenceHours(Enrollment $enrollment): float
     {
         $absentRecords = $enrollment->relationLoaded('attendanceRecords')
-            ? $enrollment->attendanceRecords->where('status', 'absent')
-            : $enrollment->attendanceRecords()->where('status', 'absent')->get();
+            ? $enrollment->attendanceRecords->whereIn('status', ['absent', 'late'])
+            : $enrollment->attendanceRecords()->whereIn('status', ['absent', 'late'])->get();
 
         $course = $enrollment->relationLoaded('course')
             ? $enrollment->course
@@ -66,7 +68,7 @@ class AttendanceService
     }
 
     /**
-     * Calculate absence hours from records already loaded for an enrollment.
+     * Calculate absence-equivalent hours, with three late marks counting as one missed session.
      *
      * @param  Collection<int, AttendanceRecord>  $absentRecords
      */
@@ -80,6 +82,8 @@ class AttendanceService
                     ? (float) $record->hours_absent
                     : $this->calculateSessionHours($course, $record->session_date, $record->schedule_id);
                 $totalHours += $hours;
+            } elseif ($record->status === 'late') {
+                $totalHours += $this->calculateSessionHours($course, $record->session_date, $record->schedule_id) / 3;
             }
         }
 
@@ -129,11 +133,11 @@ class AttendanceService
     }
 
     /**
-     * Calculate the weekly absence threshold for an instructor-initiated drop.
+     * Calculate the absence-equivalent hour threshold for an instructor-initiated drop.
      */
     public function weeklyDropThresholdHours(Course $course): float
     {
-        return round((float) $course->hours_per_week, 2);
+        return self::WEEKLY_DROP_THRESHOLD_HOURS;
     }
 
     /**

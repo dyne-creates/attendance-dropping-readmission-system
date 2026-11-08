@@ -10,6 +10,7 @@ use App\Models\DroppingTransaction;
 use App\Models\Enrollment;
 use App\Models\FacultyMember;
 use App\Models\Notification;
+use App\Models\ReadmissionRequest;
 use App\Services\AttendanceImportService;
 use App\Services\AttendanceService;
 use Carbon\Carbon;
@@ -20,6 +21,7 @@ use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 use InvalidArgumentException;
 
@@ -65,6 +67,7 @@ class FacultyController extends Controller
 
         $enrollmentRows = collect();
         $isOnSchedule = true;
+        $canCheckAttendance = false;
         $scheduleDay = Carbon::parse($selectedDate)->format('D');
         $scheduledDays = [];
         $courseStats = [
@@ -142,6 +145,7 @@ class FacultyController extends Controller
             $selectedScheduleId = (int) $request->query('schedule_id', 0);
             $selectedSchedule = $slotsForDay->firstWhere('schedule_id', $selectedScheduleId)
                 ?? $slotsForDay->first();
+            $canCheckAttendance = $selectedSchedule !== null;
 
             $sessionHours = ($selectedSchedule && $selectedSchedule->start_time && $selectedSchedule->end_time)
                 ? round(
@@ -151,7 +155,12 @@ class FacultyController extends Controller
                 : $this->attendanceService->calculateSessionHours($course, $selectedDate, $selectedSchedule?->schedule_id);
 
             // Load enrollments with student and attendance records
-            $enrollments = Enrollment::with(['student.user', 'attendanceRecords'])
+            $enrollments = Enrollment::with([
+                'student.user',
+                'attendanceRecords',
+                'latestDroppingTransaction.latestProcessedReadmissionRequest',
+                'droppingTransactions.readmissionRequests',
+            ])
                 ->withCount('droppingTransactions')
                 ->where('course_id', $course->course_id)
                 ->get();
@@ -186,6 +195,73 @@ class FacultyController extends Controller
                         ?? $recordsForSelectedDate->first();
 
                 $overallScore = $this->attendanceService->calculateOverallScore($enrollment->attendanceRecords);
+                $latestOsaDecision = $enrollment->latestDroppingTransaction?->latestProcessedReadmissionRequest;
+                $osaStatus = match ($latestOsaDecision?->outcome) {
+                    ReadmissionRequest::OUTCOME_EXCUSED => 'Excused',
+                    ReadmissionRequest::OUTCOME_NOT_EXCUSED => 'Unexcused',
+                    ReadmissionRequest::OUTCOME_REJECTED => 'Fully Dropped',
+                    default => $enrollment->status === 'dropped' ? 'Dropped' : null,
+                };
+                $osaStatusClass = match ($osaStatus) {
+                    'Excused' => 'badge-success',
+                    'Unexcused' => 'badge-warning',
+                    'Fully Dropped', 'Dropped' => 'badge-danger',
+                    default => null,
+                };
+                $dropHistory = $enrollment->droppingTransactions
+                    ->sortBy('drop_id')
+                    ->values()
+                    ->map(function (DroppingTransaction $drop): array {
+                        $requests = $drop->readmissionRequests;
+                        $decision = $requests->whereNotNull('outcome')
+                            ->sortByDesc('attempt_number')
+                            ->first();
+                        $latestRequest = $requests->sortByDesc('attempt_number')->first();
+                        $status = match ($decision?->outcome) {
+                            ReadmissionRequest::OUTCOME_EXCUSED => 'Excused',
+                            ReadmissionRequest::OUTCOME_NOT_EXCUSED => 'Unexcused',
+                            ReadmissionRequest::OUTCOME_REJECTED => 'Fully Dropped',
+                            ReadmissionRequest::OUTCOME_APPROVED => 'Approved',
+                            default => match ($latestRequest?->status) {
+                                'pending' => 'Pending OSA',
+                                'approved' => 'Approved',
+                                default => 'Awaiting student request',
+                            },
+                        };
+
+                        return [
+                            'sequence' => $drop->sequence_in_cycle,
+                            'status' => $status,
+                            'application_status' => match ($latestRequest?->status) {
+                                'pending' => 'Submitted · Pending OSA review',
+                                'approved' => 'Reviewed · Approved',
+                                'rejected' => match ($latestRequest->outcome) {
+                                    ReadmissionRequest::OUTCOME_EXCUSED => 'Reviewed · Excused',
+                                    ReadmissionRequest::OUTCOME_NOT_EXCUSED => 'Reviewed · Unexcused',
+                                    ReadmissionRequest::OUTCOME_REJECTED => 'Reviewed · Fully Dropped',
+                                    default => 'Reviewed · Rejected',
+                                },
+                                default => 'Not applied',
+                            },
+                            'attempt' => $latestRequest?->attempt_number,
+                            'applied_at' => $latestRequest?->created_at?->format('M j, Y g:i A'),
+                            'reason' => $latestRequest
+                                ? ReadmissionRequest::reasonLabel($latestRequest->reason_code)
+                                : null,
+                            'reason_details' => $latestRequest?->reason_details,
+                            'date' => $drop->drop_date?->format('M j, Y'),
+                            'absence_hours' => (float) $drop->absence_hours_at_drop,
+                            'type' => $drop->drop_type,
+                            'status_class' => match ($status) {
+                                'Excused', 'Approved' => 'badge-success',
+                                'Unexcused', 'Pending OSA', 'Awaiting student request' => 'badge-warning',
+                                'Fully Dropped' => 'badge-danger',
+                                default => 'badge-neutral',
+                            },
+                        ];
+                    });
+                $unexcusedDropCount = $dropHistory->where('status', 'Unexcused')->count();
+                $canRecordAttendance = $enrollment->canRecordAttendance();
 
                 // Key records by "date|scheduleId" so the overall grid can distinguish multi-slot days
                 $recordsByDate = $enrollment->attendanceRecords
@@ -203,14 +279,19 @@ class FacultyController extends Controller
                     'enrollment' => $enrollment,
                     'student' => $enrollment->student,
                     'drop_count' => $enrollment->dropping_transactions_count,
+                    'unexcused_drop_count' => $unexcusedDropCount,
                     'status' => $enrollment->status,
+                    'can_record_attendance' => $canRecordAttendance,
+                    'osa_status' => $osaStatus,
+                    'osa_status_class' => $osaStatusClass,
+                    'drop_history' => $dropHistory,
                     'absent_hours' => $absentHours,
                     'maximum_absence_hours' => $maximumAbsenceHours,
-                    'weekly_drop_threshold_hours' => $maximumAbsenceHours,
+                    'weekly_drop_threshold_hours' => $weeklyDropThresholdHours,
                     'absence_percentage' => $this->attendanceService->calculateAbsencePercentage($course, $absentHours),
                     'maximum_absence_percentage' => $this->attendanceService->maximumAllowableAbsencePercentage(),
-                    'is_drop_eligible' => $enrollment->status !== 'dropped' && $absentHours >= $maximumAbsenceHours,
-                    'is_permanent_drop_eligible' => $enrollment->status !== 'dropped' && $absentHours >= $maximumAbsenceHours,
+                    'is_drop_eligible' => $canRecordAttendance && $absentHours >= $weeklyDropThresholdHours,
+                    'is_permanent_drop_eligible' => $canRecordAttendance && $absentHours >= $maximumAbsenceHours,
                     'presences' => $presences,
                     'lates' => $lates,
                     'absences' => $absences,
@@ -279,7 +360,7 @@ class FacultyController extends Controller
                     $scheduleIds->push(null);
                 }
 
-                return $scheduleIds->map(function (?int $scheduleId) use ($carbon, $course, $dateStr, $selectedDate): array {
+                return $scheduleIds->map(function (?int $scheduleId) use ($carbon, $course, $dateStr, $selectedDate, $scheduledSlots): array {
                     $schedule = $course->schedules->firstWhere('schedule_id', $scheduleId);
                     $scheduleLabel = $schedule
                         ? Carbon::parse($schedule->start_time)->format('g:i A').' – '.Carbon::parse($schedule->end_time)->format('g:i A')
@@ -299,6 +380,8 @@ class FacultyController extends Controller
                         'is_selected' => $dateStr === $selectedDate,
                         'is_today' => $carbon->isToday(),
                         'is_on_schedule' => $this->attendanceService->isDateOnSchedule($course, $dateStr),
+                        'can_record_attendance' => $scheduledSlots->isNotEmpty()
+                            && ($scheduleId === null || $scheduledSlots->contains('schedule_id', $scheduleId)),
                     ];
                 });
             });
@@ -355,6 +438,7 @@ class FacultyController extends Controller
             'nextDate' => $nextDate,
             'slotsForDay' => $slotsForDay,
             'selectedSchedule' => $selectedSchedule,
+            'canCheckAttendance' => $canCheckAttendance,
             'isSelectedDateCancelled' => $isSelectedDateCancelled,
             'weekStart' => $weekStart,
             'weekEnd' => $weekEnd,
@@ -422,25 +506,41 @@ class FacultyController extends Controller
 
         $sessionDate = Carbon::parse($validated['session_date'])->toDateString();
         $scheduleId = $validated['schedule_id'] ?? null;
-        if ($scheduleId !== null) {
-            $schedule = $this->scheduleForCourse($course, (int) $scheduleId);
+        try {
+            if ($scheduleId !== null) {
+                $schedule = $this->scheduleForCourse($course, (int) $scheduleId);
 
-            $this->ensureScheduleOccurrenceAvailable($schedule, $sessionDate);
-        } else {
-            $this->ensureDateIsNotFullyCancelled($course, $sessionDate);
+                $this->ensureScheduleOccurrenceAvailable($schedule, $sessionDate);
+            } else {
+                $this->ensureDateHasScheduledClass($course, $sessionDate);
+            }
+        } catch (ValidationException $exception) {
+            if ($request->wantsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'error' => $exception->errors()['session_date'][0],
+                ], 422);
+            }
+
+            throw $exception;
         }
         $isOutOfSchedule = ! $this->attendanceService->isDateOnSchedule($course, $sessionDate);
 
         DB::transaction(function () use ($validated, $faculty, $sessionDate, $scheduleId, $isOutOfSchedule): void {
+            $enrollmentsById = Enrollment::with('latestDroppingTransaction.latestProcessedReadmissionRequest')
+                ->whereIn('enrollment_id', collect($validated['attendance'])->pluck('enrollment_id')->unique())
+                ->get()
+                ->keyBy('enrollment_id');
+
             foreach ($validated['attendance'] as $entry) {
-                $enrollment = Enrollment::with('student', 'course')->find($entry['enrollment_id']);
+                $enrollment = $enrollmentsById->get($entry['enrollment_id']);
 
                 if (! $enrollment) {
                     continue;
                 }
 
-                // US-03: Prevent recording future attendance for students already dropped
-                if ($enrollment->status === 'dropped') {
+                // Allow attendance again after OSA clears the latest drop.
+                if (! $enrollment->canRecordAttendance()) {
                     continue;
                 }
 
@@ -531,7 +631,13 @@ class FacultyController extends Controller
 
         $dates = collect($rows)->pluck('meeting_date')->unique()->values();
         foreach ($dates as $sessionDate) {
-            $this->ensureDateIsNotFullyCancelled($course, $sessionDate);
+            try {
+                $this->ensureDateHasScheduledClass($course, $sessionDate);
+            } catch (ValidationException $exception) {
+                return back()
+                    ->withErrors(['file' => $exception->errors()['session_date'][0]])
+                    ->withInput($request->except('file'));
+            }
         }
 
         $scheduleIdByDate = collect();
@@ -593,7 +699,10 @@ class FacultyController extends Controller
             return back()->withErrors(['file' => 'Each student can have only one attendance mark per meeting date.'])->withInput();
         }
 
-        $enrollmentsByStudentNumber = Enrollment::with('student')
+        $enrollmentsByStudentNumber = Enrollment::with([
+            'student',
+            'latestDroppingTransaction.latestProcessedReadmissionRequest',
+        ])
             ->where('course_id', $course->course_id)
             ->whereHas('student', fn ($query) => $query->whereIn('student_number', $studentNumbers))
             ->get()
@@ -607,7 +716,7 @@ class FacultyController extends Controller
             if (! $enrollment) {
                 return back()->withErrors(['file' => "Student {$row['student_number']} on row {$row['row']} is not enrolled in this course."])->withInput();
             }
-            if ($enrollment->status === 'dropped') {
+            if (! $enrollment->canRecordAttendance()) {
                 return back()->withErrors(['file' => "Student {$row['student_number']} on row {$row['row']} has been dropped from this course."])->withInput();
             }
         }
@@ -760,30 +869,42 @@ class FacultyController extends Controller
 
     private function ensureScheduleOccurrenceAvailable(CourseSchedule $schedule, string $sessionDate): void
     {
-        abort_unless(
-            ! DB::table('course_schedule_cancellations')
-                ->where('schedule_id', $schedule->schedule_id)
-                ->whereDate('session_date', $sessionDate)
-                ->exists(),
-            422,
-            'The selected dated meeting has been cancelled.',
-        );
+        if ($schedule->day_of_week !== Carbon::parse($sessionDate)->format('D')) {
+            throw ValidationException::withMessages([
+                'session_date' => 'The schedule does not match the meeting date.',
+            ]);
+        }
+
+        if (DB::table('course_schedule_cancellations')
+            ->where('schedule_id', $schedule->schedule_id)
+            ->whereDate('session_date', $sessionDate)
+            ->exists()) {
+            throw ValidationException::withMessages([
+                'session_date' => 'The selected dated meeting has been cancelled.',
+            ]);
+        }
     }
 
-    private function ensureDateIsNotFullyCancelled(Course $course, string $sessionDate): void
+    private function ensureDateHasScheduledClass(Course $course, string $sessionDate): void
     {
         $scheduledSlots = $course->schedules
             ->filter(fn (CourseSchedule $schedule): bool => $schedule->day_of_week === Carbon::parse($sessionDate)->format('D'));
+        if ($scheduledSlots->isEmpty()) {
+            throw ValidationException::withMessages([
+                'session_date' => 'Attendance can only be recorded on scheduled class dates.',
+            ]);
+        }
 
-        abort_unless(
-            $scheduledSlots->isEmpty()
-                || ! $scheduledSlots->every(fn (CourseSchedule $schedule): bool => DB::table('course_schedule_cancellations')
-                    ->where('schedule_id', $schedule->schedule_id)
-                    ->whereDate('session_date', $sessionDate)
-                    ->exists()),
-            422,
-            'All scheduled meetings on this date have been cancelled.',
-        );
+        $cancelledScheduleIds = DB::table('course_schedule_cancellations')
+            ->whereIn('schedule_id', $scheduledSlots->pluck('schedule_id'))
+            ->whereDate('session_date', $sessionDate)
+            ->pluck('schedule_id');
+
+        if (! $scheduledSlots->contains(fn (CourseSchedule $schedule): bool => ! $cancelledScheduleIds->contains($schedule->schedule_id))) {
+            throw ValidationException::withMessages([
+                'session_date' => 'All scheduled meetings on this date have been cancelled.',
+            ]);
+        }
     }
 
     /**
@@ -810,11 +931,15 @@ class FacultyController extends Controller
         }
         abort_if($course->is_archived, 404, 'This subject is archived.');
 
-        $enrollment = Enrollment::with('student', 'attendanceRecords')->where('course_id', $course->course_id)
+        $enrollment = Enrollment::with([
+            'student',
+            'attendanceRecords',
+            'latestDroppingTransaction.latestProcessedReadmissionRequest',
+        ])->where('course_id', $course->course_id)
             ->where('enrollment_id', $validated['enrollment_id'])
             ->firstOrFail();
 
-        if ($enrollment->status === 'dropped') {
+        if (! $enrollment->canRecordAttendance()) {
             if ($request->wantsJson()) {
                 return response()->json(['error' => 'Cannot record attendance for a dropped student.'], 422);
             }
@@ -824,12 +949,23 @@ class FacultyController extends Controller
 
         $sessionDate = Carbon::parse($validated['session_date'])->toDateString();
         $scheduleId = $validated['schedule_id'] ?? null;
-        if ($scheduleId !== null) {
-            $schedule = $this->scheduleForCourse($course, (int) $scheduleId);
+        try {
+            if ($scheduleId !== null) {
+                $schedule = $this->scheduleForCourse($course, (int) $scheduleId);
 
-            $this->ensureScheduleOccurrenceAvailable($schedule, $sessionDate);
-        } else {
-            $this->ensureDateIsNotFullyCancelled($course, $sessionDate);
+                $this->ensureScheduleOccurrenceAvailable($schedule, $sessionDate);
+            } else {
+                $this->ensureDateHasScheduledClass($course, $sessionDate);
+            }
+        } catch (ValidationException $exception) {
+            if ($request->wantsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'error' => $exception->errors()['session_date'][0],
+                ], 422);
+            }
+
+            throw $exception;
         }
         $isOutOfSchedule = ! $this->attendanceService->isDateOnSchedule($course, $sessionDate);
 
@@ -887,10 +1023,10 @@ class FacultyController extends Controller
                     'overall_score' => $overallScore,
                     'absent_hours' => $absentHours,
                     'maximum_absence_hours' => $maximumAbsenceHours,
-                    'weekly_drop_threshold_hours' => $maximumAbsenceHours,
+                    'weekly_drop_threshold_hours' => $weeklyDropThresholdHours,
                     'absence_percentage' => $this->attendanceService->calculateAbsencePercentage($course, $absentHours),
                     'maximum_absence_percentage' => $this->attendanceService->maximumAllowableAbsencePercentage(),
-                    'is_drop_eligible' => $absentHours >= $maximumAbsenceHours,
+                    'is_drop_eligible' => $absentHours >= $weeklyDropThresholdHours,
                     'is_permanent_drop_eligible' => $absentHours >= $maximumAbsenceHours,
                     'presences' => $enrollment->attendanceRecords->where('status', 'present')->count(),
                     'lates' => $enrollment->attendanceRecords->where('status', 'late')->count(),
@@ -922,7 +1058,9 @@ class FacultyController extends Controller
         }
         abort_if($enrollment->course->is_archived, 404, 'This subject is archived.');
 
-        if ($enrollment->status === 'dropped') {
+        $enrollment->loadMissing('latestDroppingTransaction.latestProcessedReadmissionRequest');
+
+        if (! $enrollment->canRecordAttendance()) {
             return back()->with('info', 'This student is already marked as Dropped.');
         }
 
@@ -931,19 +1069,19 @@ class FacultyController extends Controller
         $maximumAbsenceHours = $this->attendanceService->maximumAllowableAbsenceHours($enrollment->course);
         $weeklyDropThresholdHours = $this->attendanceService->weeklyDropThresholdHours($enrollment->course);
 
-        if ($referralType === 'attendance' && $absenceHours < $maximumAbsenceHours) {
+        if ($referralType === 'attendance' && $absenceHours < $weeklyDropThresholdHours) {
             return back()->with('error', sprintf(
-                'This student can be dropped to OSA after reaching %.2f accumulated absent hours (20%% of semester hours); current total is %.2f hours.',
-                $maximumAbsenceHours,
+                'This student can be dropped to OSA after reaching %.2f absence-equivalent hours; current total is %.2f hours.',
+                $weeklyDropThresholdHours,
                 $absenceHours,
             ));
         }
 
-        $dropType = $absenceHours >= $maximumAbsenceHours
-            ? DroppingTransaction::TYPE_PERMANENT
-            : ($referralType === 'circumstance'
-                ? DroppingTransaction::TYPE_INSTRUCTOR_REFERRAL
-                : DroppingTransaction::TYPE_PERMANENT);
+        $dropType = match (true) {
+            $absenceHours >= $maximumAbsenceHours => DroppingTransaction::TYPE_PERMANENT,
+            $referralType === 'circumstance' => DroppingTransaction::TYPE_INSTRUCTOR_REFERRAL,
+            default => DroppingTransaction::TYPE_WEEKLY_HOURS,
+        };
         $instructorReason = $referralType === 'circumstance'
             ? $validated['instructor_reason']
             : null;

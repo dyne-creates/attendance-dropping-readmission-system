@@ -227,6 +227,11 @@ class StudentReadmissionTest extends TestCase
         $document = $readmission->excuseDocuments()->firstOrFail();
         $this->assertSame('supporting_document', $document->document_type);
         Storage::assertExists($document->file_path);
+
+        $this->actingAs(User::factory()->osaStaff()->create())
+            ->get(route('osa.readmissions'))
+            ->assertSee($student->student_number)
+            ->assertSee('Dental & Medical Concerns');
     }
 
     public function test_dropped_student_can_submit_a_readmission_request_with_a_docx_supporting_document(): void

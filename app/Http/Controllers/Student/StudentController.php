@@ -74,7 +74,7 @@ class StudentController extends Controller
 
             $absenceHours = $attendanceService->calculateAbsenceHours(
                 $enrollment->course,
-                $enrollment->attendanceRecords->where('status', 'absent'),
+                $enrollment->attendanceRecords->whereIn('status', ['absent', 'late']),
             );
             $maximumAbsenceHours = $attendanceService->maximumAllowableAbsenceHours($enrollment->course);
             $weeklyDropThresholdHours = $attendanceService->weeklyDropThresholdHours($enrollment->course);
