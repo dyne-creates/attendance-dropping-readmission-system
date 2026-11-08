@@ -5,6 +5,7 @@
         'student'   => 'Student',
         'faculty'   => 'Faculty',
         'osa_staff' => 'OSA Staff',
+        'admin'     => 'Administrator',
     ];
     $roleLabel = $roleLabels[$user->role] ?? ucfirst(str_replace('_', ' ', (string) $user->role));
 @endphp
@@ -20,7 +21,9 @@
         x-init="try { sidebarCollapsed = localStorage.getItem('adrs-sidebar-collapsed') === 'true'; } catch (error) {}"
         x-effect="try { localStorage.setItem('adrs-sidebar-collapsed', sidebarCollapsed); } catch (error) {}"
     >
-        @if ($user->role === 'osa_staff')
+        @if ($user->role === 'admin')
+            @include('layouts.admin-navigation')
+        @elseif ($user->role === 'osa_staff')
             @include('layouts.osa-navigation')
         @elseif ($user->role === 'faculty')
             @include('layouts.faculty-navigation')

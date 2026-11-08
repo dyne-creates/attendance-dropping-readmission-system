@@ -206,10 +206,10 @@ class FacultyController extends Controller
                     'status' => $enrollment->status,
                     'absent_hours' => $absentHours,
                     'maximum_absence_hours' => $maximumAbsenceHours,
-                    'weekly_drop_threshold_hours' => $weeklyDropThresholdHours,
+                    'weekly_drop_threshold_hours' => $maximumAbsenceHours,
                     'absence_percentage' => $this->attendanceService->calculateAbsencePercentage($course, $absentHours),
                     'maximum_absence_percentage' => $this->attendanceService->maximumAllowableAbsencePercentage(),
-                    'is_drop_eligible' => $enrollment->status !== 'dropped' && $absentHours >= $weeklyDropThresholdHours,
+                    'is_drop_eligible' => $enrollment->status !== 'dropped' && $absentHours >= $maximumAbsenceHours,
                     'is_permanent_drop_eligible' => $enrollment->status !== 'dropped' && $absentHours >= $maximumAbsenceHours,
                     'presences' => $presences,
                     'lates' => $lates,
@@ -887,10 +887,10 @@ class FacultyController extends Controller
                     'overall_score' => $overallScore,
                     'absent_hours' => $absentHours,
                     'maximum_absence_hours' => $maximumAbsenceHours,
-                    'weekly_drop_threshold_hours' => $weeklyDropThresholdHours,
+                    'weekly_drop_threshold_hours' => $maximumAbsenceHours,
                     'absence_percentage' => $this->attendanceService->calculateAbsencePercentage($course, $absentHours),
                     'maximum_absence_percentage' => $this->attendanceService->maximumAllowableAbsencePercentage(),
-                    'is_drop_eligible' => $absentHours >= $weeklyDropThresholdHours,
+                    'is_drop_eligible' => $absentHours >= $maximumAbsenceHours,
                     'is_permanent_drop_eligible' => $absentHours >= $maximumAbsenceHours,
                     'presences' => $enrollment->attendanceRecords->where('status', 'present')->count(),
                     'lates' => $enrollment->attendanceRecords->where('status', 'late')->count(),
@@ -931,10 +931,10 @@ class FacultyController extends Controller
         $maximumAbsenceHours = $this->attendanceService->maximumAllowableAbsenceHours($enrollment->course);
         $weeklyDropThresholdHours = $this->attendanceService->weeklyDropThresholdHours($enrollment->course);
 
-        if ($referralType === 'attendance' && $absenceHours < $weeklyDropThresholdHours) {
+        if ($referralType === 'attendance' && $absenceHours < $maximumAbsenceHours) {
             return back()->with('error', sprintf(
-                'This student can be dropped to OSA after reaching %.2f absent hours (one week of this subject); current total is %.2f hours.',
-                $weeklyDropThresholdHours,
+                'This student can be dropped to OSA after reaching %.2f accumulated absent hours (20%% of semester hours); current total is %.2f hours.',
+                $maximumAbsenceHours,
                 $absenceHours,
             ));
         }
@@ -943,7 +943,7 @@ class FacultyController extends Controller
             ? DroppingTransaction::TYPE_PERMANENT
             : ($referralType === 'circumstance'
                 ? DroppingTransaction::TYPE_INSTRUCTOR_REFERRAL
-                : DroppingTransaction::TYPE_WEEKLY_HOURS);
+                : DroppingTransaction::TYPE_PERMANENT);
         $instructorReason = $referralType === 'circumstance'
             ? $validated['instructor_reason']
             : null;

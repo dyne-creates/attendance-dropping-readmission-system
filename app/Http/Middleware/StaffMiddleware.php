@@ -19,6 +19,7 @@ class StaffMiddleware
             return redirect()->route(match ($request->user()?->role) {
                 'student' => 'student.dashboard',
                 'faculty' => 'faculty.dashboard',
+                'admin' => 'admin.osa-accounts.index',
                 default => 'profile.edit',
             });
         }

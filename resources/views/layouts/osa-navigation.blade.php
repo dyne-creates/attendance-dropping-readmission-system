@@ -7,5 +7,6 @@
         ['label' => 'Readmissions',         'route' => 'osa.readmissions',         'active' => 'osa.readmissions*'],
         ['label' => 'Drop Records',         'route' => 'osa.archive.drops'],
         ['label' => 'Readmission Archive',  'route' => 'osa.archive.readmissions'],
+        ['label' => 'Reports',              'route' => 'osa.reports',              'active' => 'osa.reports*'],
     ]"
 />

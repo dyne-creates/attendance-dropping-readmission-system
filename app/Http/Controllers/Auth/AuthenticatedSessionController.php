@@ -26,6 +26,7 @@ class AuthenticatedSessionController extends Controller
         $request->session()->regenerate();
 
         $dashboardRoute = match ($request->user()->role) {
+            'admin' => 'admin.osa-accounts.index',
             'student' => 'student.dashboard',
             'faculty' => 'faculty.dashboard',
             'osa_staff' => 'osa.dashboard',

@@ -114,6 +114,16 @@ class DatabaseSeeder extends Seeder
 
         OsaStaff::firstOrCreate(['user_id' => $osaUser->user_id]);
 
+        User::firstOrCreate(
+            ['email' => 'admin@e.ubaguio.edu'],
+            [
+                'name' => 'System Administrator',
+                'role' => 'admin',
+                'password' => Hash::make('password'),
+                'email_verified_at' => now(),
+            ]
+        );
+
         // 5. Add Course: AGLDEV1 (Agile Development)
         // We create AGLDEV1 for all faculty members so whoever logs in sees this course
         $createdCourses = [];

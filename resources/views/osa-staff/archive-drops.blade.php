@@ -48,18 +48,18 @@
                                     @if ($drop->drop_type === \App\Models\DroppingTransaction::TYPE_PERMANENT)
                                         <span class="badge badge-danger">Permanent · OSA may review readmission</span>
                                     @elseif ($drop->drop_type === \App\Models\DroppingTransaction::TYPE_INSTRUCTOR_REFERRAL)
-                                        <span class="badge badge-neutral">Instructor referral</span>
+                                        <p class="font-medium">Instructor referral</p>
                                     @else
-                                        <span class="badge badge-warning">Weekly hours · OSA review</span>
+                                        <span class="badge badge-warning">Accumulated hours · OSA review</span>
                                     @endif
                                     @if ($drop->instructor_reason)
-                                        <p class="mt-1 text-xs muted">{{ $drop->instructor_reason }}</p>
+                                        <p class="mt-1 text-xs muted"><span class="font-medium">Reason:</span> {{ $drop->instructor_reason }}</p>
                                     @endif
                                 </td>
 
                                 <td>{{ $drop->absence_hours_at_drop }} hrs</td>
 
-                                <td><span class="badge badge-neutral">#{{ $drop->sequence_in_cycle }}</span></td>
+                                <td>{{ $drop->sequence_in_cycle }}</td>
 
                                 <td>{{ $drop->drop_date ? Carbon\Carbon::parse($drop->drop_date)->format('M d, Y') : '—' }}</td>
                             </tr>

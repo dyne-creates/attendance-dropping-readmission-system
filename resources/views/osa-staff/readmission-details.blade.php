@@ -119,7 +119,7 @@
                             @elseif ($request->drop_type === \App\Models\DroppingTransaction::TYPE_INSTRUCTOR_REFERRAL)
                                 Instructor referral to OSA
                             @else
-                                Weekly-hours drop referred to OSA
+                                Accumulated absence-hours drop referred to OSA
                             @endif
                         </dd>
                     </div>
@@ -172,16 +172,22 @@
                     @endif
 
                     @if ($request->outcome === \App\Models\ReadmissionRequest::OUTCOME_EXCUSED)
-                        <div>
-                            <dt class="text-sm font-medium muted">Excused dates</dt>
+                        <div class="sm:col-span-2">
+                            <dt class="text-sm font-medium muted">Selected excused dates</dt>
                             <dd class="mt-1 text-sm">
-                                {{ Carbon\Carbon::parse($request->excused_from)->format('M d, Y') }}
-                                – {{ Carbon\Carbon::parse($request->excused_through)->format('M d, Y') }}
+                                {{ collect(json_decode((string) ($request->excused_dates ?? '[]'), true) ?: [$request->excused_from, $request->excused_through])->filter()->map(fn (string $date): string => Carbon\Carbon::parse($date)->format('M d, Y'))->join(', ') }}
                             </dd>
                         </div>
                         <div>
                             <dt class="text-sm font-medium muted">Absence hours deducted</dt>
                             <dd class="mt-1 text-sm">{{ number_format((float) $request->excused_hours_deducted, 2) }} hrs</dd>
+                        </div>
+                    @endif
+
+                    @if ($request->correction_requested_at)
+                        <div class="sm:col-span-2">
+                            <dt class="text-sm font-medium muted">Correction requested</dt>
+                            <dd class="mt-1 text-sm">Sent to the student on {{ Carbon\Carbon::parse($request->correction_requested_at)->format('M d, Y g:i A') }}.</dd>
                         </div>
                     @endif
 
@@ -229,22 +235,67 @@
 
             <section class="card overflow-hidden">
                 <div class="card-header">
-                    <h2 class="text-base font-semibold">Recorded absence dates</h2>
+                    <h2 class="text-base font-semibold">Attendance status and weekly drill-down</h2>
                 </div>
                 <div class="card-body space-y-4">
-                    @forelse ($absenceDates as $absence)
+                    @forelse ($attendanceRecords as $absence)
                         <p class="text-sm">
                             {{ Carbon\Carbon::parse($absence->session_date)->format('F j, Y') }}
+                            <span class="badge {{ $absence->status === 'excused' ? 'badge-success' : ($absence->status === 'absent' ? 'badge-danger' : 'badge-neutral') }}">{{ ucfirst($absence->status) }}</span>
                             @if ($absence->hours_absent !== null)
                                 <span class="muted">({{ $absence->hours_absent }} hours)</span>
                             @endif
                         </p>
                     @empty
-                        <p class="text-sm muted">No recorded absences.</p>
+                        <p class="text-sm muted">No attendance records.</p>
                     @endforelse
+                    @if ($weeklyAbsenceHours->isNotEmpty())
+                        <div class="border-t pt-3">
+                            <p class="field-label mb-2">Weekly absence-hours drill-down</p>
+                            @foreach ($weeklyAbsenceHours as $week => $hours)
+                                <p class="text-sm">Week of {{ Carbon\Carbon::parse($week)->format('M d, Y') }} <span class="muted">· {{ number_format($hours, 2) }} hrs absent</span></p>
+                            @endforeach
+                        </div>
+                    @endif
                 </div>
             </section>
         </div>
+
+        <section class="card overflow-hidden">
+            <div class="card-header"><h2 class="text-base font-semibold">Student dropping and readmission history</h2></div>
+            <div class="card-body space-y-4">
+                <div class="stat-grid grid-cols-2 overflow-hidden rounded-lg sm:grid-cols-4">
+                    @foreach (['drops' => 'Drops', 'requests' => 'Requests', 'excused' => 'Excused', 'not_excused' => 'Not excused'] as $key => $label)
+                        <div>
+                            <p class="muted text-sm">{{ $label }}</p>
+                            <p class="mt-1 text-3xl font-semibold tabular-nums">{{ $historyCounters[$key] }}</p>
+                        </div>
+                    @endforeach
+                </div>
+                @forelse ($studentHistory as $history)
+                    <div class="surface-alt rounded-lg border p-3 text-sm">
+                        <p class="font-medium">{{ $history->subject_code }} · {{ $history->course_name }}</p>
+                        <p class="mt-1 muted">Dropped {{ Carbon\Carbon::parse($history->drop_date)->format('M d, Y') }} · {{ number_format((float) $history->absence_hours_at_drop, 2) }} hrs @if($history->attempt_number) · Request #{{ $history->attempt_number }}: {{ ucfirst($history->readmission_outcome ?? $history->readmission_status) }} @endif</p>
+                    </div>
+                @empty
+                    <p class="text-sm muted">No prior dropping or readmission history.</p>
+                @endforelse
+            </div>
+        </section>
+
+        <section class="card overflow-hidden">
+            <div class="card-header"><h2 class="text-base font-semibold">Dropping and correction notifications</h2></div>
+            <div class="card-body space-y-3">
+                @forelse ($notifications as $notification)
+                    <div class="rounded-lg border p-3">
+                        <p class="text-sm">{{ $notification->message }}</p>
+                        <p class="mt-1 text-xs muted">{{ $notification->sent_at ? Carbon\Carbon::parse($notification->sent_at)->format('M d, Y g:i A') : 'Not sent' }}</p>
+                    </div>
+                @empty
+                    <p class="text-sm muted">No dropping or correction notifications are recorded for this student.</p>
+                @endforelse
+            </div>
+        </section>
 
         <!-- Supporting documents -->
         <section class="card overflow-hidden">
@@ -254,19 +305,34 @@
 
             <div class="card-body">
                 @forelse ($documents as $document)
-                    <div class="flex flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between {{ $loop->first ? 'pt-0' : 'border-t' }} {{ $loop->last ? 'pb-0' : '' }}">
-                        <div>
-                            <p class="text-sm font-medium">{{ ucfirst(str_replace('_', ' ', (string) $document->document_type)) }}</p>
-                            <p class="mt-0.5 text-xs muted">
-                                Uploaded {{ $document->created_at ? Carbon\Carbon::parse($document->created_at)->format('M d, Y') : '—' }}
-                            </p>
-                        </div>
+                    <div x-data="{ previewOpen: false }" @keydown.escape.window="previewOpen = false" class="{{ $loop->first ? '' : 'border-t pt-5' }} {{ $loop->last ? '' : 'pb-5' }}">
+                        <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                            <div>
+                                <p class="text-sm font-medium">{{ ucfirst(str_replace('_', ' ', (string) $document->document_type)) }}</p>
+                                <p class="mt-0.5 text-xs muted">
+                                    Uploaded {{ $document->created_at ? Carbon\Carbon::parse($document->created_at)->format('M d, Y') : '—' }}
+                                </p>
+                            </div>
 
-                        <a href="{{ route('osa.readmissions.documents.download', $document->document_id) }}"
-                           class="btn btn-secondary btn-sm">
-                            Download document
-                        </a>
+                            <div class="flex gap-2">
+                                <button type="button" class="btn btn-primary btn-sm" @click="previewOpen = true">Preview</button>
+                                <a href="{{ route('osa.readmissions.documents.download', $document->document_id) }}" class="btn btn-secondary btn-sm">Download</a>
+                            </div>
+                        </div>
+                        <iframe src="{{ route('osa.readmissions.documents.preview', $document->document_id) }}#view=FitH" title="Supporting document preview" class="mt-4 w-full max-w-4xl rounded-lg border bg-white" style="height: min(72vh, 700px);"></iframe>
+
+                        <div x-show="previewOpen" x-cloak class="fixed inset-0 z-[80] flex items-center justify-center bg-black/90 p-4" role="dialog" aria-modal="true" aria-label="Full-screen document preview">
+                            <button type="button" class="absolute inset-0 cursor-default" aria-label="Close document preview" @click="previewOpen = false"></button>
+                            <section class="relative flex h-full w-full max-w-7xl flex-col rounded-lg bg-white p-3 shadow-2xl">
+                                <div class="mb-3 flex items-center justify-between gap-4">
+                                    <p class="text-sm font-semibold text-gray-900">Document preview</p>
+                                    <button type="button" class="btn btn-secondary btn-sm" @click="previewOpen = false">Close</button>
+                                </div>
+                                <iframe src="{{ route('osa.readmissions.documents.preview', $document->document_id) }}#view=FitH" title="Full-screen supporting document preview" class="min-h-0 flex-1 w-full rounded border bg-white"></iframe>
+                            </section>
+                        </div>
                     </div>
+<<<<<<< HEAD
                     @php
                         $documentExtension = strtolower(pathinfo($document->file_path, PATHINFO_EXTENSION));
                     @endphp
@@ -285,6 +351,8 @@
                             Preview is not available for this file type. Download the document to review it.
                         </p>
                     @endif
+=======
+>>>>>>> fdb130bc73ef97786f2965b631473463a46e3b60
                 @empty
                     <p class="text-sm muted">No supporting documents were uploaded.</p>
                 @endforelse
@@ -312,53 +380,30 @@
 
                     <form method="POST" action="{{ route('osa.readmissions.excuse', $request->readmission_id) }}"
                           class="max-w-2xl space-y-3 rounded-lg border p-4"
-                          data-confirm="Excuse absences in this range and reactivate the student?"
-                          x-data="{
-                              duration: @js(old('excused_from') && old('excused_through') && old('excused_from') !== old('excused_through') ? 'multiple' : 'single'),
-                              excusedFrom: @js(old('excused_from', '')),
-                              excusedThrough: @js(old('excused_through', ''))
-                          }"
-                          x-effect="if (duration === 'single') excusedThrough = excusedFrom">
+                          data-confirm="Excuse the selected absence dates and reactivate the student?">
                         @csrf
 
                         <div>
                             <h3 class="font-semibold">Excused absence and readmission</h3>
-                            <p class="muted mt-1 text-sm">Choose whether the excuse covers one day or multiple days. Recorded absence hours for those dates will be deducted before readmission.</p>
+                            <p class="muted mt-1 text-sm">Tick each recorded absence to excuse. Only selected dates are changed and deducted.</p>
                         </div>
-
-                        <fieldset>
-                            <legend class="field-label mb-2">Excused absence duration</legend>
-                            <div class="flex flex-wrap gap-2">
-                                <label class="inline-flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm"
-                                       :class="duration === 'single' ? 'border-indigo-500 bg-indigo-50 text-indigo-900 dark:bg-indigo-950/40 dark:text-indigo-200' : 'border-gray-300 dark:border-gray-600'">
-                                    <input type="radio" name="duration" value="single" x-model="duration">
-                                    1 day only
+                        <fieldset><legend class="field-label mb-2">Select absence dates</legend><div class="flex flex-wrap gap-2">
+                            @forelse ($absenceDates as $absence)
+                                @php($date = Carbon\Carbon::parse($absence->session_date)->toDateString())
+                                <label class="cursor-pointer rounded-lg border px-3 py-2 text-sm has-[:checked]:border-indigo-500 has-[:checked]:bg-indigo-50 dark:has-[:checked]:bg-indigo-950/40">
+                                    <input type="checkbox" name="excused_dates[]" value="{{ $date }}" @checked(in_array($date, old('excused_dates', []), true))>
+                                    {{ Carbon\Carbon::parse($date)->format('M j') }} @if($absence->hours_absent !== null)<span class="muted">· {{ $absence->hours_absent }}h</span>@endif
                                 </label>
-                                <label class="inline-flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm"
-                                       :class="duration === 'multiple' ? 'border-indigo-500 bg-indigo-50 text-indigo-900 dark:bg-indigo-950/40 dark:text-indigo-200' : 'border-gray-300 dark:border-gray-600'">
-                                    <input type="radio" name="duration" value="multiple" x-model="duration">
-                                    2 days or more
-                                </label>
-                            </div>
-                        </fieldset>
-
-                        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                            <div>
-                                <label for="excused_from" class="field-label mb-1">Start date <span aria-hidden="true">*</span></label>
-                                <input id="excused_from" name="excused_from" type="date" x-model="excusedFrom" class="field" required>
-                                @error('excused_from')
-                                    <p class="field-error mt-1">{{ $message }}</p>
-                                @enderror
-                            </div>
-                            <div>
-                                <label for="excused_through" class="field-label mb-1">End date <span aria-hidden="true">*</span></label>
-                                <input id="excused_through" name="excused_through" type="date" x-model="excusedThrough"
-                                       :min="excusedFrom" :readonly="duration === 'single'" class="field" required>
-                                @error('excused_through')
-                                    <p class="field-error mt-1">{{ $message }}</p>
-                                @enderror
-                            </div>
-                        </div>
+                            @empty
+                                <div class="w-full space-y-2">
+                                    <p class="text-sm muted">There are no unexcused absences available. Choose one date to record this OSA decision in reports.</p>
+                                    <label for="reporting_date" class="field-label">Excused date <span aria-hidden="true">*</span></label>
+                                    <input id="reporting_date" name="reporting_date" type="date" value="{{ old('reporting_date') }}" class="field max-w-xs" required>
+                                </div>
+                            @endforelse
+                        </div></fieldset>
+                        @error('excused_dates')<p class="field-error">{{ $message }}</p>@enderror
+                        @error('reporting_date')<p class="field-error">{{ $message }}</p>@enderror
 
                         <button type="submit" class="btn btn-primary">
                             Excuse dates and reactivate
@@ -389,6 +434,13 @@
                                 Not excused — allow resubmission
                             </button>
                         </div>
+                    </form>
+
+                    <form method="POST" action="{{ route('osa.readmissions.correction-request', $request->readmission_id) }}" class="max-w-2xl space-y-3">
+                        @csrf
+                        <label for="correction_note" class="field-label mb-1">Correction instructions for the student <span aria-hidden="true">*</span></label>
+                        <textarea id="correction_note" name="correction_note" rows="3" maxlength="2000" class="field" required>{{ old('correction_note') }}</textarea>
+                        <button type="submit" class="btn btn-secondary" data-confirm="Send this request back to the student for correction?">Request correction</button>
                     </form>
                 </div>
             </section>

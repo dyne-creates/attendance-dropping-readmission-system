@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Middleware\AdminMiddleware;
 use App\Http\Middleware\FacultyMiddleware;
 use App\Http\Middleware\PreventBackHistory;
 use App\Http\Middleware\StaffMiddleware;
@@ -18,6 +19,7 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware): void {
 
         $middleware->alias([
+            'adminMiddleware' => AdminMiddleware::class,
             'prevent-back-history' => PreventBackHistory::class,
             'facultyMiddleware' => FacultyMiddleware::class,
             'staffMiddleware' => StaffMiddleware::class,
@@ -34,6 +36,7 @@ return Application::configure(basePath: dirname(__DIR__))
             }
 
             return match ($request->user()?->role) {
+                'admin' => route('admin.osa-accounts.index'),
                 'faculty' => route('faculty.dashboard'),
                 'osa_staff' => route('osa.dashboard'),
                 'student' => route('student.dashboard'),

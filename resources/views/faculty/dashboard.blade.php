@@ -51,7 +51,7 @@
 
 <x-app-layout>
     <x-slot name="header">
-        <div class="flex flex-col gap-4 [zoom:0.9] sm:flex-row sm:items-center sm:justify-between">
+        <div class="flex flex-col gap-4 scale-90 sm:flex-row sm:items-center sm:justify-between">
             <div>
                 <div class="flex items-center gap-2">
                     <span class="text-xs text-gray-500 dark:text-gray-400 font-medium tracking-wide">
@@ -86,7 +86,7 @@
         </div>
     </x-slot>
 
-    <div class="page space-y-6 [zoom:0.9]"
+    <div class="page space-y-6 scale-90"
          @open-attendance-import.window="showImportModal = true"
          x-init="$nextTick(() => sortStudentRows())"
          x-data="facultyDashboard({

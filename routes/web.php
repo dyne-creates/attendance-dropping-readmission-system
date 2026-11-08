@@ -1,7 +1,9 @@
 <?php
 
+use App\Http\Controllers\Admin\OsaAccountController;
 use App\Http\Controllers\Faculty\FacultyController;
 use App\Http\Controllers\Faculty\FacultyCourseController;
+use App\Http\Controllers\OsaStaff\OsaReportController;
 use App\Http\Controllers\OsaStaff\OsaStaffController;
 use App\Http\Controllers\PolicyAgreementController;
 use App\Http\Controllers\ProfileController;
@@ -22,6 +24,7 @@ Route::middleware(['auth', 'prevent-back-history'])->group(function () {
             'student' => redirect()->route('student.dashboard'),
             'faculty' => redirect()->route('faculty.dashboard'),
             'osa_staff' => redirect()->route('osa.dashboard'),
+            'admin' => redirect()->route('admin.osa-accounts.index'),
             default => redirect()->route('profile.edit'),
         };
     })->name('dashboard');
@@ -168,6 +171,11 @@ Route::middleware(['auth', 'staffMiddleware'])->prefix('osa')->name('osa.')->gro
         'notExcusedReadmission',
     ])->name('readmissions.not-excused');
 
+    Route::post('/readmissions/{id}/correction-request', [
+        OsaStaffController::class,
+        'requestCorrection',
+    ])->name('readmissions.correction-request');
+
     Route::post('/readmissions/{id}/excuse', [
         OsaStaffController::class,
         'excuseReadmission',
@@ -183,6 +191,33 @@ Route::middleware(['auth', 'staffMiddleware'])->prefix('osa')->name('osa.')->gro
         OsaStaffController::class,
         'readmissionArchive',
     ])->name('archive.readmissions');
+
+    // Reports
+    Route::get('/reports', [
+        OsaReportController::class,
+        'index',
+    ])->name('reports');
+
+    Route::post('/reports/export-pdf', [
+        OsaReportController::class,
+        'exportPdf',
+    ])->name('reports.export-pdf');
+
+    Route::post('/reports/preview.pdf', [
+        OsaReportController::class,
+        'previewPdf',
+    ])->name('reports.preview-pdf');
+
+    Route::get('/reports/readmissions/extract', [
+        OsaReportController::class,
+        'extractReadmissions',
+    ])->name('reports.readmissions.extract');
+});
+
+Route::middleware(['auth', 'adminMiddleware'])->prefix('admin')->name('admin.')->group(function () {
+    Route::get('/osa-accounts', [OsaAccountController::class, 'index'])->name('osa-accounts.index');
+    Route::post('/osa-accounts', [OsaAccountController::class, 'store'])->name('osa-accounts.store');
+    Route::put('/osa-accounts/{account}', [OsaAccountController::class, 'update'])->name('osa-accounts.update');
 });
 
 require __DIR__.'/auth.php';

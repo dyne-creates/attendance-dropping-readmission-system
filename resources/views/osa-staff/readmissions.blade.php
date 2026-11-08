@@ -60,10 +60,10 @@
                                     @elseif ($request->drop_type === \App\Models\DroppingTransaction::TYPE_INSTRUCTOR_REFERRAL)
                                         <span class="badge badge-neutral">Instructor referral</span>
                                     @else
-                                        <span class="badge badge-warning">Weekly hours · {{ $request->absence_hours_at_drop }} hrs</span>
+                                        <span class="badge badge-warning">Accumulated hours · {{ $request->absence_hours_at_drop }} hrs</span>
                                     @endif
                                     @if ($request->instructor_reason)
-                                        <p class="mt-1 text-xs muted">{{ $request->instructor_reason }}</p>
+                                        <p class="mt-1 text-xs muted"> {{ $request->instructor_reason }}</p>
                                     @endif
                                 </td>
 
