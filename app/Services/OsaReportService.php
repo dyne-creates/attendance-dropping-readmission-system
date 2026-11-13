@@ -911,7 +911,7 @@ class OsaReportService
 
     private function hasReadmissionJoin(Builder $query): bool
     {
-        return collect($query->getQuery()->joins ?? [])
+        return collect($query->joins ?? [])
             ->contains(fn (object $join): bool => $join->table === 'readmission_requests');
     }
 }

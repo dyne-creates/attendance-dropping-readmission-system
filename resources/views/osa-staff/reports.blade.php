@@ -10,93 +10,58 @@
     <div class="mx-auto max-w-7xl space-y-8 px-4 py-8 sm:px-6 lg:px-8">
         <x-flash-messages />
 
+        @php
+            $statusLabels = $filterOptions['statuses'] ?? [];
+            $advancedCount = collect(['year_level', 'section', 'faculty_id'])->filter(fn ($k) => ! empty($filters[$k]))->count()
+                + (empty($filters['status']) ? 0 : 1);
+
+            $chips = [];
+            if (! empty($filters['school_year_id'])) {
+                $syOpt = collect($filterOptions['school_years'])->firstWhere('school_year_id', (int) $filters['school_year_id']);
+                $chips['School Year'] = $syOpt ? $syOpt->year_label.' ('.$syOpt->semester.')' : '#'.$filters['school_year_id'];
+            }
+            if (! empty($filters['program'])) { $chips['Program'] = $filters['program']; }
+            if (! empty($filters['year_level'])) { $chips['Year Level'] = 'Year '.$filters['year_level']; }
+            if (! empty($filters['section'])) { $chips['Section'] = $filters['section']; }
+            if (! empty($filters['faculty_id'])) {
+                $facOpt = collect($filterOptions['faculty'])->firstWhere('faculty_id', (int) $filters['faculty_id']);
+                $chips['Faculty'] = $facOpt->full_name ?? '#'.$filters['faculty_id'];
+            }
+            if (! empty($filters['status'])) {
+                $chips['Status'] = collect($filters['status'])->map(fn ($s) => $statusLabels[$s] ?? $s)->implode(', ');
+            }
+
+            if ($startDate && $endDate) {
+                $scopeLabel = $startDate->format('M d, Y').' to '.$endDate->format('M d, Y');
+            } elseif ($startDate) {
+                $scopeLabel = 'From '.$startDate->format('M d, Y');
+            } elseif ($endDate) {
+                $scopeLabel = 'Through '.$endDate->format('M d, Y');
+            } else {
+                $scopeLabel = 'All recorded history';
+            }
+            $reportGeneratedAt = now('Asia/Manila');
+        @endphp
+
         {{-- Filter Panel --}}
-        <section class="card report-filter-panel p-5 sm:p-6" aria-labelledby="filter-heading">
-            <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b pb-4 mb-5">
+        <section class="card report-filter-panel p-5 sm:p-6" aria-labelledby="filter-heading"
+                 x-data="{ more: {{ $advancedCount > 0 ? 'true' : 'false' }} }">
+            <div class="mb-4 flex items-center justify-between gap-3">
                 <div>
-                    <h2 id="filter-heading" class="text-base font-semibold">Report Filters</h2>
-                    <p class="muted text-xs mt-0.5">Filter records across dropping, readmission, referral, and attendance datasets.</p>
-                </div>
-                <div class="flex items-center gap-2">
-                    <button type="button" onclick="previewReportPdf()" class="btn btn-primary btn-sm inline-flex items-center gap-1.5" title="Preview report before download">
-                        <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
-                        </svg>
-                        <span>Preview Report</span>
-                    </button>
-                    <a href="{{ route('osa.reports') }}" class="btn btn-secondary btn-sm" title="Clear all filters">
-                        Reset Filters
-                    </a>
+                    <h2 id="filter-heading" class="text-base font-semibold">Filters</h2>
+                    <p class="muted mt-0.5 text-xs">Applies to the charts, tables, PDF report, and readmission extract.</p>
                 </div>
             </div>
 
             <form id="filterForm" method="GET" action="{{ route('osa.reports') }}" class="space-y-4">
                 <input type="hidden" name="tab" value="{{ $activeTab }}">
 
+                {{-- Always visible: the four filters OSA uses most --}}
                 <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                    {{-- Date From --}}
-                    <div>
-                        <label for="date_from" class="field-label">Date From</label>
-                        <input id="date_from" name="date_from" type="date"
-                               value="{{ $filters['date_from'] ?? '' }}"
-                               class="field mt-1" />
-                        @error('date_from')
-                            <p class="field-error mt-1">{{ $message }}</p>
-                        @enderror
-                    </div>
-
-                    {{-- Date To --}}
-                    <div>
-                        <label for="date_to" class="field-label">Date To</label>
-                        <input id="date_to" name="date_to" type="date"
-                               value="{{ $filters['date_to'] ?? '' }}"
-                               class="field mt-1" />
-                        @error('date_to')
-                            <p class="field-error mt-1">{{ $message }}</p>
-                        @enderror
-                    </div>
-
-                    {{-- Predefined Year --}}
-                    <div>
-                        <label for="year" class="field-label">Specific Year</label>
-                        <select id="year" name="year" class="field mt-1">
-                            <option value="">All Years</option>
-                            @foreach ($filterOptions['years'] as $yr)
-                                <option value="{{ $yr }}" @selected(($filters['year'] ?? '') == $yr)>{{ $yr }}</option>
-                            @endforeach
-                        </select>
-                    </div>
-
-                    {{-- Predefined Month / Quarter --}}
-                    <div>
-                        <label for="month" class="field-label">Specific Month</label>
-                        <select id="month" name="month" class="field mt-1">
-                            <option value="">All Months</option>
-                            @for ($m = 1; $m <= 12; $m++)
-                                <option value="{{ $m }}" @selected(($filters['month'] ?? '') == $m)>
-                                    {{ \Carbon\Carbon::create(2026, $m, 1)->format('F') }}
-                                </option>
-                            @endfor
-                        </select>
-                    </div>
-
-                    {{-- Quarter --}}
-                    <div>
-                        <label for="quarter" class="field-label">Specific Quarter</label>
-                        <select id="quarter" name="quarter" class="field mt-1">
-                            <option value="">All Quarters</option>
-                            <option value="1" @selected(($filters['quarter'] ?? '') == '1')>Q1 (Jan - Mar)</option>
-                            <option value="2" @selected(($filters['quarter'] ?? '') == '2')>Q2 (Apr - Jun)</option>
-                            <option value="3" @selected(($filters['quarter'] ?? '') == '3')>Q3 (Jul - Sep)</option>
-                            <option value="4" @selected(($filters['quarter'] ?? '') == '4')>Q4 (Oct - Dec)</option>
-                        </select>
-                    </div>
-
-                    {{-- School Year --}}
                     <div>
                         <label for="school_year_id" class="field-label">School Year & Semester</label>
                         <select id="school_year_id" name="school_year_id" class="field mt-1">
-                            <option value="">All School Years</option>
+                            <option value="">All school years</option>
                             @foreach ($filterOptions['school_years'] as $sy)
                                 <option value="{{ $sy->school_year_id }}" @selected(($filters['school_year_id'] ?? '') == $sy->school_year_id)>
                                     {{ $sy->year_label }} ({{ $sy->semester }})
@@ -105,104 +70,122 @@
                         </select>
                     </div>
 
-                    {{-- Program / Course --}}
                     <div>
-                        <label for="program" class="field-label">Course / Program</label>
+                        <label for="program" class="field-label">Program</label>
                         <select id="program" name="program" class="field mt-1">
-                            <option value="">All Programs</option>
+                            <option value="">All programs</option>
                             @foreach ($filterOptions['programs'] as $prog)
-                                <option value="{{ $prog }}" @selected(($filters['program'] ?? '') === $prog)>
-                                    {{ $prog }}
-                                </option>
+                                <option value="{{ $prog }}" @selected(($filters['program'] ?? '') === $prog)>{{ $prog }}</option>
                             @endforeach
                         </select>
                     </div>
 
-                    {{-- Year Level --}}
                     <div>
-                        <label for="year_level" class="field-label">Year Level</label>
-                        <select id="year_level" name="year_level" class="field mt-1">
-                            <option value="">All Year Levels</option>
-                            @foreach ($filterOptions['year_levels'] as $yl)
-                                <option value="{{ $yl }}" @selected(($filters['year_level'] ?? '') == $yl)>
-                                    Year {{ $yl }}
-                                </option>
-                            @endforeach
-                        </select>
+                        <label for="date_from" class="field-label">Date From</label>
+                        <input id="date_from" name="date_from" type="date" value="{{ $filters['date_from'] ?? '' }}" class="field mt-1" />
+                        @error('date_from') <p class="field-error mt-1">{{ $message }}</p> @enderror
                     </div>
 
-                    {{-- Section --}}
                     <div>
-                        <label for="section" class="field-label">Section</label>
-                        <select id="section" name="section" class="field mt-1">
-                            <option value="">All Sections</option>
-                            @foreach ($filterOptions['sections'] as $sec)
-                                <option value="{{ $sec }}" @selected(($filters['section'] ?? '') === $sec)>
-                                    {{ $sec }}
-                                </option>
-                            @endforeach
-                        </select>
-                    </div>
-
-                    {{-- Faculty Member --}}
-                    <div>
-                        <label for="faculty_id" class="field-label">Faculty Member</label>
-                        <select id="faculty_id" name="faculty_id" class="field mt-1">
-                            <option value="">All Faculty</option>
-                            @foreach ($filterOptions['faculty'] as $f)
-                                <option value="{{ $f->faculty_id }}" @selected(($filters['faculty_id'] ?? '') == $f->faculty_id)>
-                                    {{ $f->full_name }}
-                                </option>
-                            @endforeach
-                        </select>
+                        <label for="date_to" class="field-label">Date To</label>
+                        <input id="date_to" name="date_to" type="date" value="{{ $filters['date_to'] ?? '' }}" class="field mt-1" />
+                        @error('date_to') <p class="field-error mt-1">{{ $message }}</p> @enderror
                     </div>
                 </div>
 
-                {{-- Case / Request Status Checkboxes --}}
-                <div class="pt-2 border-t mt-4">
-                    <span class="field-label mb-2">Case & Request Statuses:</span>
-                    <div class="flex flex-wrap items-center gap-4 text-sm">
-                        @foreach ($filterOptions['statuses'] as $statusCode => $statusLabel)
-                            <label class="inline-flex items-center gap-1.5 cursor-pointer">
-                                <input type="checkbox" name="status[]" value="{{ $statusCode }}"
-                                       @checked(in_array($statusCode, (array) ($filters['status'] ?? []), true))
-                                       class="rounded border-gray-300 text-red-600 focus:ring-red-500 dark:border-gray-600 dark:bg-gray-800" />
-                                <span>{{ $statusLabel }}</span>
-                            </label>
-                        @endforeach
-                    </div>
+                {{-- Quick ranges replace the old Year / Month / Quarter dropdowns --}}
+                <div class="flex flex-wrap items-center gap-2 text-xs">
+                    <span class="muted">Quick range:</span>
+                    <button type="button" class="btn btn-secondary btn-sm" data-range="month">This month</button>
+                    <button type="button" class="btn btn-secondary btn-sm" data-range="quarter">This quarter</button>
+                    <button type="button" class="btn btn-secondary btn-sm" data-range="year">This year</button>
+                    <button type="button" class="btn btn-secondary btn-sm" data-range="clear">Clear dates</button>
                 </div>
 
-                <div class="flex justify-end pt-2">
-                    <button type="submit" class="btn btn-primary btn-sm px-6">
-                        Apply Filters
+                {{-- Advanced filters (collapsed unless one is active) --}}
+                <div x-show="more" x-cloak x-transition class="space-y-4 border-t pt-4">
+                    <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                        <div>
+                            <label for="year_level" class="field-label">Year Level</label>
+                            <select id="year_level" name="year_level" class="field mt-1">
+                                <option value="">All year levels</option>
+                                @foreach ($filterOptions['year_levels'] as $yl)
+                                    <option value="{{ $yl }}" @selected(($filters['year_level'] ?? '') == $yl)>Year {{ $yl }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div>
+                            <label for="section" class="field-label">Section</label>
+                            <select id="section" name="section" class="field mt-1">
+                                <option value="">All sections</option>
+                                @foreach ($filterOptions['sections'] as $sec)
+                                    <option value="{{ $sec }}" @selected(($filters['section'] ?? '') === $sec)>{{ $sec }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div>
+                            <label for="faculty_id" class="field-label">Faculty Member</label>
+                            <select id="faculty_id" name="faculty_id" class="field mt-1">
+                                <option value="">All faculty</option>
+                                @foreach ($filterOptions['faculty'] as $f)
+                                    <option value="{{ $f->faculty_id }}" @selected(($filters['faculty_id'] ?? '') == $f->faculty_id)>{{ $f->full_name }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                    </div>
+
+                    <fieldset>
+                        <legend class="field-label mb-2">Case / request status</legend>
+                        <div class="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm">
+                            @foreach ($statusLabels as $statusCode => $statusLabel)
+                                <label class="inline-flex cursor-pointer items-center gap-1.5">
+                                    <input type="checkbox" name="status[]" value="{{ $statusCode }}"
+                                           @checked(in_array($statusCode, (array) ($filters['status'] ?? []), true))
+                                           class="rounded border-gray-300 text-red-600 focus:ring-red-500 dark:border-gray-600 dark:bg-gray-800" />
+                                    <span>{{ $statusLabel }}</span>
+                                </label>
+                            @endforeach
+                        </div>
+                    </fieldset>
+                </div>
+
+                <div class="flex flex-wrap items-center justify-between gap-3 border-t pt-4">
+                    <button type="button" @click="more = !more" class="inline-flex items-center gap-1.5 text-sm font-medium text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white"
+                            :aria-expanded="more.toString()">
+                        <svg class="h-4 w-4 transition-transform" :class="more && 'rotate-180'" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" aria-hidden="true">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
+                        </svg>
+                        <span x-text="more ? 'Fewer filters' : 'More filters'"></span>
+                        @if ($advancedCount > 0)
+                            <span class="rounded-full bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-700 dark:bg-red-900/40 dark:text-red-300">{{ $advancedCount }}</span>
+                        @endif
                     </button>
+
+                    <div class="flex items-center gap-2">
+                        <a href="{{ route('osa.reports') }}" class="btn btn-secondary btn-sm">Reset</a>
+                        <button type="submit" class="btn btn-primary btn-sm px-6">Apply Filters</button>
+                    </div>
                 </div>
             </form>
         </section>
 
-        {{-- Active Filter Notification / Scope Banner --}}
-        <div class="flex flex-wrap items-center justify-between gap-3 text-xs muted bg-surface px-4 py-3 rounded-lg border">
-            <div>
-                <span class="font-semibold text-gray-700 dark:text-gray-300">Reporting Scope:</span>
-                @if ($startDate && $endDate)
-                    <span>{{ $startDate->format('M d, Y') }} to {{ $endDate->format('M d, Y') }}</span>
-                @else
-                    <span>All-time records</span>
-                @endif
-                @if (!empty($filters['program']))
-                    &bull; Program: <span class="font-medium text-gray-800 dark:text-gray-200">{{ $filters['program'] }}</span>
-                @endif
-                @if (!empty($filters['section']))
-                    &bull; Section: <span class="font-medium text-gray-800 dark:text-gray-200">{{ $filters['section'] }}</span>
-                @endif
+        {{-- Scope summary + export actions --}}
+        <div class="flex flex-col gap-3 rounded-lg border bg-surface px-4 py-3 text-xs sm:flex-row sm:items-center sm:justify-between">
+            <div class="flex flex-wrap items-center gap-x-2 gap-y-1.5">
+                <span class="font-semibold text-gray-700 dark:text-gray-300">Showing:</span>
+                <span class="rounded-full border px-2.5 py-0.5 font-medium">{{ $scopeLabel }}</span>
+                @foreach ($chips as $chipLabel => $chipValue)
+                    <span class="rounded-full border px-2.5 py-0.5"><span class="muted">{{ $chipLabel }}:</span> <span class="font-medium">{{ $chipValue }}</span></span>
+                @endforeach
+                <span class="muted">&bull; as of {{ $reportGeneratedAt->format('M d, Y h:i A') }}</span>
             </div>
-            <div>
-                @php($reportGeneratedAt = now('Asia/Manila'))
-                <span>Records Generated: <time id="report-live-clock" data-live-clock
-                    data-timestamp="{{ $reportGeneratedAt->getTimestamp() * 1000 }}"
-                    datetime="{{ $reportGeneratedAt->toIso8601String() }}">{{ $reportGeneratedAt->format('M d, Y - h:i A') }}</time></span>
-            </div>
+
+            <button type="button" id="generatePdfBtn" onclick="generateReportPdf()" class="btn btn-primary btn-sm inline-flex shrink-0 items-center justify-center gap-1.5">
+                <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                <span data-label>View PDF Report</span>
+            </button>
         </div>
 
         {{-- Summary Statistics Grid --}}
@@ -371,6 +354,7 @@
             <div class="report-table-shell p-0">
                 <div id="report-panel-drops" role="tabpanel" aria-labelledby="report-tab-drops" tabindex="0"
                      data-report-panel="drops" @class(['hidden' => $activeTab !== 'drops'])>
+                    <div class="overflow-x-auto">
                     <table class="data-table">
                         <thead>
                             <tr>
@@ -416,15 +400,17 @@
                             @endforelse
                         </tbody>
                     </table>
+                    </div>
                     @if ($drops->hasPages())
                         <div class="p-4 border-t">
-                            {{ $drops->appends(['tab' => 'drops'])->links() }}
+                            {{ $drops->withQueryString()->appends(['tab' => 'drops'])->fragment('report-tables')->links() }}
                         </div>
                     @endif
                 </div>
 
                 <div id="report-panel-referrals" role="tabpanel" aria-labelledby="report-tab-referrals" tabindex="0"
                      data-report-panel="referrals" @class(['hidden' => $activeTab !== 'referrals'])>
+                    <div class="overflow-x-auto">
                     <table class="data-table">
                         <thead>
                             <tr>
@@ -462,9 +448,10 @@
                             @endforelse
                         </tbody>
                     </table>
+                    </div>
                     @if ($referrals->hasPages())
                         <div class="p-4 border-t">
-                            {{ $referrals->appends(['tab' => 'referrals'])->links() }}
+                            {{ $referrals->withQueryString()->appends(['tab' => 'referrals'])->fragment('report-tables')->links() }}
                         </div>
                     @endif
                 </div>
@@ -476,6 +463,7 @@
                             Download readmission data
                         </a>
                     </div>
+                    <div class="overflow-x-auto">
                     <table class="data-table">
                         <thead>
                             <tr>
@@ -524,15 +512,17 @@
                             @endforelse
                         </tbody>
                     </table>
+                    </div>
                     @if ($readmissions->hasPages())
                         <div class="p-4 border-t">
-                            {{ $readmissions->appends(['tab' => 'readmissions'])->links() }}
+                            {{ $readmissions->withQueryString()->appends(['tab' => 'readmissions'])->fragment('report-tables')->links() }}
                         </div>
                     @endif
                 </div>
 
                 <div id="report-panel-absences" role="tabpanel" aria-labelledby="report-tab-absences" tabindex="0"
                      data-report-panel="absences" @class(['hidden' => $activeTab !== 'absences'])>
+                    <div class="overflow-x-auto">
                     <table class="data-table">
                         <thead>
                             <tr>
@@ -580,17 +570,18 @@
                             @endforelse
                         </tbody>
                     </table>
+                    </div>
                     @if ($absences->hasPages())
                         <div class="p-4 border-t">
-                            {{ $absences->appends(['tab' => 'absences'])->links() }}
+                            {{ $absences->withQueryString()->appends(['tab' => 'absences'])->fragment('report-tables')->links() }}
                         </div>
                     @endif
                 </div>
             </div>
         </section>
 
-        {{-- Hidden Form for PDF Export --}}
-        <form id="pdfExportForm" method="POST" action="{{ route('osa.reports.export-pdf') }}" class="hidden">
+        {{-- Hidden form: charts + current filters are POSTed, server redirects to the viewer page --}}
+        <form id="pdfExportForm" method="POST" action="{{ route('osa.reports.pdf.generate') }}" class="hidden">
             @csrf
             <input type="hidden" name="chart_drops" id="input_chart_drops">
             <input type="hidden" name="chart_excused" id="input_chart_excused">
@@ -598,73 +589,25 @@
             <input type="hidden" name="chart_status" id="input_chart_status">
             <input type="hidden" name="chart_absence" id="input_chart_absence">
         </form>
-
-        <div id="reportPdfPreview" x-data="{ open: false }" x-show="open"
-             @report-preview-open.window="open = true" @keydown.escape.window="open = false"
-             @click.self="open = false"
-             class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
-             style="display: none;">
-            <div class="flex h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-lg bg-white shadow-2xl dark:bg-gray-800"
-                 role="dialog" aria-modal="true" aria-labelledby="report-preview-title">
-                <div class="flex flex-col gap-3 border-b p-4 sm:flex-row sm:items-center sm:justify-between">
-                    <div>
-                        <h3 id="report-preview-title" class="text-lg font-semibold">
-                            Student Attendance, Dropping &amp; Readmission Report
-                        </h3>
-                        <p class="muted text-sm">
-                            @if ($startDate && $endDate)
-                                {{ $startDate->format('M j, Y') }} to {{ $endDate->format('M j, Y') }}
-                            @elseif ($startDate)
-                                From {{ $startDate->format('M j, Y') }}
-                            @elseif ($endDate)
-                                Through {{ $endDate->format('M j, Y') }}
-                            @else
-                                All Recorded History
-                            @endif
-                        </p>
-                    </div>
-                    <div class="flex shrink-0 items-center gap-2">
-                        <button type="button" onclick="exportReportPdf()" class="btn btn-primary btn-sm">
-                            Download PDF
-                        </button>
-                        <button type="button" @click="open = false" class="btn btn-secondary btn-sm">
-                            Close
-                        </button>
-                    </div>
-                </div>
-                <iframe name="pdfPreviewIframe" title="PDF report preview" class="min-h-0 w-full flex-1 bg-white"
-                        src="about:blank"></iframe>
-            </div>
-        </div>
     </div>
 
     <script>
         window.reportCharts = {};
 
+        /* ---------- Tabs ---------- */
         function setReportTab(tabName) {
             const selectedTab = document.querySelector(`[data-report-tab="${tabName}"]`);
-            if (!selectedTab) {
-                return;
-            }
+            if (!selectedTab) return;
+
+            const activeCls = ['border-red-600', 'text-red-600', 'dark:border-red-400', 'dark:text-red-400'];
+            const idleCls = ['border-transparent', 'text-gray-500', 'hover:border-gray-300', 'hover:text-gray-700', 'dark:text-gray-400'];
 
             document.querySelectorAll('[data-report-tab]').forEach((tab) => {
                 const isSelected = tab === selectedTab;
                 tab.setAttribute('aria-selected', String(isSelected));
                 tab.tabIndex = isSelected ? 0 : -1;
-                tab.classList.remove(
-                    'border-red-600',
-                    'text-red-600',
-                    'dark:border-red-400',
-                    'dark:text-red-400',
-                    'border-transparent',
-                    'text-gray-500',
-                    'hover:border-gray-300',
-                    'hover:text-gray-700',
-                    'dark:text-gray-400'
-                );
-                tab.classList.add(...(isSelected
-                    ? ['border-red-600', 'text-red-600', 'dark:border-red-400', 'dark:text-red-400']
-                    : ['border-transparent', 'text-gray-500', 'hover:border-gray-300', 'hover:text-gray-700', 'dark:text-gray-400']));
+                tab.classList.remove(...activeCls, ...idleCls);
+                tab.classList.add(...(isSelected ? activeCls : idleCls));
             });
 
             document.querySelectorAll('[data-report-panel]').forEach((panel) => {
@@ -674,9 +617,7 @@
             });
 
             const filterTab = document.querySelector('#filterForm input[name="tab"]');
-            if (filterTab) {
-                filterTab.value = tabName;
-            }
+            if (filterTab) filterTab.value = tabName;
 
             const url = new URL(window.location.href);
             if (url.searchParams.get('tab') !== tabName) {
@@ -688,16 +629,11 @@
         document.querySelectorAll('[data-report-tab]').forEach((tab, index, tabs) => {
             tab.addEventListener('click', () => setReportTab(tab.dataset.reportTab));
             tab.addEventListener('keydown', (event) => {
-                const nextIndex = event.key === 'ArrowRight' || event.key === 'ArrowDown'
-                    ? (index + 1) % tabs.length
-                    : event.key === 'ArrowLeft' || event.key === 'ArrowUp'
-                        ? (index - 1 + tabs.length) % tabs.length
-                        : event.key === 'Home'
-                            ? 0
-                            : event.key === 'End'
-                                ? tabs.length - 1
-                                : null;
-
+                const nextIndex = ['ArrowRight', 'ArrowDown'].includes(event.key) ? (index + 1) % tabs.length
+                    : ['ArrowLeft', 'ArrowUp'].includes(event.key) ? (index - 1 + tabs.length) % tabs.length
+                    : event.key === 'Home' ? 0
+                    : event.key === 'End' ? tabs.length - 1
+                    : null;
                 if (nextIndex !== null) {
                     event.preventDefault();
                     tabs[nextIndex].focus();
@@ -710,72 +646,179 @@
             setReportTab(new URLSearchParams(window.location.search).get('tab') || 'drops');
         });
 
+        /* ---------- Date inputs + quick ranges ---------- */
         const dateFrom = document.getElementById('date_from');
         const dateTo = document.getElementById('date_to');
+        const pad = (n) => String(n).padStart(2, '0');
+        const iso = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 
-        const reportClock = document.querySelector('[data-live-clock]');
-        if (reportClock) {
-            const serverTimestamp = Number(reportClock.dataset.timestamp);
-            const pageLoadedAt = performance.now();
-            const dateFormatter = new Intl.DateTimeFormat('en-US', {
-                timeZone: 'Asia/Manila',
-                month: 'short',
-                day: '2-digit',
-                year: 'numeric',
-                hour: '2-digit',
-                minute: '2-digit',
-                hour12: true,
+        function syncDateBounds() {
+            dateTo.min = dateFrom.value || '';
+            dateFrom.max = dateTo.value || '';
+        }
+        [dateFrom, dateTo].forEach((el) => el.addEventListener('change', syncDateBounds));
+        syncDateBounds();
+
+        document.querySelectorAll('[data-range]').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                const now = new Date();
+                const y = now.getFullYear();
+                const m = now.getMonth();
+                let from = '', to = '';
+
+                if (btn.dataset.range === 'month') {
+                    from = iso(new Date(y, m, 1)); to = iso(new Date(y, m + 1, 0));
+                } else if (btn.dataset.range === 'quarter') {
+                    const q = Math.floor(m / 3) * 3;
+                    from = iso(new Date(y, q, 1)); to = iso(new Date(y, q + 3, 0));
+                } else if (btn.dataset.range === 'year') {
+                    from = iso(new Date(y, 0, 1)); to = iso(new Date(y, 11, 31));
+                }
+                dateFrom.value = from;
+                dateTo.value = to;
+                syncDateBounds();
             });
+        });
 
-            const updateReportClock = () => {
-                const formattedParts = dateFormatter.formatToParts(
-                    new Date(serverTimestamp + performance.now() - pageLoadedAt)
-                );
-                const getPart = (type) => formattedParts.find((part) => part.type === type)?.value;
-                const date = `${getPart('month')} ${getPart('day')}, ${getPart('year')}`;
-                const time = `${getPart('hour')}:${getPart('minute')} ${getPart('dayPeriod')}`;
+        /* ---------- Chart definitions (shared by screen + PDF) ---------- */
+        function chartConfigs(theme, forPdf = false) {
+            const chartData = @json($chartData);
 
-                reportClock.textContent = `${date} - ${time}`;
+            const base = forPdf
+                ? { responsive: false, animation: false, devicePixelRatio: 2 }
+                : { responsive: true, maintainAspectRatio: false };
+            const opts = (extra = {}) => ({ ...base, color: theme.text, ...extra });
+            const yAxis = (extra = {}) => ({ beginAtZero: true, grid: { color: theme.grid }, ticks: { precision: 0, color: theme.text }, ...extra });
+            const xAxis = (extra = {}) => ({ grid: { display: false }, ticks: { color: theme.text }, ...extra });
+            const hasData = (arr) => Array.isArray(arr) && arr.some((v) => Number(v) > 0);
+
+            const excusedHasData = hasData(chartData.excused.data);
+
+            return {
+                drops: {
+                    type: 'bar',
+                    data: { labels: chartData.drops.labels, datasets: [{ label: 'Number of Students', data: chartData.drops.data,
+                        backgroundColor: ['#3b82f6', '#f59e0b', '#ef4444', '#dc2626', '#991b1b'], borderRadius: 4 }] },
+                    options: opts({ plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => c.raw + ' student(s)' } } },
+                        scales: { y: yAxis(), x: xAxis() } }),
+                },
+                excused: {
+                    type: 'doughnut',
+                    data: { labels: excusedHasData ? chartData.excused.labels : ['No data'],
+                        datasets: [{ data: excusedHasData ? chartData.excused.data : [1],
+                            backgroundColor: excusedHasData ? ['#10b981', '#ef4444', '#f59e0b'] : ['#d1d5db'],
+                            borderWidth: 2, borderColor: theme.surface }] },
+                    options: opts({ plugins: { legend: { position: 'bottom', labels: { color: theme.text } },
+                        tooltip: { enabled: excusedHasData } } }),
+                },
+                timeline: {
+                    type: 'bar',
+                    data: { labels: chartData.timeline.labels, datasets: [
+                        { label: 'Instructor Referrals', data: chartData.timeline.referrals, backgroundColor: '#6366f1', borderRadius: 4 },
+                        { label: 'Readmission Requests', data: chartData.timeline.readmissions, backgroundColor: '#ec4899', borderRadius: 4 },
+                    ] },
+                    options: opts({ plugins: { legend: { position: 'bottom', labels: { color: theme.text } } },
+                        scales: { y: yAxis(), x: xAxis() } }),
+                },
+                status: {
+                    type: 'bar',
+                    data: { labels: chartData.status.labels, datasets: [{ label: 'Requests', data: chartData.status.data,
+                        backgroundColor: ['#f59e0b', '#3b82f6', '#10b981', '#ef4444', '#6b7280'], borderRadius: 4 }] },
+                    options: opts({ plugins: { legend: { display: false } }, scales: { y: yAxis(), x: xAxis() } }),
+                },
+                absence: {
+                    type: 'bar',
+                    data: { labels: chartData.absence.labels.length ? chartData.absence.labels : ['No absence records'],
+                        datasets: [{ label: 'Total Absence Hours', data: chartData.absence.data.length ? chartData.absence.data : [0],
+                            backgroundColor: '#b91c1c', borderRadius: 4 }] },
+                    options: opts({ indexAxis: 'y', plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => c.raw + ' hrs' } } },
+                        scales: { x: yAxis({ ticks: { color: theme.text } }), y: xAxis() } }),
+                },
             };
-
-            updateReportClock();
-            window.setInterval(updateReportClock, 1000);
         }
 
-        function submitReportPdf(preview) {
+        const whiteBackground = {
+            id: 'whiteBackground',
+            beforeDraw(chart) {
+                const { ctx, width, height } = chart;
+                ctx.save();
+                ctx.globalCompositeOperation = 'destination-over';
+                ctx.fillStyle = '#ffffff';
+                ctx.fillRect(0, 0, width, height);
+                ctx.restore();
+            },
+        };
+
+        document.addEventListener('DOMContentLoaded', () => {
+            if (typeof Chart === 'undefined') {
+                console.warn('Chart.js is not loaded.');
+                return;
+            }
+            const isDark = document.documentElement.classList.contains('dark');
+            Chart.defaults.font.family = "'Inter', system-ui, sans-serif";
+
+            const theme = isDark
+                ? { text: '#d1d5db', grid: 'rgba(75, 85, 99, 0.25)', surface: '#1f2937' }
+                : { text: '#374151', grid: 'rgba(229, 231, 235, 0.8)', surface: '#ffffff' };
+
+            const ids = { drops: 'chartDrops', excused: 'chartExcused', timeline: 'chartTimeline', status: 'chartStatus', absence: 'chartAbsence' };
+            const configs = chartConfigs(theme);
+            Object.entries(ids).forEach(([name, id]) => {
+                const canvas = document.getElementById(id);
+                if (canvas) window.reportCharts[name] = new Chart(canvas.getContext('2d'), configs[name]);
+            });
+        });
+
+        /* ---------- PDF: always render print-ready (light) chart images ---------- */
+        function renderChartImagesForPdf() {
+            const lightTheme = { text: '#374151', grid: 'rgba(209, 213, 219, 0.8)', surface: '#ffffff' };
+            const configs = chartConfigs(lightTheme, true);
+            const sizes = { absence: [1000, 340] };
+            const images = {};
+
+            Object.entries(configs).forEach(([name, config]) => {
+                const [w, h] = sizes[name] || [560, 300];
+                const canvas = document.createElement('canvas');
+                canvas.width = w;
+                canvas.height = h;
+                const chart = new Chart(canvas, { ...config, plugins: [whiteBackground] });
+                images[name] = chart.toBase64Image('image/png', 1);
+                chart.destroy();
+            });
+
+            return images;
+        }
+
+        function setPdfButtonBusy(busy) {
+            const btn = document.getElementById('generatePdfBtn');
+            if (!btn) return;
+            btn.disabled = busy;
+            btn.querySelector('[data-label]').textContent = busy ? 'Preparing report…' : 'View PDF Report';
+        }
+        // Restore the button when coming back via the browser's Back button (bfcache).
+        window.addEventListener('pageshow', () => setPdfButtonBusy(false));
+
+        function generateReportPdf() {
             const filtersForm = document.getElementById('filterForm');
             const pdfForm = document.getElementById('pdfExportForm');
 
             dateTo.setCustomValidity(
                 dateFrom.value && dateTo.value && dateTo.value < dateFrom.value
-                    ? 'The end date must be on or after the start date.'
-                    : ''
+                    ? 'The end date must be on or after the start date.' : ''
             );
-            if (!filtersForm.reportValidity()) {
-                return;
-            }
+            if (!filtersForm.reportValidity()) return;
+
+            setPdfButtonBusy(true);
 
             try {
-                const chartFields = [
-                    ['input_chart_drops', 'drops'],
-                    ['input_chart_excused', 'excused'],
-                    ['input_chart_timeline', 'timeline'],
-                    ['input_chart_status', 'status'],
-                    ['input_chart_absence', 'absence'],
-                ];
-
-                chartFields.forEach(([inputId, chartName]) => {
-                    const input = document.getElementById(inputId);
-                    const chart = window.reportCharts[chartName];
-                    input.value = chart ? chart.toBase64Image('image/png', 1) : '';
+                const images = typeof Chart === 'undefined' ? {} : renderChartImagesForPdf();
+                ['drops', 'excused', 'timeline', 'status', 'absence'].forEach((name) => {
+                    document.getElementById(`input_chart_${name}`).value = images[name] || '';
                 });
 
                 pdfForm.querySelectorAll('[data-report-filter]').forEach((input) => input.remove());
                 new FormData(filtersForm).forEach((value, name) => {
-                    if (name === 'tab') {
-                        return;
-                    }
-
+                    if (name === 'tab' || value === '') return;
                     const input = document.createElement('input');
                     input.type = 'hidden';
                     input.name = name;
@@ -785,211 +828,16 @@
                 });
             } catch (error) {
                 console.error('Unable to prepare the report PDF.', error);
-                if (typeof window.showAppAlert === 'function') {
-                    window.showAppAlert('The report could not be prepared. Please try again.', 'Report export failed');
-                } else {
-                    window.alert('The report could not be prepared. Please try again.');
-                }
-
+                setPdfButtonBusy(false);
+                const message = 'The report could not be prepared. Please try again.';
+                typeof window.showAppAlert === 'function' ? window.showAppAlert(message, 'Report export failed') : window.alert(message);
                 return;
             }
 
-            pdfForm.action = preview
-                ? @json(route('osa.reports.preview-pdf'))
-                : @json(route('osa.reports.export-pdf'));
-            pdfForm.target = preview ? 'pdfPreviewIframe' : '_self';
-
-            if (preview) {
-                document.querySelector('iframe[name="pdfPreviewIframe"]').src = 'about:blank';
-                window.dispatchEvent(new CustomEvent('report-preview-open'));
-            }
-
-            pdfForm.submit();
+            pdfForm.submit(); // same tab: server builds the PDF, then redirects to the viewer page
         }
+        window.generateReportPdf = generateReportPdf;
 
-        window.previewReportPdf = () => submitReportPdf(true);
-        window.exportReportPdf = () => submitReportPdf(false);
-
-        [dateFrom, dateTo].forEach((input) => {
-            input.addEventListener('input', () => dateTo.setCustomValidity(''));
-        });
-    </script>
-
-    {{-- Chart.js Initialization & Export Scripts --}}
-    <script>
-        document.addEventListener('DOMContentLoaded', function () {
-            if (typeof Chart === 'undefined') {
-                console.warn('Chart.js is not loaded.');
-                return;
-            }
-
-            const chartData = @json($chartData);
-            const isDark = document.documentElement.classList.contains('dark');
-            const textColor = isDark ? '#d1d5db' : '#374151';
-            const gridColor = isDark ? 'rgba(75, 85, 99, 0.25)' : 'rgba(229, 231, 235, 0.8)';
-
-            // Common responsive config
-            Chart.defaults.color = textColor;
-            Chart.defaults.font.family = "'Inter', system-ui, sans-serif";
-
-            // 1. Chart Drops (Bar)
-            const ctxDrops = document.getElementById('chartDrops')?.getContext('2d');
-            let chartDrops = null;
-            if (ctxDrops) {
-                chartDrops = new Chart(ctxDrops, {
-                    type: 'bar',
-                    data: {
-                        labels: chartData.drops.labels,
-                        datasets: [{
-                            label: 'Number of Students',
-                            data: chartData.drops.data,
-                            backgroundColor: ['#3b82f6', '#f59e0b', '#ef4444', '#dc2626', '#991b1b'],
-                            borderRadius: 4,
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        plugins: {
-                            legend: { display: false },
-                            tooltip: { callbacks: { label: (ctx) => ctx.raw + ' student(s)' } }
-                        },
-                        scales: {
-                            y: { beginAtZero: true, grid: { color: gridColor }, ticks: { precision: 0 } },
-                            x: { grid: { display: false } }
-                        }
-                    }
-                });
-            }
-
-            // 2. Chart Excused (Doughnut)
-            const ctxExcused = document.getElementById('chartExcused')?.getContext('2d');
-            let chartExcused = null;
-            if (ctxExcused) {
-                chartExcused = new Chart(ctxExcused, {
-                    type: 'doughnut',
-                    data: {
-                        labels: chartData.excused.labels,
-                        datasets: [{
-                            data: chartData.excused.data,
-                            backgroundColor: ['#10b981', '#ef4444', '#f59e0b'],
-                            borderWidth: 2,
-                            borderColor: isDark ? '#1f2937' : '#ffffff',
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        plugins: {
-                            legend: { position: 'bottom' }
-                        }
-                    }
-                });
-            }
-
-            // 3. Chart Timeline (Bar / Line)
-            const ctxTimeline = document.getElementById('chartTimeline')?.getContext('2d');
-            let chartTimeline = null;
-            if (ctxTimeline) {
-                chartTimeline = new Chart(ctxTimeline, {
-                    type: 'bar',
-                    data: {
-                        labels: chartData.timeline.labels,
-                        datasets: [
-                            {
-                                label: 'Instructor Referrals',
-                                data: chartData.timeline.referrals,
-                                backgroundColor: '#6366f1',
-                                borderRadius: 4,
-                            },
-                            {
-                                label: 'Readmission Requests',
-                                data: chartData.timeline.readmissions,
-                                backgroundColor: '#ec4899',
-                                borderRadius: 4,
-                            }
-                        ]
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        plugins: {
-                            legend: { position: 'bottom' }
-                        },
-                        scales: {
-                            y: { beginAtZero: true, grid: { color: gridColor }, ticks: { precision: 0 } },
-                            x: { grid: { display: false } }
-                        }
-                    }
-                });
-            }
-
-            // 4. Chart Status (Bar)
-            const ctxStatus = document.getElementById('chartStatus')?.getContext('2d');
-            let chartStatus = null;
-            if (ctxStatus) {
-                chartStatus = new Chart(ctxStatus, {
-                    type: 'bar',
-                    data: {
-                        labels: chartData.status.labels,
-                        datasets: [{
-                            label: 'Requests',
-                            data: chartData.status.data,
-                            backgroundColor: ['#f59e0b', '#3b82f6', '#10b981', '#ef4444', '#6b7280'],
-                            borderRadius: 4,
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        plugins: {
-                            legend: { display: false },
-                        },
-                        scales: {
-                            y: { beginAtZero: true, grid: { color: gridColor }, ticks: { precision: 0 } },
-                            x: { grid: { display: false } }
-                        }
-                    }
-                });
-            }
-
-            // 5. Chart Absence (Horizontal Bar)
-            const ctxAbsence = document.getElementById('chartAbsence')?.getContext('2d');
-            let chartAbsence = null;
-            if (ctxAbsence) {
-                chartAbsence = new Chart(ctxAbsence, {
-                    type: 'bar',
-                    data: {
-                        labels: chartData.absence.labels.length > 0 ? chartData.absence.labels : ['No absence records'],
-                        datasets: [{
-                            label: 'Total Absence Hours',
-                            data: chartData.absence.data.length > 0 ? chartData.absence.data : [0],
-                            backgroundColor: '#b91c1c',
-                            borderRadius: 4,
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        plugins: {
-                            legend: { display: false },
-                            tooltip: { callbacks: { label: (ctx) => ctx.raw + ' hrs' } }
-                        },
-                        scales: {
-                            y: { beginAtZero: true, grid: { color: gridColor } },
-                            x: { grid: { display: false } }
-                        }
-                    }
-                });
-            }
-
-            window.reportCharts = {
-                drops: chartDrops,
-                excused: chartExcused,
-                timeline: chartTimeline,
-                status: chartStatus,
-                absence: chartAbsence,
-            };
-        });
+        [dateFrom, dateTo].forEach((input) => input.addEventListener('input', () => dateTo.setCustomValidity('')));
     </script>
 </x-app-layout>

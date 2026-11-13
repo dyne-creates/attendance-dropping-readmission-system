@@ -198,15 +198,10 @@ Route::middleware(['auth', 'staffMiddleware'])->prefix('osa')->name('osa.')->gro
         'index',
     ])->name('reports');
 
-    Route::post('/reports/export-pdf', [
-        OsaReportController::class,
-        'exportPdf',
-    ])->name('reports.export-pdf');
-
-    Route::post('/reports/preview.pdf', [
-        OsaReportController::class,
-        'previewPdf',
-    ])->name('reports.preview-pdf');
+    Route::post('/reports/pdf', [OsaReportController::class, 'generatePdf'])->name('reports.pdf.generate');
+    Route::get('/reports/pdf/{token}', [OsaReportController::class, 'showPdf'])->name('reports.pdf.view')->whereUuid('token');
+    Route::get('/reports/pdf/{token}/file', [OsaReportController::class, 'streamPdf'])->name('reports.pdf.file')->whereUuid('token');
+    Route::get('/reports/pdf/{token}/download', [OsaReportController::class, 'downloadPdf'])->name('reports.pdf.download')->whereUuid('token');
 
     Route::get('/reports/readmissions/extract', [
         OsaReportController::class,

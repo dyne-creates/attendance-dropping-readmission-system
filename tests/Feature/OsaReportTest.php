@@ -13,6 +13,7 @@ use App\Models\Student;
 use App\Models\User;
 use App\Services\OsaPdfReportService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 class OsaReportTest extends TestCase
@@ -65,22 +66,22 @@ class OsaReportTest extends TestCase
         $response->assertSee('chartStatus');
         $response->assertSee('chartAbsence');
         $response->assertSee('Student Dropping Records');
-        $response->assertSee('Preview Report');
+        $response->assertSee('View PDF Report');
         $response->assertDontSee('Export PDF');
-        $response->assertSee('Download PDF');
-        $response->assertSee('Student Attendance, Dropping & Readmission Report');
-        $response->assertSee('All Recorded History');
+        $response->assertSee('Quick range:');
+        $response->assertSee('This month');
+        $response->assertSee('All recorded history');
         $response->assertSee('Apply Filters');
-        $response->assertSee('Reset Filters');
+        $response->assertSee('Reset');
         $response->assertSee('role="tablist"', false);
         $response->assertSee('data-report-tab="drops"', false);
         $response->assertSee('data-report-tab="referrals"', false);
         $response->assertSee('data-report-tab="readmissions"', false);
         $response->assertSee('data-report-tab="absences"', false);
         $response->assertSee('data-report-panel="absences"', false);
-        $response->assertSee('data-live-clock', false);
-        $response->assertSee('window.setInterval(updateReportClock, 1000)', false);
-        $this->assertStringEndsWith('/osa/reports/preview.pdf', route('osa.reports.preview-pdf'));
+        $response->assertSee('as of');
+        $response->assertDontSee('window.setInterval(updateReportClock, 1000)', false);
+        $this->assertSame('/osa/reports/pdf', parse_url(route('osa.reports.pdf.generate'), PHP_URL_PATH));
     }
 
     public function test_filters_affect_summary_statistics_and_data_tables(): void
@@ -142,16 +143,17 @@ class OsaReportTest extends TestCase
         $response->assertSee('Pending Cases');
     }
 
-    public function test_osa_staff_can_export_report_as_pdf(): void
+    public function test_osa_staff_can_generate_view_and_download_report_as_pdf(): void
     {
         $osaUser = User::factory()->osaStaff()->create();
         $this->seedReportData();
         $this->travelTo(new \DateTimeImmutable('2026-11-06T19:18:50+00:00'));
+        Storage::fake('local');
 
         // Transparent 1x1 png base64 for testing chart image embedding
         $dummyChart = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
 
-        $response = $this->actingAs($osaUser)->post(route('osa.reports.export-pdf'), [
+        $response = $this->actingAs($osaUser)->post(route('osa.reports.pdf.generate'), [
             'program' => 'BSIT',
             'chart_drops' => $dummyChart,
             'chart_excused' => $dummyChart,
@@ -160,39 +162,47 @@ class OsaReportTest extends TestCase
             'chart_absence' => $dummyChart,
         ]);
 
-        $response->assertOk();
-        $this->assertSame('application/pdf', $response->headers->get('Content-Type'));
+        $response->assertRedirect();
+        $viewerUrl = $response->headers->get('Location');
+        $this->assertIsString($viewerUrl);
+        $this->assertMatchesRegularExpression('#/osa/reports/pdf/[0-9a-f-]{36}$#', $viewerUrl);
+        $token = basename((string) parse_url($viewerUrl, PHP_URL_PATH));
+
+        $this->get($viewerUrl)
+            ->assertOk()
+            ->assertSee('Open in new tab')
+            ->assertSee('Download PDF');
+
+        $pdfPath = 'osa-reports/'.$osaUser->user_id.'/'.$token.'.pdf';
+        Storage::disk('local')->assertExists($pdfPath);
+        $this->assertStringStartsWith('%PDF-', Storage::disk('local')->get($pdfPath));
+
+        $fileResponse = $this->get(route('osa.reports.pdf.file', $token));
+        $fileResponse->assertOk();
         $this->assertSame(
-            'attachment; filename="OSA-Report-20261107-031850.pdf"',
-            $response->headers->get('Content-Disposition')
+            'application/pdf',
+            $fileResponse->headers->get('Content-Type')
         );
+        $this->assertStringStartsWith('inline;', (string) $fileResponse->headers->get('Content-Disposition'));
 
-        $content = $response->getContent();
-        $this->assertIsString($content);
-        $this->assertStringStartsWith('%PDF-', $content);
+        $downloadResponse = $this->get(route('osa.reports.pdf.download', $token));
+        $downloadResponse->assertOk();
+        $this->assertStringStartsWith('attachment;', (string) $downloadResponse->headers->get('Content-Disposition'));
 
-        $previewResponse = $this->actingAs($osaUser)->post(route('osa.reports.preview-pdf'), [
-            'program' => 'BSIT',
-            'chart_drops' => $dummyChart,
-            'chart_excused' => $dummyChart,
-            'chart_timeline' => $dummyChart,
-            'chart_status' => $dummyChart,
-            'chart_absence' => $dummyChart,
+        $otherOsaUser = User::factory()->osaStaff()->create([
+            'email' => 'other-osa@example.test',
         ]);
-
-        $previewResponse->assertOk();
-        $this->assertSame(
-            'inline; filename="OSA-Report-20261107-031850.pdf"',
-            $previewResponse->headers->get('Content-Disposition')
-        );
-        $this->assertStringStartsWith('%PDF-', (string) $previewResponse->getContent());
+        $this->actingAs($otherOsaUser)
+            ->get(route('osa.reports.pdf.file', $token))
+            ->assertNotFound();
     }
 
-    public function test_osa_staff_can_preview_report_pdf_inline_with_manila_generation_time(): void
+    public function test_osa_staff_can_generate_report_pdf_with_manila_generation_time(): void
     {
         $osaUser = User::factory()->osaStaff()->create();
         $reportData = $this->seedReportData();
         $this->travelTo(new \DateTimeImmutable('2026-11-06T19:18:50+00:00'));
+        Storage::fake('local');
 
         $pdfService = $this->mock(OsaPdfReportService::class);
         $pdfService->shouldReceive('generate')
@@ -209,25 +219,32 @@ class OsaReportTest extends TestCase
             })
             ->andReturn('%PDF-preview');
 
-        $response = $this->actingAs($osaUser)->post(route('osa.reports.preview-pdf'), [
+        $response = $this->actingAs($osaUser)->post(route('osa.reports.pdf.generate'), [
             'program' => 'BSIT',
         ]);
 
-        $response->assertOk();
-        $this->assertSame('application/pdf', $response->headers->get('Content-Type'));
-        $this->assertSame('inline; filename="OSA-Report-20261107-031850.pdf"', $response->headers->get('Content-Disposition'));
-        $this->assertSame('%PDF-preview', $response->getContent());
+        $response->assertRedirect();
+        $viewerUrl = $response->headers->get('Location');
+        $this->assertIsString($viewerUrl);
+        $token = basename((string) parse_url($viewerUrl, PHP_URL_PATH));
+
+        $this->get($viewerUrl)
+            ->assertOk()
+            ->assertSee('November 7, 2026, 3:18 AM');
+
+        $this->assertSame(
+            '%PDF-preview',
+            Storage::disk('local')->get('osa-reports/'.$osaUser->user_id.'/'.$token.'.pdf')
+        );
     }
 
     public function test_unauthorized_user_cannot_export_reports_pdf(): void
     {
         $studentUser = User::factory()->create(['role' => 'student']);
 
-        $response = $this->actingAs($studentUser)->post(route('osa.reports.export-pdf'));
-        $previewResponse = $this->actingAs($studentUser)->post(route('osa.reports.preview-pdf'));
+        $response = $this->actingAs($studentUser)->post(route('osa.reports.pdf.generate'));
 
         $response->assertRedirect(route('student.dashboard'));
-        $previewResponse->assertRedirect(route('student.dashboard'));
     }
 
     /**

@@ -3,14 +3,18 @@
 namespace App\Http\Controllers\OsaStaff;
 
 use App\Http\Controllers\Controller;
-use App\Models\SchoolYear;
 use App\Models\ReadmissionRequest;
+use App\Models\SchoolYear;
 use App\Services\OsaPdfReportService;
 use App\Services\OsaReportService;
 use App\Services\ReadmissionExportService;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Illuminate\View\View;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
@@ -53,36 +57,100 @@ class OsaReportController extends Controller
         ]);
     }
 
+    private const PDF_DISK = 'local';
+
+    private const PDF_TTL_MINUTES = 60;
+
     /**
-     * Export institutional PDF report using mPDF with rendered browser chart images.
+     * Build the PDF, store it temporarily, then redirect to the full-page viewer.
+     * POST -> redirect -> GET means refresh/back never re-submits chart images.
      */
-    public function exportPdf(
+    public function generatePdf(
         Request $request,
         OsaReportService $reportService,
         OsaPdfReportService $pdfService
-    ): Response {
-        $report = $this->generatePdfReport($request, $reportService, $pdfService);
-        $filename = 'OSA-Report-'.$report['filenameTimestamp'].'.pdf';
+    ): RedirectResponse {
+        $chartRules = ['nullable', 'string', 'max:3000000', 'starts_with:data:image/png;base64,'];
+        $request->validate([
+            'chart_drops' => $chartRules,
+            'chart_excused' => $chartRules,
+            'chart_timeline' => $chartRules,
+            'chart_status' => $chartRules,
+            'chart_absence' => $chartRules,
+        ]);
 
-        return response($report['pdf'], 200, [
-            'Content-Type' => 'application/pdf',
-            'Content-Disposition' => 'attachment; filename="'.$filename.'"',
+        $report = $this->generatePdfReport($request, $reportService, $pdfService);
+
+        // Guard: a "PDF" that does not start with %PDF is HTML/stray output (PHP notices, error page, etc.).
+        if (! str_starts_with($report['pdf'], '%PDF-')) {
+            Log::error('OSA report: generator did not return a valid PDF.', [
+                'starts_with' => substr($report['pdf'], 0, 300),
+            ]);
+
+            return back()->withInput()->with('error', 'The PDF report could not be generated. Please try again or contact support.');
+        }
+
+        $this->pruneExpiredPdfs();
+
+        $token = (string) Str::uuid();
+        $path = $this->pdfDirectory().'/'.$token.'.pdf';
+        Storage::disk(self::PDF_DISK)->put($path, $report['pdf']);
+
+        Cache::put($this->pdfCacheKey($token), [
+            'user_id' => Auth::id(),
+            'path' => $path,
+            'filename' => 'OSA-Report-'.$report['filenameTimestamp'].'.pdf',
+            'generated_at' => $report['generatedAtLabel'],
+            'period' => $report['periodLabel'],
+            'filters' => collect($this->validateReportFilters($request))->filter(fn ($v) => $v !== null && $v !== '')->all(),
+            'size' => strlen($report['pdf']),
+        ], now()->addMinutes(self::PDF_TTL_MINUTES));
+
+        return redirect()->route('osa.reports.pdf.view', ['token' => $token]);
+    }
+
+    /**
+     * Full-page PDF viewer (like opening a PDF in Google Drive) with a Download button.
+     */
+    public function showPdf(string $token): View
+    {
+        $meta = $this->resolveStoredPdf($token);
+
+        return view('osa-staff.reports-pdf-viewer', [
+            'token' => $token,
+            'filename' => $meta['filename'],
+            'generatedAt' => $meta['generated_at'],
+            'period' => $meta['period'],
+            'sizeLabel' => number_format($meta['size'] / 1024, 0).' KB',
+            'backFilters' => $meta['filters'],
         ]);
     }
 
     /**
-     * Preview institutional PDF report inline for review before download.
+     * Inline PDF bytes for the viewer iframe.
      */
-    public function previewPdf(
-        Request $request,
-        OsaReportService $reportService,
-        OsaPdfReportService $pdfService
-    ): Response {
-        $report = $this->generatePdfReport($request, $reportService, $pdfService);
+    public function streamPdf(string $token): BinaryFileResponse
+    {
+        $meta = $this->resolveStoredPdf($token);
 
-        return response($report['pdf'], 200, [
+        return response()->file(Storage::disk(self::PDF_DISK)->path($meta['path']), [
             'Content-Type' => 'application/pdf',
-            'Content-Disposition' => 'inline; filename="OSA-Report-'.$report['filenameTimestamp'].'.pdf"',
+            'Content-Disposition' => 'inline; filename="'.$meta['filename'].'"',
+            'X-Content-Type-Options' => 'nosniff',
+            'Cache-Control' => 'private, max-age=0, must-revalidate',
+        ]);
+    }
+
+    /**
+     * Forced download with a guaranteed application/pdf content type.
+     */
+    public function downloadPdf(string $token): BinaryFileResponse
+    {
+        $meta = $this->resolveStoredPdf($token);
+
+        return response()->download(Storage::disk(self::PDF_DISK)->path($meta['path']), $meta['filename'], [
+            'Content-Type' => 'application/pdf',
+            'X-Content-Type-Options' => 'nosniff',
         ]);
     }
 
@@ -145,7 +213,7 @@ class OsaReportController extends Controller
     }
 
     /**
-     * @return array{pdf: string, filenameTimestamp: string}
+     * @return array{pdf: string, filenameTimestamp: string, generatedAtLabel: string, periodLabel: string}
      */
     private function generatePdfReport(
         Request $request,
@@ -185,6 +253,7 @@ class OsaReportController extends Controller
         $generatedAt = now('Asia/Manila');
         $pdfBinary = $pdfService->generate([
             'filters' => $validated,
+            'filterSummary' => $this->buildFilterSummary($validated, $reportService),
             'periodLabel' => $periodLabel,
             'schoolYearLabel' => $schoolYearLabel,
             'generatedAt' => $generatedAt->format('F j, Y, g:i A'),
@@ -200,7 +269,83 @@ class OsaReportController extends Controller
         return [
             'pdf' => $pdfBinary,
             'filenameTimestamp' => $generatedAt->format('Ymd-His'),
+            'generatedAtLabel' => $generatedAt->format('F j, Y, g:i A'),
+            'periodLabel' => $periodLabel,
         ];
+    }
+
+    /**
+     * Human-readable list of every active filter, printed in the PDF header.
+     *
+     * @param  array<string, mixed>  $v
+     * @return array<string, string>
+     */
+    private function buildFilterSummary(array $v, OsaReportService $reportService): array
+    {
+        $options = $reportService->getFilterOptions();
+        $summary = [];
+
+        if (! empty($v['program'])) {
+            $summary['Program'] = $v['program'];
+        }
+        if (! empty($v['year_level'])) {
+            $summary['Year Level'] = 'Year '.$v['year_level'];
+        }
+        if (! empty($v['section'])) {
+            $summary['Section'] = $v['section'];
+        }
+        if (! empty($v['faculty_id'])) {
+            $faculty = collect($options['faculty'] ?? [])->firstWhere('faculty_id', (int) $v['faculty_id']);
+            $summary['Faculty'] = $faculty->full_name ?? ('#'.$v['faculty_id']);
+        }
+        if (! empty($v['status'])) {
+            $labels = $options['statuses'] ?? [];
+            $summary['Statuses'] = collect($v['status'])->map(fn ($s) => $labels[$s] ?? $s)->implode(', ');
+        }
+
+        return $summary;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function resolveStoredPdf(string $token): array
+    {
+        abort_unless(Str::isUuid($token), 404);
+
+        $meta = Cache::get($this->pdfCacheKey($token));
+
+        abort_unless(
+            is_array($meta)
+                && (int) $meta['user_id'] === (int) Auth::id()
+                && Storage::disk(self::PDF_DISK)->exists($meta['path']),
+            404,
+            'This report has expired. Please generate it again from the Reports page.'
+        );
+
+        return $meta;
+    }
+
+    private function pdfCacheKey(string $token): string
+    {
+        return 'osa-report-pdf:'.$token;
+    }
+
+    private function pdfDirectory(): string
+    {
+        return 'osa-reports/'.Auth::id();
+    }
+
+    private function pruneExpiredPdfs(): void
+    {
+        $disk = Storage::disk(self::PDF_DISK);
+        $cutoff = now()->subMinutes(self::PDF_TTL_MINUTES)->getTimestamp();
+
+        foreach ($disk->files($this->pdfDirectory()) as $file) {
+            if ($disk->lastModified($file) < $cutoff) {
+                $disk->delete($file);
+            }
+        }
     }
 
     /**

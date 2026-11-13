@@ -55,7 +55,7 @@
             <a href="{{ route($link['route']) }}"
                @class([
                    'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
-                   'bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300' => request()->routeIs($link['active'] ?? $link['route']),
+                   'bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300 border-l-4 border-rose-600' => request()->routeIs($link['active'] ?? $link['route']),
                    'muted hover:bg-gray-100 dark:hover:bg-gray-800' => ! request()->routeIs($link['active'] ?? $link['route']),
                ])
                :title="sidebarCollapsed ? @js($link['label']) : null">
@@ -84,10 +84,10 @@
         @endforeach
     </nav>
 
-    <div class="space-y-3 border-t p-3 dark:border-gray-700">
+    <div class="space-y-5 border-t p-3 dark:border-gray-700">
         <div class="flex items-center gap-3 px-2">
             @if ($user->avatar_url)
-                <img src="{{ $user->avatar_url }}" alt="" class="h-9 w-9 shrink-0 rounded-full object-cover">
+                <img src="{{ $user->avatar_url }}" alt="{{ $user->name }}'s avatar" class="h-10 w-10 shrink-0 rounded-full object-cover mr-2">
             @else
                 <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gray-100 text-sm font-semibold dark:bg-gray-800">
                     {{ strtoupper(substr($user->name, 0, 1)) }}
