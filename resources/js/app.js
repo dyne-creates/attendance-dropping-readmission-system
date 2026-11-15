@@ -2,9 +2,12 @@
 
 import Alpine from 'alpinejs';
 import Chart from 'chart.js/auto';
+import { renderAsync } from 'docx-preview';
 
 window.Alpine = Alpine;
 window.Chart = Chart;
+window.renderDocxPreview = renderAsync;
+window.dispatchEvent(new Event('docx-preview-ready'));
 
 Alpine.data('appDialogs', () => ({
     dialogOpen: false,

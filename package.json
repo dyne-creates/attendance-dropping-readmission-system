@@ -21,6 +21,7 @@
         "@laravel/multiplex": "^0.4.1"
     },
     "dependencies": {
-        "chart.js": "^4.6.1"
+        "chart.js": "^4.6.1",
+        "docx-preview": "^0.4.1"
     }
 }

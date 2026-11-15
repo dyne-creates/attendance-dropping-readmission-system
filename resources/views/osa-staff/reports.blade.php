@@ -691,13 +691,14 @@
             const yAxis = (extra = {}) => ({ beginAtZero: true, grid: { color: theme.grid }, ticks: { precision: 0, color: theme.text }, ...extra });
             const xAxis = (extra = {}) => ({ grid: { display: false }, ticks: { color: theme.text }, ...extra });
             const hasData = (arr) => Array.isArray(arr) && arr.some((v) => Number(v) > 0);
+            const valuesWithNoZeroBars = (arr) => arr.map((value) => Number(value) > 0 ? value : null);
 
             const excusedHasData = hasData(chartData.excused.data);
 
             return {
                 drops: {
                     type: 'bar',
-                    data: { labels: chartData.drops.labels, datasets: [{ label: 'Number of Students', data: chartData.drops.data,
+                    data: { labels: chartData.drops.labels, datasets: [{ label: 'Number of Students', data: valuesWithNoZeroBars(chartData.drops.data),
                         backgroundColor: ['#3b82f6', '#f59e0b', '#ef4444', '#dc2626', '#991b1b'], borderRadius: 4 }] },
                     options: opts({ plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => c.raw + ' student(s)' } } },
                         scales: { y: yAxis(), x: xAxis() } }),
@@ -714,22 +715,22 @@
                 timeline: {
                     type: 'bar',
                     data: { labels: chartData.timeline.labels, datasets: [
-                        { label: 'Instructor Referrals', data: chartData.timeline.referrals, backgroundColor: '#6366f1', borderRadius: 4 },
-                        { label: 'Readmission Requests', data: chartData.timeline.readmissions, backgroundColor: '#ec4899', borderRadius: 4 },
+                        { label: 'Instructor Referrals', data: valuesWithNoZeroBars(chartData.timeline.referrals), backgroundColor: '#6366f1', borderRadius: 4 },
+                        { label: 'Readmission Requests', data: valuesWithNoZeroBars(chartData.timeline.readmissions), backgroundColor: '#ec4899', borderRadius: 4 },
                     ] },
                     options: opts({ plugins: { legend: { position: 'bottom', labels: { color: theme.text } } },
                         scales: { y: yAxis(), x: xAxis() } }),
                 },
                 status: {
                     type: 'bar',
-                    data: { labels: chartData.status.labels, datasets: [{ label: 'Requests', data: chartData.status.data,
+                    data: { labels: chartData.status.labels, datasets: [{ label: 'Requests', data: valuesWithNoZeroBars(chartData.status.data),
                         backgroundColor: ['#f59e0b', '#3b82f6', '#10b981', '#ef4444', '#6b7280'], borderRadius: 4 }] },
                     options: opts({ plugins: { legend: { display: false } }, scales: { y: yAxis(), x: xAxis() } }),
                 },
                 absence: {
                     type: 'bar',
                     data: { labels: chartData.absence.labels.length ? chartData.absence.labels : ['No absence records'],
-                        datasets: [{ label: 'Total Absence Hours', data: chartData.absence.data.length ? chartData.absence.data : [0],
+                        datasets: [{ label: 'Total Absence Hours', data: chartData.absence.data.length ? valuesWithNoZeroBars(chartData.absence.data) : [null],
                             backgroundColor: '#b91c1c', borderRadius: 4 }] },
                     options: opts({ indexAxis: 'y', plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => c.raw + ' hrs' } } },
                         scales: { x: yAxis({ ticks: { color: theme.text } }), y: xAxis() } }),

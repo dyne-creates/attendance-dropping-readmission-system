@@ -14,9 +14,11 @@ use Carbon\Carbon;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
@@ -263,7 +265,19 @@ class OsaStaffController extends Controller
             ->orderBy('session_date')
             ->get();
 
-        $absenceDates = $attendanceRecords->where('status', 'absent')->values();
+        $previousReadmissionDropDate = $this->previousReadmissionDropDate(
+            $request->enrollment_id,
+            $request->drop_id,
+        );
+        $absenceDates = $attendanceRecords
+            ->where('status', 'absent')
+            ->when(
+                $previousReadmissionDropDate !== null,
+                fn ($records) => $records->filter(
+                    fn (object $record): bool => Carbon::parse($record->session_date)->gt($previousReadmissionDropDate),
+                ),
+            )
+            ->values();
         $weeklyAbsenceHours = $attendanceRecords
             ->where('status', 'absent')
             ->groupBy(fn (object $record): string => Carbon::parse($record->session_date)->startOfWeek()->toDateString())
@@ -307,9 +321,18 @@ class OsaStaffController extends Controller
         return Storage::disk('local')->download($document->file_path);
     }
 
-    public function previewExcuseDocument(ExcuseDocument $document): BinaryFileResponse
+    public function previewExcuseDocument(Request $request, ExcuseDocument $document): BinaryFileResponse|Response
     {
         abort_unless(Storage::disk('local')->exists($document->file_path), 404);
+
+        if (strtolower(pathinfo($document->file_path, PATHINFO_EXTENSION)) === 'docx' && ! $request->boolean('raw')) {
+            return response()->view('osa-staff.document-preview', [
+                'documentUrl' => route('osa.readmissions.documents.preview', [
+                    'document' => $document,
+                    'raw' => 1,
+                ]),
+            ]);
+        }
 
         return response()->file(Storage::disk('local')->path($document->file_path), [
             'Content-Type' => Storage::disk('local')->mimeType($document->file_path) ?? 'application/octet-stream',
@@ -506,19 +529,17 @@ class OsaStaffController extends Controller
         );
     }
 
-    public function requestCorrection(Request $request, int $id): RedirectResponse
+    private function previousReadmissionDropDate(int $enrollmentId, int $currentDropId): ?Carbon
     {
-        $validated = $request->validate([
-            'correction_note' => ['required', 'string', 'max:2000'],
-        ]);
+        $dropDate = DB::table('dropping_transactions as previous_drops')
+            ->join('readmission_requests as previous_requests', 'previous_drops.drop_id', '=', 'previous_requests.drop_id')
+            ->where('previous_drops.enrollment_id', $enrollmentId)
+            ->where('previous_drops.drop_id', '<', $currentDropId)
+            ->where('previous_requests.status', 'approved')
+            ->orderByDesc('previous_drops.drop_id')
+            ->value('previous_drops.drop_date');
 
-        return $this->processNegativeDecision(
-            $request,
-            $id,
-            ReadmissionRequest::OUTCOME_NOT_EXCUSED,
-            $validated['correction_note'],
-            true,
-        );
+        return $dropDate === null ? null : Carbon::parse($dropDate);
     }
 
     public function excuseReadmission(Request $request, int $id, AttendanceService $attendanceService): RedirectResponse
@@ -553,15 +574,33 @@ class OsaStaffController extends Controller
                     ->whereKey($readmission->enrollment_id)
                     ->lockForUpdate()
                     ->firstOrFail();
-                $absences = $enrollment->attendanceRecords()
+                $previousReadmissionDropDate = $this->previousReadmissionDropDate(
+                    $enrollment->enrollment_id,
+                    $drop->drop_id,
+                );
+                $eligibleAbsences = $enrollment->attendanceRecords()
                     ->where('status', 'absent')
+                    ->when(
+                        $previousReadmissionDropDate !== null,
+                        fn ($query) => $query->whereDate('session_date', '>', $previousReadmissionDropDate->toDateString()),
+                    );
+                $eligibleAbsenceDates = (clone $eligibleAbsences)
+                    ->pluck('session_date')
+                    ->map(fn ($date): string => Carbon::parse($date)->toDateString());
+
+                if ($eligibleAbsenceDates->isNotEmpty() && $selectedDates->diff($eligibleAbsenceDates)->isNotEmpty()) {
+                    throw ValidationException::withMessages([
+                        'excused_dates' => 'Select only absence dates from the current drop cycle.',
+                    ]);
+                }
+
+                $absences = (clone $eligibleAbsences)
                     ->whereIn('session_date', $selectedDates->all())
                     ->lockForUpdate()
                     ->get();
                 $deductedHours = $attendanceService->calculateAbsenceHours($enrollment->course, $absences);
 
-                $enrollment->attendanceRecords()
-                    ->where('status', 'absent')
+                $eligibleAbsences
                     ->whereIn('session_date', $selectedDates->all())
                     ->update([
                         'status' => 'excused',
@@ -630,6 +669,8 @@ class OsaStaffController extends Controller
             return redirect()
                 ->route('osa.readmissions')
                 ->with('success', 'The student was readmitted, matching absences were excused, and both the student and faculty were notified.');
+        } catch (ValidationException $exception) {
+            throw $exception;
         } catch (\Throwable $exception) {
             report($exception);
 
@@ -639,10 +680,10 @@ class OsaStaffController extends Controller
         }
     }
 
-    private function processNegativeDecision(Request $request, int $id, string $outcome, string $reason, bool $isCorrectionRequest = false): RedirectResponse
+    private function processNegativeDecision(Request $request, int $id, string $outcome, string $reason): RedirectResponse
     {
         try {
-            $readmission = DB::transaction(function () use ($request, $id, $outcome, $reason, $isCorrectionRequest): ?object {
+            $readmission = DB::transaction(function () use ($request, $id, $outcome, $reason): ?object {
                 $osaStaff = $request->user()->osaStaff()->firstOrCreate();
                 $readmission = $this->readmissionDecisionDetails($id, true);
 
@@ -656,7 +697,6 @@ class OsaStaffController extends Controller
                         'status' => 'rejected',
                         'outcome' => $outcome,
                         'rejection_reason' => $reason,
-                        'correction_requested_at' => $isCorrectionRequest ? now() : null,
                         'processed_by' => $osaStaff->getKey(),
                         'processed_date' => now()->toDateString(),
                         'notice_sent_date' => now()->toDateString(),
@@ -667,17 +707,13 @@ class OsaStaffController extends Controller
                     'osa_id' => $osaStaff->getKey(),
                     'student_id' => $readmission->student_id,
                     'guardian_id' => null,
-                    'notification_type' => $isCorrectionRequest
-                        ? 'readmission_correction_requested'
-                        : ($outcome === ReadmissionRequest::OUTCOME_NOT_EXCUSED
+                    'notification_type' => $outcome === ReadmissionRequest::OUTCOME_NOT_EXCUSED
                         ? 'readmission_not_excused'
-                        : 'readmission_rejected'),
+                        : 'readmission_rejected',
                     'channel' => 'email',
-                    'message' => $isCorrectionRequest
-                        ? 'OSA asked you to correct and resubmit your readmission request. OSA feedback: '.$reason
-                        : ($outcome === ReadmissionRequest::OUTCOME_NOT_EXCUSED
+                    'message' => $outcome === ReadmissionRequest::OUTCOME_NOT_EXCUSED
                         ? 'Your readmission request was not excused. OSA feedback: '.$reason
-                        : 'Your readmission request has been rejected. OSA feedback: '.$reason),
+                        : 'Your readmission request has been rejected. OSA feedback: '.$reason,
                     'sent_at' => now(),
                 ]);
 
@@ -706,11 +742,9 @@ class OsaStaffController extends Controller
                     ->with('warning', 'The decision was saved, but one or more email notifications could not be sent.');
             }
 
-            $message = $isCorrectionRequest
-                ? 'A correction request was sent to the student. They may revise and resubmit this request.'
-                : ($outcome === ReadmissionRequest::OUTCOME_NOT_EXCUSED
-                ? 'The request was marked Not excused. The student may submit a corrected request; both parties were notified.'
-                : 'The request was rejected for the term. The student remains inactive, and both parties were notified.');
+            $message = $outcome === ReadmissionRequest::OUTCOME_NOT_EXCUSED
+                ? 'The request was marked Not excused. The submitted request remains final, and both parties were notified.'
+                : 'The request was rejected for the term. The student remains inactive, and both parties were notified.';
 
             return redirect()->route('osa.readmissions')->with('success', $message);
         } catch (\Throwable $exception) {

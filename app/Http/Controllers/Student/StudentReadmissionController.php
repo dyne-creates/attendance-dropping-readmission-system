@@ -36,16 +36,10 @@ class StudentReadmissionController extends Controller
             ->firstOrFail();
         $latestAttempt = $drop->readmissionRequests->last();
 
-        if ($latestAttempt?->outcome === ReadmissionRequest::OUTCOME_REJECTED) {
+        if ($latestAttempt !== null) {
             return redirect()
                 ->route('student.dashboard')
-                ->with('info', 'OSA rejected this readmission request for the term. Contact OSA for guidance.');
-        }
-
-        if ($latestAttempt !== null && $latestAttempt->status !== 'rejected') {
-            return redirect()
-                ->route('student.dashboard')
-                ->with('info', 'A readmission request is already awaiting review or has been approved.');
+                ->with('info', 'A readmission request has already been submitted for this drop and is final. Contact OSA for guidance.');
         }
 
         $enrollment->load([
@@ -69,9 +63,6 @@ class StudentReadmissionController extends Controller
             'dropCount' => $enrollment->droppingTransactions()->count(),
             'attemptNumber' => ($latestAttempt?->attempt_number ?? 0) + 1,
             'previousAttempts' => $drop->readmissionRequests,
-            'correctionAttempt' => $latestAttempt?->outcome === ReadmissionRequest::OUTCOME_NOT_EXCUSED
-                ? $latestAttempt
-                : null,
             'absenceDates' => $absenceDates,
             'reasons' => ReadmissionRequest::REASONS,
             'guardian' => $student->guardians->first(),
@@ -118,7 +109,6 @@ class StudentReadmissionController extends Controller
                 'extensions:pdf,docx',
                 'max:5120',
             ],
-            'consent' => ['accepted'],
         ], [
             'attachment.required' => 'Please upload a PDF or DOCX supporting document for this reason.',
             'attachment.mimes' => 'The supporting document must be a PDF or DOCX file.',
@@ -131,16 +121,10 @@ class StudentReadmissionController extends Controller
 
         $latestAttempt = $drop->readmissionRequests()->latest('attempt_number')->first();
 
-        if ($latestAttempt?->outcome === ReadmissionRequest::OUTCOME_REJECTED) {
+        if ($latestAttempt !== null) {
             return redirect()
                 ->route('student.dashboard')
-                ->with('info', 'OSA rejected this readmission request for the term. Contact OSA for guidance.');
-        }
-
-        if ($latestAttempt !== null && $latestAttempt->status !== 'rejected') {
-            return redirect()
-                ->route('student.dashboard')
-                ->with('info', 'A readmission request is already awaiting review or has been approved.');
+                ->with('info', 'A readmission request has already been submitted for this drop and is final. Contact OSA for guidance.');
         }
 
         try {
@@ -168,10 +152,7 @@ class StudentReadmissionController extends Controller
                     ->orderByDesc('attempt_number')
                     ->first();
 
-                if ($latestRequest !== null && (
-                    $latestRequest->status !== 'rejected'
-                    || $latestRequest->outcome === ReadmissionRequest::OUTCOME_REJECTED
-                )) {
+                if ($latestRequest !== null) {
                     return false;
                 }
 

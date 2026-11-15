@@ -171,11 +171,6 @@ Route::middleware(['auth', 'staffMiddleware'])->prefix('osa')->name('osa.')->gro
         'notExcusedReadmission',
     ])->name('readmissions.not-excused');
 
-    Route::post('/readmissions/{id}/correction-request', [
-        OsaStaffController::class,
-        'requestCorrection',
-    ])->name('readmissions.correction-request');
-
     Route::post('/readmissions/{id}/excuse', [
         OsaStaffController::class,
         'excuseReadmission',

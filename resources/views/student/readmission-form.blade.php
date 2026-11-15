@@ -23,15 +23,6 @@
             </div>
         @endif
 
-        @if ($correctionAttempt)
-            <div class="alert alert-warning whitespace-pre-line" role="status">
-                OSA requested corrections to attempt {{ $correctionAttempt->attempt_number }}.
-                {{ $correctionAttempt->rejection_reason }}
-                Review your previous answers below, make the requested changes, and submit a corrected request.
-                This will be saved as a new attempt so your request history remains available.
-            </div>
-        @endif
-
         <section class="card p-5 sm:p-6" aria-labelledby="policy-heading">
             <h2 id="policy-heading" class="text-lg font-semibold">Section 1: Attendance monitoring and consent</h2>
             <div class="muted mt-3 space-y-3 text-sm leading-6">
@@ -57,12 +48,6 @@
                 </p>
                 <p>
                     Please ensure that your information is accurate and use your student email address.
-                </p>
-                <p>
-                    I certify that the information provided is true and correct and understand that false statements
-                    or concealment may lead to disciplinary sanctions. I consent to the collection, processing, and
-                    storage of my data under RA 10173 (Data Privacy Act of 2012), and authorize the Office of Student
-                    Affairs to use this information to notify my parents or guardians about my absences and attendance.
                 </p>
             </div>
         </section>
@@ -189,14 +174,14 @@
             </div>
 
             <p class="alert alert-warning mt-4" role="note">
-                All recorded absences are listed in date order. If a previous attempt was marked Not excused, you may submit a revised request.
+                All recorded absences are listed in date order. Once submitted, this readmission request and its supporting documents are final.
             </p>
 
             <form method="POST"
                   action="{{ route('student.readmissions.store', $enrollment) }}"
                   enctype="multipart/form-data"
                   class="mt-6 space-y-5"
-                  x-data="{ selectedDocumentName: '', attachmentRequired: @js(in_array(old('reason_code', $correctionAttempt?->reason_code), ['dental_medical', 'personal_family'], true)) }">
+                  x-data="{ selectedDocumentName: '', attachmentRequired: @js(in_array(old('reason_code'), ['dental_medical', 'personal_family'], true)) }">
                 @csrf
 
                 <p class="muted text-sm">Submitting attempt {{ $attemptNumber }}.</p>
@@ -213,7 +198,7 @@
                             @change="attachmentRequired = ['dental_medical', 'personal_family'].includes($event.target.value)">
                         <option value="">Select a reason</option>
                         @foreach ($reasons as $code => $label)
-                            <option value="{{ $code }}" @selected(old('reason_code', $correctionAttempt?->reason_code) === $code)>{{ $label }}</option>
+                            <option value="{{ $code }}" @selected(old('reason_code') === $code)>{{ $label }}</option>
                         @endforeach
                     </select>
                     @error('reason_code')
@@ -223,7 +208,7 @@
 
                 <div>
                     <label for="reason_details" class="field-label mb-1">Additional details <span class="muted">(required if you select Other)</span></label>
-                    <textarea id="reason_details" name="reason_details" rows="4" maxlength="2000" class="field">{{ old('reason_details', $correctionAttempt?->reason_details) }}</textarea>
+                    <textarea id="reason_details" name="reason_details" rows="4" maxlength="2000" class="field">{{ old('reason_details') }}</textarea>
                     @error('reason_details')
                         <p class="field-error mt-1">{{ $message }}</p>
                     @enderror
@@ -277,24 +262,10 @@
                     @endif
                 </section>
 
-                <div>
-                    <label class="flex items-start gap-3">
-                        <input type="checkbox" name="consent" value="1" class="mt-1" @checked(old('consent')) required>
-                        <span class="text-sm">
-                            I certify that the information provided is true and correct, consent to the collection,
-                            processing, and storage of my data under RA 10173, and authorize the Office of Student
-                            Affairs to notify my parent or guardian about my absences and attendance.
-                        </span>
-                    </label>
-                    @error('consent')
-                        <p class="field-error mt-1">{{ $message }}</p>
-                    @enderror
-                </div>
-
                 <div class="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
                     <a href="{{ route('student.dashboard') }}" class="btn btn-secondary">Cancel</a>
                     <button type="submit" class="btn btn-primary">
-                        {{ $correctionAttempt ? 'Submit corrected request' : 'Submit readmission request' }}
+                        Submit readmission request
                     </button>
                 </div>
             </form>

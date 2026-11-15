@@ -272,7 +272,7 @@ class StudentReadmissionTest extends TestCase
         $this->assertDatabaseCount('readmission_requests', 0);
     }
 
-    public function test_readmission_request_requires_policy_consent(): void
+    public function test_readmission_request_uses_the_login_policy_agreement_without_requiring_duplicate_consent(): void
     {
         [$user, , , $enrollment] = $this->createDroppedStudent();
 
@@ -282,8 +282,8 @@ class StudentReadmissionTest extends TestCase
                 'reason_code' => 'mental_health',
             ]);
 
-        $response->assertSessionHasErrors('consent');
-        $this->assertDatabaseCount('readmission_requests', 0);
+        $response->assertRedirect(route('student.dashboard'));
+        $this->assertDatabaseCount('readmission_requests', 1);
     }
 
     #[DataProvider('unsupportedSupportingDocuments')]
@@ -407,7 +407,7 @@ class StudentReadmissionTest extends TestCase
         $this->assertDatabaseCount('readmission_requests', 1);
     }
 
-    public function test_student_can_resubmit_after_a_not_excused_decision(): void
+    public function test_student_cannot_resubmit_after_a_not_excused_decision(): void
     {
         [$user, , $faculty, $enrollment, $drop] = $this->createDroppedStudent();
         $facultyUser = User::query()->findOrFail($faculty->user_id);
@@ -435,30 +435,18 @@ class StudentReadmissionTest extends TestCase
 
         $this->actingAs($user)
             ->get(route('student.readmissions.create', $enrollment))
-            ->assertSee('Attempt 1')
-            ->assertSee('Please submit an updated supporting document.')
-            ->assertSee('OSA requested corrections')
-            ->assertSee('option value="other" selected', false)
-            ->assertSee('My original explanation.')
-            ->assertSee('Submit corrected request')
-            ->assertSee('Submitting attempt 2.');
+            ->assertRedirect(route('student.dashboard'))
+            ->assertSessionHas('info');
 
         $response = $this->actingAs($user)
             ->post(route('student.readmissions.store', $enrollment), [
                 'reason_code' => 'other',
                 'reason_details' => 'My updated explanation.',
-                'consent' => '1',
             ]);
 
         $response->assertRedirect(route('student.dashboard'));
-        $this->assertDatabaseHas('readmission_requests', [
-            'drop_id' => $drop->drop_id,
-            'attempt_number' => 2,
-            'reason_code' => 'other',
-            'reason_details' => 'My updated explanation.',
-            'status' => 'pending',
-        ]);
-        $this->assertDatabaseCount('readmission_requests', 2);
+        $response->assertSessionHas('info');
+        $this->assertDatabaseCount('readmission_requests', 1);
     }
 
     public function test_osa_excused_date_range_reactivates_enrollment_and_deducts_only_matching_absence_hours(): void
@@ -520,6 +508,40 @@ class StudentReadmissionTest extends TestCase
             'drop_id' => $drop->drop_id,
             'absence_hours_at_drop' => 2,
         ]);
+    }
+
+    public function test_osa_excusal_selection_excludes_absences_from_a_previous_readmission_cycle(): void
+    {
+        [, , $faculty, $enrollment, $firstDrop] = $this->createDroppedStudent();
+        $this->createAbsence($enrollment, $faculty, '2026-10-01', null);
+        $this->createAbsence($enrollment, $faculty, '2026-10-10', null);
+        $firstDrop->update(['drop_date' => '2026-10-01']);
+
+        ReadmissionRequest::create([
+            'drop_id' => $firstDrop->drop_id,
+            'reason_code' => 'mental_health',
+            'channel' => 'online',
+            'status' => 'approved',
+            'outcome' => ReadmissionRequest::OUTCOME_EXCUSED,
+        ]);
+        $secondDrop = DroppingTransaction::create([
+            'enrollment_id' => $enrollment->enrollment_id,
+            'dropped_by' => $faculty->faculty_id,
+            'absence_hours_at_drop' => 3,
+            'sequence_in_cycle' => 2,
+            'drop_date' => '2026-10-10',
+        ]);
+        $secondRequest = ReadmissionRequest::create([
+            'drop_id' => $secondDrop->drop_id,
+            'reason_code' => 'mental_health',
+            'channel' => 'online',
+        ]);
+
+        $this->actingAs(User::factory()->osaStaff()->create())
+            ->get(route('osa.readmissions.show', $secondRequest->readmission_id))
+            ->assertOk()
+            ->assertDontSee('value="2026-10-01"', false)
+            ->assertSee('value="2026-10-10"', false);
     }
 
     public function test_osa_cannot_excuse_a_reversed_date_range(): void
@@ -772,11 +794,19 @@ class StudentReadmissionTest extends TestCase
             ->assertSee(route('osa.readmissions.documents.preview', $document->document_id));
     }
 
-    public function test_osa_can_download_docx_supporting_documents_without_an_image_preview(): void
+    public function test_osa_can_preview_docx_supporting_documents(): void
     {
         [, , , , $drop] = $this->createDroppedStudent();
         Storage::fake('local');
-        Storage::disk('local')->put('readmission-documents/medical.docx', 'private Word document');
+        Storage::disk('local')->makeDirectory('readmission-documents');
+        $filePath = Storage::disk('local')->path('readmission-documents/medical.docx');
+        $archive = new \ZipArchive;
+        $this->assertSame(true, $archive->open($filePath, \ZipArchive::CREATE | \ZipArchive::OVERWRITE) === true);
+        $archive->addFromString(
+            'word/document.xml',
+            '<?xml version="1.0" encoding="UTF-8"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>Medical certificate content</w:t></w:r></w:p></w:body></w:document>'
+        );
+        $archive->close();
         $readmission = ReadmissionRequest::create([
             'drop_id' => $drop->drop_id,
             'reason_code' => 'dental_medical',
@@ -793,13 +823,19 @@ class StudentReadmissionTest extends TestCase
             ->get(route('osa.readmissions.show', $readmission->readmission_id));
 
         $response->assertSee('Download document')
-            ->assertSee('Preview is not available for this file type.')
-            ->assertDontSee(route('osa.readmissions.documents.preview', $document->document_id));
+            ->assertSee('Preview')
+            ->assertSee(route('osa.readmissions.documents.preview', $document->document_id));
 
         $this->actingAs($osaUser)
-            ->get(route('osa.readmissions.documents.download', $document))
+            ->get(route('osa.readmissions.documents.preview', $document))
             ->assertOk()
-            ->assertStreamedContent('private Word document');
+            ->assertSee('docx-preview')
+            ->assertSee('raw=1');
+
+        $this->actingAs($osaUser)
+            ->get(route('osa.readmissions.documents.preview', ['document' => $document, 'raw' => 1]))
+            ->assertOk()
+            ->assertHeader('X-Content-Type-Options', 'nosniff');
     }
 
     public function test_student_cannot_download_an_osa_only_supporting_document(): void

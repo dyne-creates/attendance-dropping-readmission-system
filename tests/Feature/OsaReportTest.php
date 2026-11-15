@@ -65,6 +65,7 @@ class OsaReportTest extends TestCase
         $response->assertSee('chartTimeline');
         $response->assertSee('chartStatus');
         $response->assertSee('chartAbsence');
+        $response->assertSee('valuesWithNoZeroBars');
         $response->assertSee('Student Dropping Records');
         $response->assertSee('View PDF Report');
         $response->assertDontSee('Export PDF');

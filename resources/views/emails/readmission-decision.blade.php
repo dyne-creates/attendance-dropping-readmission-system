@@ -16,7 +16,7 @@ The student has been readmitted to this course. Absences from
 {{ \Carbon\Carbon::parse($readmission->excused_through)->format('F j, Y') }} were excused.
 {{ number_format((float) $readmission->excused_hours_deducted, 2) }} absence hours were deducted.
 @elseif ($outcome === 'not_excused')
-The request was not excused. The student remains inactive for this course and may submit a corrected request.
+The request was not excused. The student remains inactive for this course. The submitted request remains final.
 @else
 The request was rejected. The student remains inactive and cannot enroll in this course during the term.
 @endif

@@ -184,13 +184,6 @@
                         </div>
                     @endif
 
-                    @if ($request->correction_requested_at)
-                        <div class="sm:col-span-2">
-                            <dt class="text-sm font-medium muted">Correction requested</dt>
-                            <dd class="mt-1 text-sm">Sent to the student on {{ Carbon\Carbon::parse($request->correction_requested_at)->format('M d, Y g:i A') }}.</dd>
-                        </div>
-                    @endif
-
                     <div class="sm:col-span-2">
                         <dt class="text-sm font-medium muted">Policy consent</dt>
                         <dd class="mt-1 text-sm">
@@ -284,7 +277,7 @@
         </section>
 
         <section class="card overflow-hidden">
-            <div class="card-header"><h2 class="text-base font-semibold">Dropping and correction notifications</h2></div>
+            <div class="card-header"><h2 class="text-base font-semibold">Dropping and readmission notifications</h2></div>
             <div class="card-body space-y-3">
                 @forelse ($notifications as $notification)
                     <div class="rounded-lg border p-3">
@@ -292,7 +285,7 @@
                         <p class="mt-1 text-xs muted">{{ $notification->sent_at ? Carbon\Carbon::parse($notification->sent_at)->format('M d, Y g:i A') : 'Not sent' }}</p>
                     </div>
                 @empty
-                    <p class="text-sm muted">No dropping or correction notifications are recorded for this student.</p>
+                    <p class="text-sm muted">No dropping or readmission notifications are recorded for this student.</p>
                 @endforelse
             </div>
         </section>
@@ -307,7 +300,7 @@
                 @forelse ($documents as $document)
                     @php
                         $documentExtension = strtolower(pathinfo($document->file_path, PATHINFO_EXTENSION));
-                        $canPreviewDocument = in_array($documentExtension, ['pdf', 'jpg', 'jpeg', 'png'], true);
+                        $canPreviewDocument = in_array($documentExtension, ['pdf', 'docx', 'jpg', 'jpeg', 'png'], true);
                     @endphp
                     <div x-data="{ previewOpen: false }" @keydown.escape.window="previewOpen = false" class="{{ $loop->first ? '' : 'border-t pt-5' }} {{ $loop->last ? '' : 'pb-5' }}">
                         <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -325,9 +318,9 @@
                                 <a href="{{ route('osa.readmissions.documents.download', $document->document_id) }}" class="btn btn-secondary btn-sm">Download document</a>
                             </div>
                         </div>
-                        @if ($documentExtension === 'pdf')
+                        @if (in_array($documentExtension, ['pdf', 'docx'], true))
                             <iframe src="{{ route('osa.readmissions.documents.preview', $document->document_id) }}"
-                                title="Supporting PDF for readmission attempt {{ $request->attempt_number }}"
+                                title="Supporting document for readmission attempt {{ $request->attempt_number }}"
                                 class="mt-4 h-96 w-full max-w-4xl rounded-lg border bg-white"
                                 loading="lazy"></iframe>
                         @elseif (in_array($documentExtension, ['jpg', 'jpeg', 'png'], true))
@@ -348,7 +341,7 @@
                                         <p class="text-sm font-semibold text-gray-900">Document preview</p>
                                         <button type="button" class="btn btn-secondary btn-sm" @click="previewOpen = false">Close</button>
                                     </div>
-                                    @if ($documentExtension === 'pdf')
+                                    @if (in_array($documentExtension, ['pdf', 'docx'], true))
                                         <iframe src="{{ route('osa.readmissions.documents.preview', $document->document_id) }}#view=FitH" title="Full-screen supporting document preview" class="min-h-0 flex-1 w-full rounded border bg-white"></iframe>
                                     @else
                                         <img src="{{ route('osa.readmissions.documents.preview', $document->document_id) }}"
@@ -391,7 +384,7 @@
 
                         <div>
                             <h3 class="font-semibold">Excused absence and readmission</h3>
-                            <p class="muted mt-1 text-sm">Tick each recorded absence to excuse. Only selected dates are changed and deducted.</p>
+                            <p class="muted mt-1 text-sm">Tick each absence from this drop cycle to excuse. Absences from earlier readmission cycles are not included.</p>
                         </div>
                         <fieldset><legend class="field-label mb-2">Select absence dates</legend><div class="flex flex-wrap gap-2">
                             @forelse ($absenceDates as $absence)
@@ -436,17 +429,10 @@
                             </button>
                             <button type="submit" formaction="{{ route('osa.readmissions.not-excused', $request->readmission_id) }}"
                                     class="btn btn-secondary"
-                                    data-confirm="Mark this request Not excused? The student will remain inactive but may submit a corrected request.">
-                                Not excused — allow resubmission
+                                    data-confirm="Mark this request Not excused? The student will remain inactive and this submitted request will remain final.">
+                                Mark Not excused
                             </button>
                         </div>
-                    </form>
-
-                    <form method="POST" action="{{ route('osa.readmissions.correction-request', $request->readmission_id) }}" class="max-w-2xl space-y-3">
-                        @csrf
-                        <label for="correction_note" class="field-label mb-1">Correction instructions for the student <span aria-hidden="true">*</span></label>
-                        <textarea id="correction_note" name="correction_note" rows="3" maxlength="2000" class="field" required>{{ old('correction_note') }}</textarea>
-                        <button type="submit" class="btn btn-secondary" data-confirm="Send this request back to the student for correction?">Request correction</button>
                     </form>
                 </div>
             </section>
