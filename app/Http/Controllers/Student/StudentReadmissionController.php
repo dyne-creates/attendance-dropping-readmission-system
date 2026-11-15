@@ -1,0 +1,211 @@
+<?php
+
+namespace App\Http\Controllers\Student;
+
+use App\Http\Controllers\Controller;
+use App\Models\DroppingTransaction;
+use App\Models\Enrollment;
+use App\Models\ReadmissionRequest;
+use App\Support\AuditLogger;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Crypt;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\Rule;
+use Illuminate\View\View;
+use RuntimeException;
+use Symfony\Component\HttpFoundation\File\UploadedFile;
+
+class StudentReadmissionController extends Controller
+{
+    public function create(Request $request, Enrollment $enrollment): View|RedirectResponse
+    {
+        $student = $request->user()->student;
+
+        abort_unless(
+            $student !== null
+                && $enrollment->student_id === $student->student_id
+                && $enrollment->status === 'dropped',
+            404,
+        );
+
+        $drop = $enrollment->droppingTransactions()
+            ->with(['readmissionRequests' => function (HasMany $query): void {
+                $query->orderBy('attempt_number');
+            }])
+            ->latest('drop_id')
+            ->firstOrFail();
+        $latestAttempt = $drop->readmissionRequests->last();
+
+        if ($latestAttempt !== null) {
+            return redirect()
+                ->route('student.dashboard')
+                ->with('info', 'A readmission request has already been submitted for this drop and is final. Contact OSA for guidance.');
+        }
+
+        $enrollment->load([
+            'course.schoolYear',
+            'course.facultyMember',
+            'course.schedules',
+            'student.guardians',
+            'student.user',
+            'attendanceRecords',
+        ]);
+
+        $absenceDates = $enrollment->attendanceRecords
+            ->where('status', 'absent')
+            ->sortBy('session_date')
+            ->values();
+
+        return view('student.readmission-form', [
+            'student' => $student,
+            'enrollment' => $enrollment,
+            'drop' => $drop,
+            'dropCount' => $enrollment->droppingTransactions()->count(),
+            'attemptNumber' => ($latestAttempt?->attempt_number ?? 0) + 1,
+            'previousAttempts' => $drop->readmissionRequests,
+            'absenceDates' => $absenceDates,
+            'reasons' => ReadmissionRequest::REASONS,
+            'guardian' => $student->guardians->first(),
+        ]);
+    }
+
+    public function store(Request $request, Enrollment $enrollment, AuditLogger $auditLogger): RedirectResponse
+    {
+        $student = $request->user()->student;
+
+        abort_unless(
+            $student !== null
+                && $enrollment->student_id === $student->student_id
+                && $enrollment->status === 'dropped',
+            404,
+        );
+
+        $attachment = $request->file('attachment');
+
+        if ($attachment instanceof UploadedFile && ! $attachment->isValid()) {
+            $message = match ($attachment->getError()) {
+                UPLOAD_ERR_INI_SIZE => 'The supporting document exceeds the server upload limit. Choose a smaller PDF or DOCX file or increase upload_max_filesize and restart PHP.',
+                UPLOAD_ERR_FORM_SIZE => 'The supporting document exceeds the maximum size allowed by this form.',
+                UPLOAD_ERR_PARTIAL => 'The document upload was interrupted. Please select it again and retry.',
+                UPLOAD_ERR_NO_TMP_DIR => 'The server is missing its temporary upload folder. Please contact the administrator.',
+                UPLOAD_ERR_CANT_WRITE => 'The server could not save the uploaded document. Please contact the administrator.',
+                UPLOAD_ERR_EXTENSION => 'A server extension stopped the document upload. Please contact the administrator.',
+                default => 'The document could not be uploaded. Please select it again and retry.',
+            };
+
+            return back()
+                ->withErrors(['attachment' => $message])
+                ->withInput($request->except('attachment'));
+        }
+
+        $validated = $request->validate([
+            'reason_code' => ['required', Rule::in(array_keys(ReadmissionRequest::REASONS))],
+            'reason_details' => ['nullable', 'string', 'max:2000', 'required_if:reason_code,other'],
+            'attachment' => [
+                Rule::requiredIf(in_array($request->input('reason_code'), ['dental_medical', 'personal_family'], true)),
+                'nullable',
+                'file',
+                'mimes:pdf,docx',
+                'extensions:pdf,docx',
+                'max:5120',
+            ],
+        ], [
+            'attachment.required' => 'Please upload a PDF or DOCX supporting document for this reason.',
+            'attachment.mimes' => 'The supporting document must be a PDF or DOCX file.',
+            'attachment.extensions' => 'The supporting document must be a PDF or DOCX file.',
+        ]);
+
+        $drop = $enrollment->droppingTransactions()
+            ->latest('drop_id')
+            ->firstOrFail();
+
+        $latestAttempt = $drop->readmissionRequests()->latest('attempt_number')->first();
+
+        if ($latestAttempt !== null) {
+            return redirect()
+                ->route('student.dashboard')
+                ->with('info', 'A readmission request has already been submitted for this drop and is final. Contact OSA for guidance.');
+        }
+
+        try {
+            $readmissionId = DB::transaction(function () use ($request, $validated, $student, $enrollment, $drop): ?int {
+                $lockedDrop = DroppingTransaction::query()
+                    ->whereKey($drop->drop_id)
+                    ->lockForUpdate()
+                    ->firstOrFail();
+
+                $lockedEnrollment = Enrollment::query()
+                    ->whereKey($enrollment->enrollment_id)
+                    ->lockForUpdate()
+                    ->firstOrFail();
+
+                abort_unless(
+                    $lockedEnrollment->student_id === $student->student_id
+                        && $lockedEnrollment->status === 'dropped'
+                        && $lockedDrop->enrollment_id === $lockedEnrollment->enrollment_id,
+                    404,
+                );
+
+                $latestRequest = ReadmissionRequest::query()
+                    ->where('drop_id', $lockedDrop->drop_id)
+                    ->lockForUpdate()
+                    ->orderByDesc('attempt_number')
+                    ->first();
+
+                if ($latestRequest !== null) {
+                    return null;
+                }
+
+                $readmission = ReadmissionRequest::create([
+                    'drop_id' => $lockedDrop->drop_id,
+                    'attempt_number' => ($latestRequest?->attempt_number ?? 0) + 1,
+                    'reason_code' => $validated['reason_code'],
+                    'reason_details' => $validated['reason_details'] ?? null,
+                    'policy_acknowledged_at' => now(),
+                    'channel' => 'online',
+                ]);
+
+                if ($request->hasFile('attachment')) {
+                    $attachment = $request->file('attachment');
+                    $filePath = $attachment->hashName('readmission-documents');
+                    $stored = Storage::disk('local')->put(
+                        $filePath,
+                        Crypt::encryptString($attachment->getContent()),
+                    );
+
+                    if (! $stored) {
+                        throw new RuntimeException('The supporting document could not be stored.');
+                    }
+
+                    $readmission->excuseDocuments()->create([
+                        'document_type' => 'supporting_document',
+                        'file_path' => $filePath,
+                    ]);
+                }
+
+                return (int) $readmission->getKey();
+            });
+        } catch (\Throwable $exception) {
+            report($exception);
+
+            return back()
+                ->withInput()
+                ->with('error', 'An error occurred while submitting your readmission request. Please try again.');
+        }
+
+        if ($readmissionId === null) {
+            return redirect()
+                ->route('student.dashboard')
+                ->with('info', 'A readmission request has already been submitted for this drop.');
+        }
+
+        $auditLogger->record('student.readmission_request.submitted', 'readmission_request', $readmissionId);
+
+        return redirect()
+            ->route('student.dashboard')
+            ->with('success', 'Your online readmission request has been submitted to the Office of Student Affairs.');
+    }
+}
