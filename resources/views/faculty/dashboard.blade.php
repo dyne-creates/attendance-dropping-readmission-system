@@ -154,6 +154,20 @@
             <span class="sr-only">Attendance records do not automatically drop students.</span>
             <span class="sr-only">{{ $selectedCourse->subject_code }}</span>
 
+            <details class="card group p-4" aria-label="Selected subject details">
+                <summary class="flex cursor-pointer list-none items-center justify-between gap-4 rounded-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500">
+                    <span class="min-w-0">
+                        <span class="block font-semibold text-sm text-gray-900 dark:text-gray-100">Subject details</span>
+                        <span class="mt-0.5 block truncate text-xs text-gray-500 dark:text-gray-400">
+                            {{ $selectedCourse->subject_code }} · Section {{ $selectedCourse->section }} · {{ $selectedCourse->course_name }}
+                        </span>
+                    </span>
+                    <svg class="h-5 w-5 shrink-0 text-gray-500 transition-transform group-open:rotate-180 dark:text-gray-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="m6 9 6 6 6-6" />
+                    </svg>
+                </summary>
+
+                <div class="mt-4 space-y-3 border-t border-gray-200 pt-4 dark:border-gray-700">
             <section class="space-y-3" aria-label="Selected subject schedule">
                 <div class="card flex flex-wrap items-center justify-between gap-3 p-4">
                     <div>
@@ -335,6 +349,8 @@
                     Red: 20% permanent-drop level or already dropped
                 </span>
             </div>
+                </div>
+            </details>
 
             {{-- =========================================================================
                  VIEW 1: BLACKBOARD ULTRA MEETING VIEW (EXACTLY MATCHES media_1792078260731_1da7d63d.png)

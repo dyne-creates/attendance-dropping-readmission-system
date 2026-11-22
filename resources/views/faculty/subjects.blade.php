@@ -21,17 +21,6 @@
          @keydown.escape.window="showClassListImport = false">
         <x-flash-messages />
 
-        @if ($errors->has('student_number'))
-            <div class="alert alert-warning" role="alert">
-                <p class="font-semibold">The student could not be added:</p>
-                <ul class="mt-1 list-inside list-disc text-xs font-normal">
-                    @foreach ($errors->get('student_number') as $error)
-                        <li>{{ $error }}</li>
-                    @endforeach
-                </ul>
-            </div>
-        @endif
-
         @if ($errors->has('file'))
             <div class="alert alert-warning" role="alert">
                 <p class="font-semibold">The class list could not be imported:</p>
@@ -72,19 +61,6 @@
                         <a href="{{ route('faculty.courses.edit', $course) }}"
                            class="btn btn-secondary btn-sm">Edit subject</a>
                     </div>
-                    <form method="POST" action="{{ route('faculty.courses.enrollments.store', $course) }}"
-                          class="flex flex-wrap items-end gap-2">
-                        @csrf
-                        <div>
-                            <label for="student-number-{{ $course->course_id }}" class="field-label">
-                                Student ID (student number)
-                            </label>
-                            <input id="student-number-{{ $course->course_id }}" name="student_number"
-                                   type="text" maxlength="50" required autocomplete="off"
-                                   class="field mt-1 w-48">
-                        </div>
-                        <button type="submit" class="btn btn-secondary btn-sm">Add student</button>
-                    </form>
                 </div>
             </article>
         @empty
