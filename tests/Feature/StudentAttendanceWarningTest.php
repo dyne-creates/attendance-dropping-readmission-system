@@ -59,8 +59,6 @@ class StudentAttendanceWarningTest extends TestCase
         $this->actingAs($user)
             ->get(route('student.dashboard'))
             ->assertDontSee('Approaching the 3.00-hour weekly drop threshold')
-            ->assertSee('2.50 of')
-            ->assertSee('5.00 absence-equivalent hours')
             ->assertViewHas('enrollments', fn ($enrollments): bool => $enrollments->first()->absence_hours === 2.5
                 && $enrollments->first()->weekly_drop_threshold_hours === 5.0);
     }

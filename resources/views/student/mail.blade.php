@@ -21,7 +21,7 @@
                 };
             @endphp
 
-            <article class="card space-y-4 p-5">
+            <article class="card min-w-0 space-y-4 overflow-hidden p-5">
                 <div class="flex flex-wrap items-start justify-between gap-3">
                     <div>
                         <h2 class="font-semibold">{{ $request->course_name }} ({{ $request->subject_code }})</h2>
@@ -33,18 +33,18 @@
                     <span class="badge {{ $statusClass }}">{{ $statusLabel }}</span>
                 </div>
 
-                <dl class="grid gap-3 text-sm sm:grid-cols-2">
-                    <div>
+                <dl class="grid min-w-0 gap-3 text-sm sm:grid-cols-2">
+                    <div class="min-w-0">
                         <dt class="text-xs font-medium muted">Request reason</dt>
                         <dd class="mt-1">{{ \App\Models\ReadmissionRequest::reasonLabel((string) $request->reason_code) }}</dd>
                     </div>
                     @if ($request->reason_details)
-                        <div>
+                        <div class="min-w-0">
                             <dt class="text-xs font-medium muted">Details submitted</dt>
-                            <dd class="mt-1 whitespace-pre-line">{{ $request->reason_details }}</dd>
+                            <dd class="mt-1 whitespace-pre-line break-words [overflow-wrap:anywhere]">{{ $request->reason_details }}</dd>
                         </div>
                     @endif
-                    <div class="sm:col-span-2">
+                    <div class="min-w-0 sm:col-span-2">
                         <dt class="text-xs font-medium muted">Conclusion</dt>
                         <dd class="mt-1">
                             @if ($outcome === 'pending')
@@ -66,7 +66,7 @@
                             @endif
                         </dd>
                         @if ($request->rejection_reason)
-                            <p class="mt-1 whitespace-pre-line text-sm muted">{{ $request->rejection_reason }}</p>
+                            <p class="mt-1 whitespace-pre-line break-words text-sm muted [overflow-wrap:anywhere]">{{ $request->rejection_reason }}</p>
                         @endif
                     </div>
                 </dl>

@@ -146,6 +146,8 @@ class FacultyAttendanceTest extends TestCase
         $response->assertSee('Details')
             ->assertSee('View')
             ->assertSee('sticky right-0')
+            ->assertSee('data-student-details-panel', false)
+            ->assertSee('positionStudentDetails', false)
             ->assertSee('sticky right-24')
             ->assertSee('student details for John Doe')
             ->assertSee('No drop history recorded.');
@@ -351,6 +353,11 @@ class FacultyAttendanceTest extends TestCase
             ->assertSee('All students')
             ->assertSee('Unmarked')
             ->assertSee('meetingStudentMatches', false)
+            ->assertSee('Details')
+            ->assertSee('sticky right-0')
+            ->assertSee('data-student-details-panel', false)
+            ->assertSee('View student details for John Doe')
+            ->assertSee('2025-0001')
             ->assertDontSee('Open Meeting View');
     }
 
@@ -1015,6 +1022,37 @@ class FacultyAttendanceTest extends TestCase
             'enrollment_id' => $this->enrollment->enrollment_id,
             'session_date' => $futureDate,
         ]);
+    }
+
+    public function test_dropped_students_are_disabled_until_readmission_is_processed(): void
+    {
+        $this->enrollment->update(['status' => 'dropped']);
+
+        foreach (['meeting', 'overall'] as $tab) {
+            $response = $this->actingAs($this->facultyUser)->get(route('faculty.dashboard', [
+                'course_id' => $this->course->course_id,
+                'date' => '2026-10-05',
+                'tab' => $tab,
+            ]));
+
+            $row = $this->studentRowHtml($response->assertOk()->getContent(), $this->student->student_number);
+            $this->assertStringContainsString('opacity-60', $row);
+            $this->assertStringNotContainsString('@click=', $row);
+        }
+
+        $this->createOsaProcessedDrop($this->enrollment, ReadmissionRequest::OUTCOME_NOT_EXCUSED);
+
+        foreach (['meeting', 'overall'] as $tab) {
+            $response = $this->actingAs($this->facultyUser)->get(route('faculty.dashboard', [
+                'course_id' => $this->course->course_id,
+                'date' => '2026-10-05',
+                'tab' => $tab,
+            ]));
+
+            $row = $this->studentRowHtml($response->assertOk()->getContent(), $this->student->student_number);
+            $this->assertStringNotContainsString('opacity-60', $row);
+            $this->assertStringContainsString('@click=', $row);
+        }
     }
 
     public function test_faculty_can_record_bulk_attendance_after_osa_marks_latest_drop_not_excused(): void
@@ -2260,6 +2298,17 @@ class FacultyAttendanceTest extends TestCase
         ]);
 
         return $drop;
+    }
+
+    private function studentRowHtml(string $html, string $studentNumber): string
+    {
+        $pattern = '/<tr\b(?=[^>]*data-student-number="'.preg_quote($studentNumber, '/').'")[^>]*>.*?<\/tr>/s';
+        $matchedRows = preg_match($pattern, $html, $matches);
+
+        $this->assertSame(1, $matchedRows);
+        $this->assertArrayHasKey(0, $matches);
+
+        return $matches[0];
     }
 
     private function createDroppedEnrollmentWithHistory(

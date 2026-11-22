@@ -456,18 +456,11 @@
                             <thead>
                                 <tr class="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 text-gray-800 dark:text-gray-200 select-none">
                                     {{-- Column 1: Student --}}
-                                    <th scope="col" class="py-4 px-6 text-left font-medium text-sm border-r border-gray-200 dark:border-gray-700 w-[38%] min-w-[14rem]">
+                                    <th scope="col" class="sticky left-0 z-30 bg-white dark:bg-gray-800 py-4 px-6 text-left font-medium text-sm border-r border-gray-200 dark:border-gray-700 w-[38%] min-w-[14rem]">
                                         Student
                                     </th>
 
-                                    {{-- Column 2: Today (Underlined header like screenshot) --}}
-                                    <th scope="col" class="py-4 px-4 text-center font-medium text-sm border-r border-gray-200 dark:border-gray-700 w-[14%] min-w-[7rem]">
-                                        <span class="underline underline-offset-4 decoration-1 font-semibold">
-                                            {{ $isToday ? 'Today' : \Carbon\Carbon::parse($selectedDate)->format('n/j') }}
-                                        </span>
-                                    </th>
-
-                                    {{-- Column 3: Present (Click header to mark all) --}}
+                                    {{-- Column 2: Present (Click header to mark all) --}}
                                     <th scope="col"
                                         @class([
                                             'py-4 px-4 text-center font-medium text-sm border-r border-gray-200 dark:border-gray-700 w-[12%] min-w-[5.5rem] transition-colors group',
@@ -480,7 +473,7 @@
                                         <span class="group-hover:text-emerald-700 dark:group-hover:text-emerald-400">Present</span>
                                     </th>
 
-                                    {{-- Column 4: Late (Click header to mark all) --}}
+                                    {{-- Column 3: Late (Click header to mark all) --}}
                                     <th scope="col"
                                         @class([
                                             'py-4 px-4 text-center font-medium text-sm border-r border-gray-200 dark:border-gray-700 w-[12%] min-w-[5.5rem] transition-colors group',
@@ -493,7 +486,7 @@
                                         <span class="group-hover:text-amber-700 dark:group-hover:text-amber-400">Late</span>
                                     </th>
 
-                                    {{-- Column 5: Absent (Click header to mark all) --}}
+                                    {{-- Column 4: Absent (Click header to mark all) --}}
                                     <th scope="col"
                                         @class([
                                             'py-4 px-4 text-center font-medium text-sm border-r border-gray-200 dark:border-gray-700 w-[12%] min-w-[5.5rem] transition-colors group',
@@ -506,7 +499,7 @@
                                         <span class="group-hover:text-rose-700 dark:group-hover:text-rose-400">Absent</span>
                                     </th>
 
-                                    {{-- Column 6: Excused (Click header to mark all) --}}
+                                    {{-- Column 5: Excused (Click header to mark all) --}}
                                     <th scope="col"
                                         @class([
                                             'py-4 px-4 text-center font-medium text-sm w-[12%] min-w-[5.5rem] transition-colors group',
@@ -518,6 +511,9 @@
                                         title="{{ $canCheckAttendance ? 'Click to mark all as Excused' : 'No class is scheduled for this date' }}">
                                         <span class="group-hover:text-slate-700 dark:group-hover:text-slate-300">Excused</span>
                                     </th>
+                                    <th scope="col" class="sticky right-0 z-30 bg-white dark:bg-gray-800 py-4 px-3 text-center font-medium text-sm border-l border-gray-200 dark:border-gray-700 min-w-[6rem]">
+                                        Details
+                                    </th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -526,231 +522,28 @@
                                         $student = $row['student'];
                                         $enrollment = $row['enrollment'];
                                         $isDropped = $row['status'] === 'dropped' && ! $row['can_record_attendance'];
-                                        $initials = strtoupper(substr($student->first_name ?? 'S', 0, 1) . substr($student->last_name ?? 'T', 0, 1));
+                                        $canRecordStudentAttendance = $canCheckAttendance && $row['can_record_attendance'];
                                     @endphp
 
-                                    <tr x-show="meetingStudentMatches({{ $index }}, @js($student->fullName), @js($student->student_number))"
+                                    <tr data-student-number="{{ $student->student_number }}"
+                                        data-student-name="{{ $student->fullName }}"
+                                        x-show="meetingStudentMatches({{ $index }}, @js($student->fullName), @js($student->student_number))"
                                         @class(['hover:bg-gray-50/60 dark:hover:bg-gray-700/30 transition-colors', 'opacity-60 bg-gray-50/50' => $isDropped])>
 
-                                        {{-- Column 1: Student (Avatar + Name) --}}
-                                        <td class="py-4 px-6 border-r border-b border-gray-200 dark:border-gray-700">
-                                            <div class="flex items-center gap-3.5 rounded-lg border-2 border-transparent p-2 transition-colors"
-                                                 x-bind:class="studentStatusOutline({{ $enrollment->enrollment_id }})">
-                                                <div class="h-10 w-10 rounded-full bg-[#1e1e1e] text-white flex items-center justify-center font-semibold text-xs shrink-0 tracking-wider shadow-xs">
-                                                    {{ $initials }}
-                                                </div>
-                                                <div class="min-w-0">
-                                                    <div class="flex flex-wrap items-center gap-1.5">
-                                                        <span class="font-medium text-sm text-gray-900 dark:text-gray-100 truncate">
-                                                            {{ $student->fullName }}
-                                                        </span>
-                                                    </div>
-                                                    @if ($row['drop_count'] > 0)
-                                                        <div class="mt-1 flex items-center gap-1.5"
-                                                             role="img"
-                                                             aria-label="Dropped {{ $row['drop_count'] }} {{ $row['drop_count'] === 1 ? 'time' : 'times' }}, {{ $row['unexcused_drop_count'] }} unexcused">
-                                                            <span @class([
-                                                                'relative inline-flex h-4 w-10 items-center justify-center rounded',
-                                                                'bg-gray-200 dark:bg-gray-600' => $row['unexcused_drop_count'] === 0,
-                                                                'bg-orange-500 dark:bg-orange-400' => $row['unexcused_drop_count'] === 1,
-                                                                'bg-red-600 dark:bg-red-500 text-white' => $row['unexcused_drop_count'] === 2,
-                                                                'bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-300' => $row['unexcused_drop_count'] >= 3,
-                                                            ])>
-                                                                @if ($row['unexcused_drop_count'] >= 3)
-                                                                    <span class="font-bold leading-none" aria-hidden="true">&times;</span>
-                                                                @endif
-                                                            </span>
-                                                            <span class="text-[10px] font-medium text-gray-500 dark:text-gray-400">
-                                                                Dropped {{ $row['drop_count'] }} {{ $row['drop_count'] === 1 ? 'time' : 'times' }}
-                                                            </span>
-                                                            @if ($row['unexcused_drop_count'] > 0)
-                                                                <span class="text-[10px] font-medium text-gray-500 dark:text-gray-400">
-                                                                    · {{ $row['unexcused_drop_count'] }} unexcused
-                                                                </span>
-                                                            @endif
-                                                        </div>
-                                                        <details class="group mt-1 text-left">
-                                                            <summary class="inline-flex cursor-pointer list-none items-center gap-1 text-[11px] font-semibold text-blue-700 dark:text-blue-300">
-                                                                View student details
-                                                                <svg class="h-3 w-3 transition-transform group-open:rotate-180" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                                                                    <path fill-rule="evenodd" d="M5.22 7.22a.75.75 0 0 1 1.06 0L10 10.94l3.72-3.72a.75.75 0 1 1 1.06 1.06l-4.25 4.25a.75.75 0 0 1-1.06 0L5.22 8.28a.75.75 0 0 1 0-1.06Z" clip-rule="evenodd" />
-                                                                </svg>
-                                                            </summary>
-                                                            <div class="mt-2 w-64 max-w-full rounded-lg border border-gray-200 bg-white p-3 text-[11px] shadow-lg dark:border-gray-700 dark:bg-gray-800">
-                                                                <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
-                                                                    <dt class="text-gray-500 dark:text-gray-400">Student number</dt>
-                                                                    <dd class="font-medium text-gray-900 dark:text-gray-100">{{ $student->student_number }}</dd>
-                                                                    <dt class="text-gray-500 dark:text-gray-400">Program / year</dt>
-                                                                    <dd class="font-medium text-gray-900 dark:text-gray-100">{{ $student->program ?: 'Not set' }} / {{ $student->year_level ?? 'Not set' }}</dd>
-                                                                    <dt class="text-gray-500 dark:text-gray-400">Department</dt>
-                                                                    <dd class="font-medium text-gray-900 dark:text-gray-100">{{ $student->department ?: 'Not set' }}</dd>
-                                                                    <dt class="text-gray-500 dark:text-gray-400">Enrollment</dt>
-                                                                    <dd class="font-medium capitalize text-gray-900 dark:text-gray-100">{{ $row['status'] }}</dd>
-                                                                </dl>
-                                                                <div class="mt-3 border-t border-gray-200 pt-2 dark:border-gray-700">
-                                                                    <p class="font-semibold text-gray-800 dark:text-gray-100">Drop history</p>
-                                                                    <ol class="mt-2 space-y-2">
-                                                                        @foreach ($row['drop_history'] as $drop)
-                                                                            <li class="rounded-md bg-gray-50 p-2 dark:bg-gray-900/60">
-                                                                                <div class="flex items-center justify-between gap-2">
-                                                                                    <span class="font-semibold text-gray-800 dark:text-gray-100">Drop {{ $drop['sequence'] }}</span>
-                                                                                    <span class="badge {{ $drop['status_class'] }} text-[10px]">{{ $drop['status'] }}</span>
-                                                                                </div>
-                                                                                @if ($drop['status'] === 'Awaiting student request')
-                                                                                    <p class="mt-1 text-[10px] text-amber-700 dark:text-amber-300">The student must submit a readmission request before OSA review.</p>
-                                                                                @endif
-                                                                                <dl class="mt-1 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5">
-                                                                                    <dt class="text-gray-500 dark:text-gray-400">Date</dt>
-                                                                                    <dd class="text-gray-700 dark:text-gray-300">{{ $drop['date'] ?? 'Not recorded' }}</dd>
-                                                                                    <dt class="text-gray-500 dark:text-gray-400">Absence hours</dt>
-                                                                                    <dd class="text-gray-700 dark:text-gray-300">{{ number_format($drop['absence_hours'], 2) }} hours</dd>
-                                                                                    <dt class="text-gray-500 dark:text-gray-400">Drop type</dt>
-                                                                                    <dd class="capitalize text-gray-700 dark:text-gray-300">{{ str_replace('_', ' ', $drop['type'] ?? 'Not recorded') }}</dd>
-                                                                                    <dt class="text-gray-500 dark:text-gray-400">Readmission application</dt>
-                                                                                    <dd class="font-medium text-gray-700 dark:text-gray-300">{{ $drop['application_status'] }}</dd>
-                                                                                    @if ($drop['attempt'])
-                                                                                        <dt class="text-gray-500 dark:text-gray-400">Attempt</dt>
-                                                                                        <dd class="text-gray-700 dark:text-gray-300">{{ $drop['attempt'] }}</dd>
-                                                                                        <dt class="text-gray-500 dark:text-gray-400">Applied</dt>
-                                                                                        <dd class="text-gray-700 dark:text-gray-300">{{ $drop['applied_at'] }}</dd>
-                                                                                        <dt class="text-gray-500 dark:text-gray-400">Reason</dt>
-                                                                                        <dd class="text-gray-700 dark:text-gray-300">{{ $drop['reason'] }}</dd>
-                                                                                        @if ($drop['reason_details'])
-                                                                                            <dt class="text-gray-500 dark:text-gray-400">Student details</dt>
-                                                                                            <dd class="whitespace-pre-line text-gray-700 dark:text-gray-300">{{ $drop['reason_details'] }}</dd>
-                                                                                        @endif
-                                                                                    @endif
-                                                                                </dl>
-                                                                            </li>
-                                                                        @endforeach
-                                                                    </ol>
-                                                                </div>
-                                                            </div>
-                                                        </details>
-                                                    @endif
-                                                    @if (! $isDropped)
-                                                        <span class="text-[11px] text-gray-500 dark:text-gray-400 font-medium mt-0.5 block">
-                                                            Absence-equivalent:
-                                                            <span x-text="Number(studentScores[{{ $enrollment->enrollment_id }}].absence_percentage).toFixed(2)">{{ number_format($row['absence_percentage'], 2) }}</span>% /
-                                                            {{ number_format($row['maximum_absence_percentage'], 2) }}% semester
-                                                        </span>
-                                                        <div class="mt-1 w-40 max-w-full">
-                                                            <div class="progress h-1.5" role="progressbar"
-                                                                 aria-label="Drop threshold progress"
-                                                                 aria-valuemin="0" aria-valuemax="100"
-                                                                 x-bind:aria-valuenow="Math.round(weeklyProgressPercentage({{ $enrollment->enrollment_id }}))">
-                                                                <div class="progress-bar"
-                                                                     x-bind:class="weeklyProgressClass({{ $enrollment->enrollment_id }})"
-                                                                     x-bind:style="`width: ${weeklyProgressPercentage({{ $enrollment->enrollment_id }})}%`"></div>
-                                                            </div>
-                                                            <p class="muted mt-0.5 text-[10px]">
-                                                                Absence-equivalent hours: <span x-text="Number(studentScores[{{ $enrollment->enrollment_id }}].absent_hours).toFixed(2)"></span> /
-                                                                {{ number_format($row['weekly_drop_threshold_hours'], 2) }}h
-                                                            </p>
-                                                        </div>
-                                                        <div x-show="studentScores[{{ $enrollment->enrollment_id }}].is_drop_eligible" x-cloak>
-                                                            <span x-show="!studentScores[{{ $enrollment->enrollment_id }}].is_permanent_drop_eligible"
-                                                                  class="text-[11px] text-amber-700 dark:text-amber-400 font-medium mt-0.5 block">
-                                                                Drop threshold reached (3 lates = 1 absence):
-                                                                <span x-text="Number(studentScores[{{ $enrollment->enrollment_id }}].absent_hours).toFixed(2)"></span> /
-                                                                {{ number_format($row['weekly_drop_threshold_hours'], 2) }}h
-                                                            </span>
-                                                            <span x-show="studentScores[{{ $enrollment->enrollment_id }}].is_permanent_drop_eligible"
-                                                                  class="text-[11px] text-rose-600 dark:text-rose-400 font-medium mt-0.5 block">
-                                                                20% semester absence reached. OSA may still review readmission.
-                                                            </span>
-                                                            <form method="POST" action="{{ route('faculty.enrollments.drop', $enrollment) }}"
-                                                                  x-bind:data-confirm="studentScores[{{ $enrollment->enrollment_id }}].is_permanent_drop_eligible ? 'Mark this as a permanent drop and refer the student to OSA? OSA may still review readmission.' : 'Drop this student to OSA for readmission review?'">
-                                                                @csrf
-                                                                <button type="submit" x-show="!studentScores[{{ $enrollment->enrollment_id }}].is_permanent_drop_eligible"
-                                                                        class="mt-1 text-[11px] font-semibold text-amber-700 dark:text-amber-400 underline underline-offset-2 hover:text-amber-900 dark:hover:text-amber-300">
-                                                                    Drop student to OSA
-                                                                </button>
-                                                                <button type="submit" x-show="studentScores[{{ $enrollment->enrollment_id }}].is_permanent_drop_eligible"
-                                                                        class="mt-1 text-[11px] font-semibold text-rose-700 dark:text-rose-400 underline underline-offset-2 hover:text-rose-900 dark:hover:text-rose-300">
-                                                                    Permanent drop to OSA
-                                                                </button>
-                                                            </form>
-                                                        </div>
-                                                    @endif
-                                                    <details class="mt-2">
-                                                        <summary class="cursor-pointer text-[11px] font-semibold text-blue-700 underline underline-offset-2 dark:text-blue-300">
-                                                            Refer student to OSA (Circumstance)
-                                                        </summary>
-                                                        <form method="POST" action="{{ route('faculty.enrollments.drop', $enrollment) }}"
-                                                              class="mt-2 space-y-2"
-                                                              data-confirm="Refer this student to OSA for review of the stated circumstance?">
-                                                            @csrf
-                                                            <input type="hidden" name="referral_type" value="circumstance">
-                                                            <label class="block text-[11px] font-medium text-gray-700 dark:text-gray-300">
-                                                                Reason for referral (required)
-                                                                <textarea name="instructor_reason" rows="2" maxlength="1000" required
-                                                                          class="mt-1 block w-full rounded-md border-gray-300 text-xs shadow-sm dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
-                                                                          placeholder="Explain why this student should be referred to OSA."></textarea>
-                                                            </label>
-                                                            @error('instructor_reason')
-                                                                <p class="text-xs text-rose-600">{{ $message }}</p>
-                                                            @enderror
-                                                            <button type="submit" class="text-[11px] font-semibold text-blue-700 underline underline-offset-2 hover:text-blue-900 dark:text-blue-300 dark:hover:text-blue-200">
-                                                                Drop and refer to OSA
-                                                            </button>
-                                                        </form>
-                                                    </details>
-                                                </div>
-                                            </div>
+                                        {{-- Column 1: Student name only --}}
+                                        <td class="sticky left-0 z-10 bg-white dark:bg-gray-800 py-4 px-6 border-r border-b border-gray-200 dark:border-gray-700 min-w-[14rem]">
+                                            <span class="font-medium text-sm text-gray-900 dark:text-gray-100">{{ $student->fullName }}</span>
                                         </td>
-
-                                        {{-- Column 2: Today (The Pill) --}}
-                                        <td class="py-4 px-4 text-center border-r border-b border-gray-200 dark:border-gray-700 select-none">
-                                            {{-- Unrecorded State (Black outline with '--' inside) --}}
-                                            <span x-show="!studentStatuses[{{ $index }}]" x-cloak class="bb-today-pill bb-today-pill-empty">
-                                                --
-                                            </span>
-
-                                            {{-- Present State --}}
-                                            <span x-show="studentStatuses[{{ $index }}] === 'present'" x-cloak class="bb-today-pill bb-today-pill-present">
-                                                ✓ Present
-                                            </span>
-
-                                            {{-- Late State --}}
-                                            <span x-show="studentStatuses[{{ $index }}] === 'late'" x-cloak class="bb-today-pill bb-today-pill-late">
-                                                🕒 Late
-                                            </span>
-
-                                            {{-- Absent State with quick hours stepper --}}
-                                            <div x-show="studentStatuses[{{ $index }}] === 'absent'" x-cloak class="inline-flex flex-col items-center">
-                                                <span class="bb-today-pill bb-today-pill-absent">
-                                                    ✕ Absent
-                                                </span>
-                                                <div class="flex items-center gap-1 mt-1 text-[11px] text-gray-500 tabular-nums">
-                                                    <span x-text="studentHours[{{ $index }}] + 'h'"></span>
-                                                    @if ($canCheckAttendance)
-                                                        <button type="button" @click.stop="stepHours({{ $index }}, {{ $enrollment->enrollment_id }}, 0.5, @js($student->fullName))"
-                                                                class="h-4 w-4 rounded bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 font-bold hover:bg-gray-200 flex items-center justify-center leading-none"
-                                                                title="Add 0.5 hour">+</button>
-                                                        <button type="button" @click.stop="stepHours({{ $index }}, {{ $enrollment->enrollment_id }}, -0.5, @js($student->fullName))"
-                                                                class="h-4 w-4 rounded bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 font-bold hover:bg-gray-200 flex items-center justify-center leading-none"
-                                                                title="Subtract 0.5 hour">-</button>
-                                                    @endif
-                                                </div>
-                                            </div>
-
-                                            {{-- Excused State --}}
-                                            <span x-show="studentStatuses[{{ $index }}] === 'excused'" x-cloak class="bb-today-pill bb-today-pill-excused">
-                                                ⊘ Excused
-                                            </span>
-                                        </td>
-
-                                        {{-- Column 3: Present Icon Cell --}}
+                                        {{-- Column 2: Present Icon Cell --}}
                                         <td @class([
                                                 'py-4 px-4 text-center border-r border-b border-gray-200 dark:border-gray-700 bb-meeting-cell transition-colors',
-                                                'cursor-pointer hover:bg-gray-100/70 dark:hover:bg-gray-700/60' => $canCheckAttendance,
+                                                'cursor-pointer hover:bg-gray-100/70 dark:hover:bg-gray-700/60' => $canRecordStudentAttendance,
                                             ])
                                             :class="{ 'bb-meeting-cell-active-present': studentStatuses[{{ $index }}] === 'present' }"
-                                            @if ($canCheckAttendance)
+                                            @if ($canRecordStudentAttendance)
                                                 @click="markStudent({{ $index }}, {{ $enrollment->enrollment_id }}, 'present', @js($student->fullName))"
                                             @endif
-                                            title="{{ $canCheckAttendance ? 'Mark '.$student->fullName.' as Present' : 'Attendance entry is disabled without a scheduled class' }}">
+                                            title="{{ $isDropped ? 'Student is dropped and cannot be marked until readmission is processed' : ($canCheckAttendance ? 'Mark '.$student->fullName.' as Present' : 'Attendance entry is disabled without a scheduled class') }}">
                                             <svg class="h-5 w-5 mx-auto"
                                                  :class="studentStatuses[{{ $index }}] === 'present' ? 'text-gray-900 dark:text-gray-100 stroke-[2.4]' : 'text-gray-400 dark:text-gray-500 stroke-[1.8]'"
                                                  fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -758,16 +551,16 @@
                                             </svg>
                                         </td>
 
-                                        {{-- Column 4: Late Icon Cell --}}
+                                        {{-- Column 3: Late Icon Cell --}}
                                         <td @class([
                                                 'py-4 px-4 text-center border-r border-b border-gray-200 dark:border-gray-700 bb-meeting-cell transition-colors',
-                                                'cursor-pointer hover:bg-gray-100/70 dark:hover:bg-gray-700/60' => $canCheckAttendance,
+                                                'cursor-pointer hover:bg-gray-100/70 dark:hover:bg-gray-700/60' => $canRecordStudentAttendance,
                                             ])
                                             :class="{ 'bb-meeting-cell-active-late': studentStatuses[{{ $index }}] === 'late' }"
-                                            @if ($canCheckAttendance)
+                                            @if ($canRecordStudentAttendance)
                                                 @click="markStudent({{ $index }}, {{ $enrollment->enrollment_id }}, 'late', @js($student->fullName))"
                                             @endif
-                                            title="{{ $canCheckAttendance ? 'Mark '.$student->fullName.' as Late' : 'Attendance entry is disabled without a scheduled class' }}">
+                                            title="{{ $isDropped ? 'Student is dropped and cannot be marked until readmission is processed' : ($canCheckAttendance ? 'Mark '.$student->fullName.' as Late' : 'Attendance entry is disabled without a scheduled class') }}">
                                             <svg class="h-5 w-5 mx-auto"
                                                  :class="studentStatuses[{{ $index }}] === 'late' ? 'text-gray-900 dark:text-gray-100 stroke-[2.4]' : 'text-gray-400 dark:text-gray-500 stroke-[1.8]'"
                                                  fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -776,39 +569,186 @@
                                             </svg>
                                         </td>
 
-                                        {{-- Column 5: Absent Icon Cell --}}
+                                        {{-- Column 4: Absent Icon Cell --}}
                                         <td @class([
                                                 'py-4 px-4 text-center border-r border-b border-gray-200 dark:border-gray-700 bb-meeting-cell transition-colors',
-                                                'cursor-pointer hover:bg-gray-100/70 dark:hover:bg-gray-700/60' => $canCheckAttendance,
+                                                'cursor-pointer hover:bg-gray-100/70 dark:hover:bg-gray-700/60' => $canRecordStudentAttendance,
                                             ])
                                             :class="{ 'bb-meeting-cell-active-absent': studentStatuses[{{ $index }}] === 'absent' }"
-                                            @if ($canCheckAttendance)
+                                            @if ($canRecordStudentAttendance)
                                                 @click="markStudent({{ $index }}, {{ $enrollment->enrollment_id }}, 'absent', @js($student->fullName))"
                                             @endif
-                                            title="{{ $canCheckAttendance ? 'Mark '.$student->fullName.' as Absent' : 'Attendance entry is disabled without a scheduled class' }}">
+                                            title="{{ $isDropped ? 'Student is dropped and cannot be marked until readmission is processed' : ($canCheckAttendance ? 'Mark '.$student->fullName.' as Absent' : 'Attendance entry is disabled without a scheduled class') }}">
                                             <svg class="h-5 w-5 mx-auto"
                                                  :class="studentStatuses[{{ $index }}] === 'absent' ? 'text-gray-900 dark:text-gray-100 stroke-[2.4]' : 'text-gray-400 dark:text-gray-500 stroke-[1.8]'"
                                                  fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                 <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
                                             </svg>
+                                            <div x-show="studentStatuses[{{ $index }}] === 'absent'" x-cloak class="mt-1 flex items-center justify-center gap-1 text-[11px] text-gray-500 tabular-nums">
+                                                <span x-text="studentHours[{{ $index }}] + 'h'"></span>
+                                                @if ($canRecordStudentAttendance)
+                                                    <button type="button" @click.stop="stepHours({{ $index }}, {{ $enrollment->enrollment_id }}, 0.5, @js($student->fullName))" class="flex h-4 w-4 items-center justify-center rounded bg-gray-100 font-bold leading-none text-gray-700 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-200" title="Add 0.5 hour">+</button>
+                                                    <button type="button" @click.stop="stepHours({{ $index }}, {{ $enrollment->enrollment_id }}, -0.5, @js($student->fullName))" class="flex h-4 w-4 items-center justify-center rounded bg-gray-100 font-bold leading-none text-gray-700 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-200" title="Subtract 0.5 hour">-</button>
+                                                @endif
+                                            </div>
                                         </td>
 
-                                        {{-- Column 6: Excused Icon Cell --}}
+                                        {{-- Column 5: Excused Icon Cell --}}
                                         <td @class([
                                                 'py-4 px-4 text-center border-b border-gray-200 dark:border-gray-700 bb-meeting-cell transition-colors',
-                                                'cursor-pointer hover:bg-gray-100/70 dark:hover:bg-gray-700/60' => $canCheckAttendance,
+                                                'cursor-pointer hover:bg-gray-100/70 dark:hover:bg-gray-700/60' => $canRecordStudentAttendance,
                                             ])
                                             :class="{ 'bb-meeting-cell-active-excused': studentStatuses[{{ $index }}] === 'excused' }"
-                                            @if ($canCheckAttendance)
+                                            @if ($canRecordStudentAttendance)
                                                 @click="markStudent({{ $index }}, {{ $enrollment->enrollment_id }}, 'excused', @js($student->fullName))"
                                             @endif
-                                            title="{{ $canCheckAttendance ? 'Mark '.$student->fullName.' as Excused' : 'Attendance entry is disabled without a scheduled class' }}">
+                                            title="{{ $isDropped ? 'Student is dropped and cannot be marked until readmission is processed' : ($canCheckAttendance ? 'Mark '.$student->fullName.' as Excused' : 'Attendance entry is disabled without a scheduled class') }}">
                                             <svg class="h-5 w-5 mx-auto"
                                                  :class="studentStatuses[{{ $index }}] === 'excused' ? 'text-gray-900 dark:text-gray-100 stroke-[2.4]' : 'text-gray-400 dark:text-gray-500 stroke-[1.8]'"
                                                  fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                 <circle cx="12" cy="12" r="9" />
                                                 <line x1="5.6" y1="5.6" x2="18.4" y2="18.4" />
                                             </svg>
+                                        </td>
+
+                                        <td class="sticky right-0 z-20 bg-white dark:bg-gray-800 py-4 px-2 text-center border-l border-b border-gray-200 dark:border-gray-700">
+                                            <details data-student-details class="group relative inline-block text-left"
+                                                     @toggle="handleStudentDetailsToggle($el)"
+                                                     @scroll.window.capture="if ($el.open) positionStudentDetails($el)"
+                                                     @resize.window="if ($el.open) positionStudentDetails($el)">
+                                                <summary aria-label="View student details for {{ $student->fullName }}" class="inline-flex cursor-pointer list-none items-center gap-1 rounded-md border border-gray-300 bg-white px-2 py-1 text-[11px] font-semibold text-blue-700 shadow-sm hover:bg-gray-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 dark:border-gray-600 dark:bg-gray-800 dark:text-blue-300 dark:hover:bg-gray-700">
+                                                    View
+                                                    <svg class="h-3 w-3 transition-transform group-open:rotate-180" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                                                        <path fill-rule="evenodd" d="M5.22 7.22a.75.75 0 0 1 1.06 0L10 10.94l3.72-3.72a.75.75 0 1 1 1.06 1.06l-4.25 4.25a.75.75 0 0 1-1.06 0L5.22 8.28a.75.75 0 0 1 0-1.06Z" clip-rule="evenodd" />
+                                                    </svg>
+                                                </summary>
+                                                <div popover="manual" data-student-details-panel class="fixed z-[100] h-[40rem] max-h-[calc(100vh-2rem)] w-[32rem] max-w-[calc(100vw-2rem)] overflow-y-auto rounded-xl border-2 border-gray-300 bg-white p-5 text-left text-xs shadow-2xl ring-1 ring-black/10 dark:border-gray-600 dark:bg-gray-900 dark:ring-white/10">
+                                                    <div class="sticky top-0 z-10 -mx-5 -mt-5 mb-4 flex items-center justify-between gap-3 border-b border-gray-200 bg-white px-5 py-4 dark:border-gray-700 dark:bg-gray-900">
+                                                        <p class="text-sm font-semibold text-gray-900 dark:text-gray-100">{{ $student->fullName }}</p>
+                                                        <button type="button" @click="closeStudentDetails($el.closest('details'))" class="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-gray-300 bg-white text-gray-700 hover:bg-gray-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700" aria-label="Close student details">
+                                                            <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M6 6l12 12M18 6L6 18" /></svg>
+                                                        </button>
+                                                    </div>
+                                                    <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
+                                                        <dt class="text-gray-500 dark:text-gray-400">Student number</dt>
+                                                        <dd class="font-medium text-gray-900 dark:text-gray-100">{{ $student->student_number }}</dd>
+                                                        <dt class="text-gray-500 dark:text-gray-400">Program / year</dt>
+                                                        <dd class="font-medium text-gray-900 dark:text-gray-100">{{ $student->program ?: 'Not set' }} / {{ $student->year_level ?? 'Not set' }}</dd>
+                                                        <dt class="text-gray-500 dark:text-gray-400">Department</dt>
+                                                        <dd class="font-medium text-gray-900 dark:text-gray-100">{{ $student->department ?: 'Not set' }}</dd>
+                                                        <dt class="text-gray-500 dark:text-gray-400">Enrollment</dt>
+                                                        <dd class="font-medium capitalize text-gray-900 dark:text-gray-100">{{ $row['status'] }}</dd>
+                                                        <dt class="text-gray-500 dark:text-gray-400">OSA status</dt>
+                                                        <dd class="font-medium text-gray-900 dark:text-gray-100">{{ $row['osa_status'] }}</dd>
+                                                        <dt class="text-gray-500 dark:text-gray-400">Drops</dt>
+                                                        <dd class="font-medium text-gray-900 dark:text-gray-100">{{ $row['drop_count'] }} total, {{ $row['unexcused_drop_count'] }} unexcused</dd>
+                                                        <dt class="text-gray-500 dark:text-gray-400">Absence-equivalent</dt>
+                                                        <dd class="font-medium text-gray-900 dark:text-gray-100"><span x-text="Number(studentScores[{{ $enrollment->enrollment_id }}].absence_percentage).toFixed(2)">{{ number_format($row['absence_percentage'], 2) }}</span>% / {{ number_format($row['maximum_absence_percentage'], 2) }}% semester</dd>
+                                                        <dt class="text-gray-500 dark:text-gray-400">Present / late / absent / excused</dt>
+                                                        <dd class="font-medium text-gray-900 dark:text-gray-100">{{ $row['presences'] }} / {{ $row['lates'] }} / {{ $row['absences'] }} / {{ $row['excused'] }}</dd>
+                                                        <dt class="text-gray-500 dark:text-gray-400">Absence hours</dt>
+                                                        <dd class="font-medium text-gray-900 dark:text-gray-100"><span x-text="Number(studentScores[{{ $enrollment->enrollment_id }}].absent_hours).toFixed(2)">{{ number_format($row['absent_hours'], 2) }}</span> / {{ number_format($row['weekly_drop_threshold_hours'], 2) }} weekly hours</dd>
+                                                    </dl>
+                                                    @if ($row['drop_count'] > 0)
+                                                        <div class="mt-2 flex items-center gap-2" role="img" aria-label="Dropped {{ $row['drop_count'] }} {{ $row['drop_count'] === 1 ? 'time' : 'times' }}, {{ $row['unexcused_drop_count'] }} unexcused">
+                                                            <span @class([
+                                                                'inline-flex h-4 w-10 items-center justify-center rounded',
+                                                                'bg-gray-200 dark:bg-gray-600' => $row['unexcused_drop_count'] === 0,
+                                                                'bg-orange-500 dark:bg-orange-400' => $row['unexcused_drop_count'] === 1,
+                                                                'bg-red-600 dark:bg-red-500 text-white' => $row['unexcused_drop_count'] >= 2,
+                                                            ])>
+                                                                @if ($row['unexcused_drop_count'] >= 3)
+                                                                    <span class="font-bold leading-none" aria-hidden="true">&times;</span>
+                                                                @endif
+                                                            </span>
+                                                            <span class="text-gray-500 dark:text-gray-400">Dropped {{ $row['drop_count'] }} {{ $row['drop_count'] === 1 ? 'time' : 'times' }}</span>
+                                                        </div>
+                                                    @endif
+                                                    @if (! $isDropped)
+                                                        <div class="mt-3">
+                                                            <div class="progress h-1.5" role="progressbar"
+                                                                 aria-label="Drop threshold progress"
+                                                                 aria-valuemin="0" aria-valuemax="100"
+                                                                 x-bind:aria-valuenow="Math.round(weeklyProgressPercentage({{ $enrollment->enrollment_id }}))">
+                                                                <div class="progress-bar"
+                                                                     x-bind:class="weeklyProgressClass({{ $enrollment->enrollment_id }})"
+                                                                     x-bind:style="`width: ${weeklyProgressPercentage({{ $enrollment->enrollment_id }})}%`"></div>
+                                                            </div>
+                                                        </div>
+                                                        <div x-show="studentScores[{{ $enrollment->enrollment_id }}].is_drop_eligible" x-cloak class="mt-2">
+                                                            <p x-show="!studentScores[{{ $enrollment->enrollment_id }}].is_permanent_drop_eligible" class="font-medium text-amber-700 dark:text-amber-400">
+                                                                Drop threshold reached (3 lates = 1 absence).
+                                                            </p>
+                                                            <p x-show="studentScores[{{ $enrollment->enrollment_id }}].is_permanent_drop_eligible" class="font-medium text-rose-600 dark:text-rose-400">
+                                                                20% semester absence reached. OSA may still review readmission.
+                                                            </p>
+                                                            <form method="POST" action="{{ route('faculty.enrollments.drop', $enrollment) }}"
+                                                                  x-bind:data-confirm="studentScores[{{ $enrollment->enrollment_id }}].is_permanent_drop_eligible ? 'Mark this as a permanent drop and refer the student to OSA? OSA may still review readmission.' : 'Drop this student to OSA for readmission review?'">
+                                                                @csrf
+                                                                <button type="submit" x-show="!studentScores[{{ $enrollment->enrollment_id }}].is_permanent_drop_eligible" class="mt-1 font-semibold text-amber-700 underline dark:text-amber-400">
+                                                                    Drop student to OSA
+                                                                </button>
+                                                                <button type="submit" x-show="studentScores[{{ $enrollment->enrollment_id }}].is_permanent_drop_eligible" class="mt-1 font-semibold text-rose-700 underline dark:text-rose-400">
+                                                                    Permanent drop to OSA
+                                                                </button>
+                                                            </form>
+                                                        </div>
+                                                    @endif
+                                                    <details class="mt-3">
+                                                        <summary class="cursor-pointer font-semibold text-blue-700 underline dark:text-blue-300">Refer student to OSA (Circumstance)</summary>
+                                                        <form method="POST" action="{{ route('faculty.enrollments.drop', $enrollment) }}" class="mt-2 space-y-2" data-confirm="Refer this student to OSA for review of the stated circumstance?">
+                                                            @csrf
+                                                            <input type="hidden" name="referral_type" value="circumstance">
+                                                            <label class="block font-medium text-gray-700 dark:text-gray-300">
+                                                                Reason for referral (required)
+                                                                <textarea name="instructor_reason" rows="2" maxlength="1000" required class="mt-1 block w-full rounded-md border-gray-300 text-xs shadow-sm dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100" placeholder="Explain why this student should be referred to OSA."></textarea>
+                                                            </label>
+                                                            @error('instructor_reason')
+                                                                <p class="text-xs text-rose-600">{{ $message }}</p>
+                                                            @enderror
+                                                            <button type="submit" class="font-semibold text-blue-700 underline dark:text-blue-300">Drop and refer to OSA</button>
+                                                        </form>
+                                                    </details>
+                                                    <div class="mt-3 border-t border-gray-200 pt-2 dark:border-gray-700">
+                                                        <p class="font-semibold text-gray-800 dark:text-gray-100">Drop history</p>
+                                                        @forelse ($row['drop_history'] as $drop)
+                                                            <section class="mt-2 rounded-md bg-gray-50 p-2 dark:bg-gray-900/60">
+                                                                <div class="flex items-center justify-between gap-2">
+                                                                    <span class="font-semibold text-gray-800 dark:text-gray-100">Drop {{ $drop['sequence'] }}</span>
+                                                                    <span class="badge {{ $drop['status_class'] }} text-[10px]">{{ $drop['status'] }}</span>
+                                                                </div>
+                                                                @if ($drop['status'] === 'Awaiting student request')
+                                                                    <p class="mt-1 text-[10px] text-amber-700 dark:text-amber-300">The student must submit a readmission request before OSA review.</p>
+                                                                @endif
+                                                                <dl class="mt-1 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5">
+                                                                    <dt class="text-gray-500 dark:text-gray-400">Date</dt>
+                                                                    <dd class="text-gray-700 dark:text-gray-300">{{ $drop['date'] ?? 'Not recorded' }}</dd>
+                                                                    <dt class="text-gray-500 dark:text-gray-400">Absence hours</dt>
+                                                                    <dd class="text-gray-700 dark:text-gray-300">{{ number_format($drop['absence_hours'], 2) }} hours</dd>
+                                                                    <dt class="text-gray-500 dark:text-gray-400">Drop type</dt>
+                                                                    <dd class="capitalize text-gray-700 dark:text-gray-300">{{ str_replace('_', ' ', $drop['type'] ?? 'Not recorded') }}</dd>
+                                                                    <dt class="text-gray-500 dark:text-gray-400">Readmission application</dt>
+                                                                    <dd class="font-medium text-gray-700 dark:text-gray-300">{{ $drop['application_status'] }}</dd>
+                                                                    @if ($drop['attempt'])
+                                                                        <dt class="text-gray-500 dark:text-gray-400">Attempt</dt>
+                                                                        <dd class="text-gray-700 dark:text-gray-300">{{ $drop['attempt'] }}</dd>
+                                                                        <dt class="text-gray-500 dark:text-gray-400">Applied</dt>
+                                                                        <dd class="text-gray-700 dark:text-gray-300">{{ $drop['applied_at'] }}</dd>
+                                                                        <dt class="text-gray-500 dark:text-gray-400">Reason</dt>
+                                                                        <dd class="text-gray-700 dark:text-gray-300">{{ $drop['reason'] }}</dd>
+                                                                        @if ($drop['reason_details'])
+                                                                            <dt class="text-gray-500 dark:text-gray-400">Student details</dt>
+                                                                            <dd class="whitespace-pre-line text-gray-700 dark:text-gray-300">{{ $drop['reason_details'] }}</dd>
+                                                                        @endif
+                                                                    @endif
+                                                                </dl>
+                                                            </section>
+                                                        @empty
+                                                            <p class="mt-1 text-gray-600 dark:text-gray-300">No drop history recorded.</p>
+                                                        @endforelse
+                                                    </div>
+                                                </div>
+                                            </details>
                                         </td>
                                     </tr>
                                 @empty
@@ -993,7 +933,6 @@
                                             $overallScore = $row['overall_score'];
                                             $pillClass = $overallScore >= 90 ? 'bb-pill-green' : ($overallScore >= 80 ? 'bb-pill-lime' : ($overallScore >= 70 ? 'bb-pill-yellow' : 'bb-pill-red'));
                                             $scoreText = ($overallScore == 100) ? '100 / 100' : number_format($overallScore, 2) . ' / 100';
-                                            $initials = strtoupper(substr($student->first_name ?? 'S', 0, 1) . substr($student->last_name ?? 'T', 0, 1));
                                         @endphp
 
                                         <tr data-student-number="{{ $student->student_number }}"
@@ -1004,9 +943,6 @@
                                             <td class="sticky left-0 z-10 bg-white dark:bg-gray-800 py-3 px-4 border-r border-b border-gray-200 dark:border-gray-700 min-w-[13rem]">
                                                 <div class="flex items-center gap-3 rounded-lg border-2 border-transparent p-2 transition-colors"
                                                      x-bind:class="studentStatusOutline({{ $enrollmentId }})">
-                                                    <div class="h-8 w-8 rounded-full bg-[#1e1e1e] text-white flex items-center justify-center font-bold text-xs shrink-0">
-                                                        {{ $initials }}
-                                                    </div>
                                                     <div class="min-w-0">
                                                         <div class="flex flex-wrap items-center gap-1.5">
                                                             <div class="font-medium text-sm text-gray-900 dark:text-gray-100 truncate">
@@ -1021,23 +957,15 @@
                                                                     'relative inline-flex h-4 w-10 items-center justify-center rounded',
                                                                     'bg-gray-200 dark:bg-gray-600' => $row['unexcused_drop_count'] === 0,
                                                                     'bg-orange-500 dark:bg-orange-400' => $row['unexcused_drop_count'] === 1,
-                                                                    'bg-red-600 dark:bg-red-500 text-white' => $row['unexcused_drop_count'] === 2,
-                                                                    'bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-300' => $row['unexcused_drop_count'] >= 3,
+                                                                    'bg-red-600 dark:bg-red-500 text-white' => $row['unexcused_drop_count'] >= 2,
                                                                 ])>
                                                                     @if ($row['unexcused_drop_count'] >= 3)
                                                                         <span class="font-bold leading-none" aria-hidden="true">&times;</span>
                                                                     @endif
                                                                 </span>
-                                                                <span class="text-[10px] font-medium text-gray-500 dark:text-gray-400">
-                                                                    Dropped {{ $row['drop_count'] }} {{ $row['drop_count'] === 1 ? 'time' : 'times' }}
-                                                                </span>
-                                                                @if ($row['unexcused_drop_count'] > 0)
-                                                                    <span class="text-[10px] font-medium text-gray-500 dark:text-gray-400">
-                                                                        · {{ $row['unexcused_drop_count'] }} unexcused
-                                                                    </span>
-                                                                @endif
                                                             </div>
-                                                            <details class="group mt-1 text-left">
+                                                            @if ($activeTab !== 'overall')
+                                                                <details class="group mt-1 text-left">
                                                                 <summary class="inline-flex cursor-pointer list-none items-center gap-1 text-[11px] font-semibold text-blue-700 dark:text-blue-300">
                                                                     View student details
                                                                     <svg class="h-3 w-3 transition-transform group-open:rotate-180" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
@@ -1094,86 +1022,24 @@
                                                                         </ol>
                                                                     </div>
                                                                 </div>
-                                                            </details>
+                                                                    </details>
+                                                                @endif
+                                                            @endif
+                                                        @if (! $isDropped)
+                                                            <div class="mt-2 w-40 max-w-full">
+                                                                <div class="progress h-1.5" role="progressbar"
+                                                                     aria-label="Drop threshold progress"
+                                                                     aria-valuemin="0" aria-valuemax="100"
+                                                                     x-bind:aria-valuenow="Math.round(weeklyProgressPercentage({{ $enrollmentId }}))">
+                                                                    <div class="progress-bar"
+                                                                         x-bind:class="weeklyProgressClass({{ $enrollmentId }})"
+                                                                         x-bind:style="`width: ${weeklyProgressPercentage({{ $enrollmentId }})}%`"></div>
+                                                                </div>
+                                                            </div>
                                                         @endif
-                                                        <div class="muted text-xs">
-                                                            {{ $student->student_number }}
-                                                            @if (! $isDropped)
-                                                                <span class="block text-[11px] text-gray-500 dark:text-gray-400 font-medium mt-0.5">
-                                                                    Absence-equivalent:
-                                                                    <span x-text="Number(studentScores[{{ $enrollmentId }}].absence_percentage).toFixed(2)">{{ number_format($row['absence_percentage'], 2) }}</span>% /
-                                                                    {{ number_format($row['maximum_absence_percentage'], 2) }}% semester
-                                                                </span>
-                                                                <div class="mt-1 w-40 max-w-full">
-                                                                    <div class="progress h-1.5" role="progressbar"
-                                                                         aria-label="Drop threshold progress"
-                                                                         aria-valuemin="0" aria-valuemax="100"
-                                                                         x-bind:aria-valuenow="Math.round(weeklyProgressPercentage({{ $enrollmentId }}))">
-                                                                        <div class="progress-bar"
-                                                                             x-bind:class="weeklyProgressClass({{ $enrollmentId }})"
-                                                                             x-bind:style="`width: ${weeklyProgressPercentage({{ $enrollmentId }})}%`"></div>
-                                                                    </div>
-                                                                    <p class="muted mt-0.5 text-[10px]">
-                                                                        Absence-equivalent hours: <span x-text="Number(studentScores[{{ $enrollmentId }}].absent_hours).toFixed(2)"></span> /
-                                                                        {{ number_format($row['weekly_drop_threshold_hours'], 2) }}h
-                                                                    </p>
-                                                                </div>
-                                                            @endif
-                                                            @if (! $isDropped)
-                                                                <div x-show="studentScores[{{ $enrollmentId }}].is_drop_eligible" x-cloak>
-                                                                <span x-show="!studentScores[{{ $enrollmentId }}].is_permanent_drop_eligible"
-                                                                      class="block text-[11px] text-amber-700 dark:text-amber-400 font-medium mt-0.5">
-                                                                    Drop threshold reached (3 lates = 1 absence):
-                                                                    <span x-text="Number(studentScores[{{ $enrollmentId }}].absent_hours).toFixed(2)"></span> /
-                                                                    {{ number_format($row['weekly_drop_threshold_hours'], 2) }}h
-                                                                </span>
-                                                                <span x-show="studentScores[{{ $enrollmentId }}].is_permanent_drop_eligible"
-                                                                      class="block text-[11px] text-rose-600 dark:text-rose-400 font-medium mt-0.5">
-                                                                    20% semester absence reached. OSA may still review readmission.
-                                                                </span>
-                                                                <form method="POST" action="{{ route('faculty.enrollments.drop', $row['enrollment']) }}"
-                                                                      x-bind:data-confirm="studentScores[{{ $enrollmentId }}].is_permanent_drop_eligible ? 'Mark this as a permanent drop and refer the student to OSA? OSA may still review readmission.' : 'Drop this student to OSA for readmission review?'">
-                                                                    @csrf
-                                                                    <button type="submit" x-show="!studentScores[{{ $enrollmentId }}].is_permanent_drop_eligible"
-                                                                            class="mt-1 text-[11px] font-semibold text-amber-700 dark:text-amber-400 underline underline-offset-2 hover:text-amber-900 dark:hover:text-amber-300">
-                                                                        Drop student to OSA
-                                                                    </button>
-                                                                    <button type="submit" x-show="studentScores[{{ $enrollmentId }}].is_permanent_drop_eligible"
-                                                                            class="mt-1 text-[11px] font-semibold text-rose-700 dark:text-rose-400 underline underline-offset-2 hover:text-rose-900 dark:hover:text-rose-300">
-                                                                        Permanent drop to OSA
-                                                                    </button>
-                                                                </form>
-                                                                </div>
-                                                            @endif
-                                                            <details class="mt-2">
-                                                                <summary class="cursor-pointer text-[11px] font-semibold text-blue-700 underline underline-offset-2 dark:text-blue-300">
-                                                                    Refer student to OSA for a circumstance
-                                                                </summary>
-                                                                <form method="POST" action="{{ route('faculty.enrollments.drop', $row['enrollment']) }}"
-                                                                      class="mt-2 space-y-2"
-                                                                      data-confirm="Refer this student to OSA for review of the stated circumstance?">
-                                                                    @csrf
-                                                                    <input type="hidden" name="referral_type" value="circumstance">
-                                                                    <label class="block text-[11px] font-medium text-gray-700 dark:text-gray-300">
-                                                                        Reason for referral (required)
-                                                                        <textarea name="instructor_reason" rows="2" maxlength="1000" required
-                                                                                  class="mt-1 block w-full rounded-md border-gray-300 text-xs shadow-sm dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
-                                                                                  placeholder="Explain why this student should be referred to OSA."></textarea>
-                                                                    </label>
-                                                                    @error('instructor_reason')
-                                                                        <p class="text-xs text-rose-600">{{ $message }}</p>
-                                                                    @enderror
-                                                                    <button type="submit" class="text-[11px] font-semibold text-blue-700 underline underline-offset-2 hover:text-blue-900 dark:text-blue-300 dark:hover:text-blue-200">
-                                                                        Drop and refer to OSA
-                                                                    </button>
-                                                                </form>
-                                                            </details>
-                                                        </div>
-
                                                     </div>
                                                 </div>
                                             </td>
-
                                             {{-- Date Columns --}}
                                             @foreach ($gridDates as $d)
                                                 @php
@@ -1181,20 +1047,21 @@
                                                     $cellStatus = $rec['status'] ?? null;
                                                     $hoursAbsent = $rec['hours_absent'] ?? null;
                                                     $remarks = $rec['remarks'] ?? '';
+                                                    $canRecordCellAttendance = $row['can_record_attendance'] && $d['can_record_attendance'];
                                                 @endphp
 
                                                 <td id="cell-{{ $enrollmentId }}-{{ $d['date'] }}-{{ $d['schedule_id'] ?? 'none' }}"
                                                     @class([
                                                         'bb-cell text-center p-2 min-w-[5.5rem] h-[3.8rem] select-none group transition-colors border-r border-b border-gray-200 dark:border-gray-700',
-                                                        'cursor-pointer' => $d['can_record_attendance'],
+                                                        'cursor-pointer' => $canRecordCellAttendance,
                                                         'bb-cell-late' => $cellStatus === 'late',
-                                                        'bg-white dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700' => $cellStatus !== 'late' && $d['can_record_attendance'],
-                                                        'bg-white dark:bg-gray-800' => $cellStatus !== 'late' && ! $d['can_record_attendance'],
+                                                        'bg-white dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700' => $cellStatus !== 'late' && $canRecordCellAttendance,
+                                                        'bg-white dark:bg-gray-800' => $cellStatus !== 'late' && ! $canRecordCellAttendance,
                                                     ])
-                                                    @if ($d['can_record_attendance'])
+                                                    @if ($canRecordCellAttendance)
                                                         @click="openCellModal({{ $enrollmentId }}, @js($student->fullName), @js($d['date']), @js($d['header_label']), @js($d['schedule_id']), @js($cellStatus), @js($hoursAbsent), @js($remarks), {{ $d['session_hours'] }})"
                                                     @endif
-                                                    title="{{ $student->fullName }} ({{ $d['full_label'] }}{{ $d['schedule_label'] ? ' · '.$d['schedule_label'] : '' }}): {{ $cellStatus ? ucfirst($cellStatus) : 'Unrecorded' }}{{ $d['can_record_attendance'] ? ' - Click to edit' : ' - No scheduled class' }}">
+                                                    title="{{ $student->fullName }} ({{ $d['full_label'] }}{{ $d['schedule_label'] ? ' · '.$d['schedule_label'] : '' }}): {{ $cellStatus ? ucfirst($cellStatus) : 'Unrecorded' }}{{ $isDropped ? ' - Student is dropped and cannot be marked until readmission is processed' : ($d['can_record_attendance'] ? ' - Click to edit' : ' - No scheduled class') }}">
 
                                                     @if ($cellStatus === 'present')
                                                         <div class="flex flex-col items-center justify-center">
@@ -1231,7 +1098,7 @@
                                                             <span class="text-xs text-gray-700 dark:text-gray-300 font-medium mt-0.5">Excused</span>
                                                         </div>
                                                     @else
-                                                        @if ($d['can_record_attendance'])
+                                                        @if ($canRecordCellAttendance)
                                                             <div class="flex flex-col items-center justify-center opacity-30 group-hover:opacity-100 transition-opacity">
                                                                 <span class="text-lg text-gray-400 font-light">+</span>
                                                             </div>
@@ -1254,16 +1121,23 @@
                                                 {{ $row['drop_count'] }}
                                             </td>
                                             <td class="sticky right-0 z-20 bg-white dark:bg-gray-800 py-3 px-2 text-center border-b border-gray-200 dark:border-gray-700">
-                                                <details class="group relative inline-block text-left">
-                                                    <summary class="inline-flex cursor-pointer list-none items-center gap-1 rounded-md border border-gray-300 bg-white px-2 py-1 text-[11px] font-semibold text-blue-700 shadow-sm hover:bg-gray-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 dark:border-gray-600 dark:bg-gray-800 dark:text-blue-300 dark:hover:bg-gray-700">
+                                                <details data-student-details class="group relative inline-block text-left"
+                                                         @toggle="handleStudentDetailsToggle($el)"
+                                                         @scroll.window.capture="if ($el.open) positionStudentDetails($el)"
+                                                         @resize.window="if ($el.open) positionStudentDetails($el)">
+                                                    <summary aria-label="View student details for {{ $student->fullName }}" class="inline-flex cursor-pointer list-none items-center gap-1 rounded-md border border-gray-300 bg-white px-2 py-1 text-[11px] font-semibold text-blue-700 shadow-sm hover:bg-gray-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 dark:border-gray-600 dark:bg-gray-800 dark:text-blue-300 dark:hover:bg-gray-700">
                                                         View
                                                         <svg class="h-3 w-3 transition-transform group-open:rotate-180" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
                                                             <path fill-rule="evenodd" d="M5.22 7.22a.75.75 0 0 1 1.06 0L10 10.94l3.72-3.72a.75.75 0 1 1 1.06 1.06l-4.25 4.25a.75.75 0 0 1-1.06 0L5.22 8.28a.75.75 0 0 1 0-1.06Z" clip-rule="evenodd" />
                                                         </svg>
-                                                        <span class="sr-only">student details for {{ $student->fullName }}</span>
                                                     </summary>
-                                                    <div class="absolute right-0 top-full z-50 mt-2 max-h-[60vh] w-80 max-w-[calc(100vw-2rem)] overflow-y-auto rounded-lg border border-gray-200 bg-white p-3 text-left text-[11px] shadow-xl dark:border-gray-700 dark:bg-gray-800">
-                                                        <p class="mb-2 font-semibold text-gray-900 dark:text-gray-100">{{ $student->fullName }}</p>
+                                                    <div popover="manual" data-student-details-panel class="fixed z-[100] h-[40rem] max-h-[calc(100vh-2rem)] w-[32rem] max-w-[calc(100vw-2rem)] overflow-y-auto rounded-xl border-2 border-gray-300 bg-white p-5 text-left text-xs shadow-2xl ring-1 ring-black/10 dark:border-gray-600 dark:bg-gray-900 dark:ring-white/10">
+                                                        <div class="sticky top-0 z-10 -mx-5 -mt-5 mb-4 flex items-center justify-between gap-3 border-b border-gray-200 bg-white px-5 py-4 dark:border-gray-700 dark:bg-gray-900">
+                                                            <p class="text-sm font-semibold text-gray-900 dark:text-gray-100">{{ $student->fullName }}</p>
+                                                            <button type="button" @click="closeStudentDetails($el.closest('details'))" class="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-gray-300 bg-white text-gray-700 hover:bg-gray-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700" aria-label="Close student details">
+                                                                <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M6 6l12 12M18 6L6 18" /></svg>
+                                                            </button>
+                                                        </div>
                                                         <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
                                                             <dt class="text-gray-500 dark:text-gray-400">Student number</dt>
                                                             <dd class="font-medium text-gray-900 dark:text-gray-100">{{ $student->student_number }}</dd>
@@ -1273,13 +1147,65 @@
                                                             <dd class="font-medium text-gray-900 dark:text-gray-100">{{ $student->department ?: 'Not set' }}</dd>
                                                             <dt class="text-gray-500 dark:text-gray-400">Enrollment</dt>
                                                             <dd class="font-medium capitalize text-gray-900 dark:text-gray-100">{{ $row['status'] }}</dd>
+                                                            <dt class="text-gray-500 dark:text-gray-400">OSA status</dt>
+                                                            <dd><span class="badge {{ $row['osa_status_class'] }}">{{ $row['osa_status'] }}</span></dd>
+                                                            <dt class="text-gray-500 dark:text-gray-400">Drops</dt>
+                                                            <dd class="font-medium text-gray-900 dark:text-gray-100">{{ $row['drop_count'] }} total, {{ $row['unexcused_drop_count'] }} unexcused</dd>
                                                             <dt class="text-gray-500 dark:text-gray-400">Attendance score</dt>
                                                             <dd class="font-medium text-gray-900 dark:text-gray-100">{{ number_format($overallScore, 2) }}%</dd>
+                                                            <dt class="text-gray-500 dark:text-gray-400">Absence-equivalent</dt>
+                                                            <dd class="font-medium text-gray-900 dark:text-gray-100"><span x-text="Number(studentScores[{{ $enrollmentId }}].absence_percentage).toFixed(2)">{{ number_format($row['absence_percentage'], 2) }}</span>% / {{ number_format($row['maximum_absence_percentage'], 2) }}% semester</dd>
                                                             <dt class="text-gray-500 dark:text-gray-400">Present / late / absent / excused</dt>
                                                             <dd class="font-medium text-gray-900 dark:text-gray-100">{{ $row['presences'] }} / {{ $row['lates'] }} / {{ $row['absences'] }} / {{ $row['excused'] }}</dd>
                                                             <dt class="text-gray-500 dark:text-gray-400">Absence hours</dt>
-                                                            <dd class="font-medium text-gray-900 dark:text-gray-100">{{ number_format($row['absent_hours'], 2) }} / {{ number_format($row['weekly_drop_threshold_hours'], 2) }} weekly hours</dd>
+                                                            <dd class="font-medium text-gray-900 dark:text-gray-100"><span x-text="Number(studentScores[{{ $enrollmentId }}].absent_hours).toFixed(2)">{{ number_format($row['absent_hours'], 2) }}</span> / {{ number_format($row['weekly_drop_threshold_hours'], 2) }} weekly hours</dd>
                                                         </dl>
+                                                        @if (! $isDropped)
+                                                            <div class="mt-3 border-t border-gray-200 pt-2 dark:border-gray-700">
+                                                                <p class="text-gray-600 dark:text-gray-300">
+                                                                    Absence-equivalent hours:
+                                                                    <span x-text="Number(studentScores[{{ $enrollmentId }}].absent_hours).toFixed(2)">{{ number_format($row['absent_hours'], 2) }}</span>
+                                                                    / {{ number_format($row['weekly_drop_threshold_hours'], 2) }}h
+                                                                </p>
+                                                                <div x-show="studentScores[{{ $enrollmentId }}].is_drop_eligible" x-cloak class="mt-1">
+                                                                    <p x-show="!studentScores[{{ $enrollmentId }}].is_permanent_drop_eligible" class="font-medium text-amber-700 dark:text-amber-400">
+                                                                        Drop threshold reached (3 lates = 1 absence).
+                                                                    </p>
+                                                                    <p x-show="studentScores[{{ $enrollmentId }}].is_permanent_drop_eligible" class="font-medium text-rose-600 dark:text-rose-400">
+                                                                        20% semester absence reached. OSA may still review readmission.
+                                                                    </p>
+                                                                    <form method="POST" action="{{ route('faculty.enrollments.drop', $row['enrollment']) }}"
+                                                                          x-bind:data-confirm="studentScores[{{ $enrollmentId }}].is_permanent_drop_eligible ? 'Mark this as a permanent drop and refer the student to OSA? OSA may still review readmission.' : 'Drop this student to OSA for readmission review?'">
+                                                                        @csrf
+                                                                        <button type="submit" x-show="!studentScores[{{ $enrollmentId }}].is_permanent_drop_eligible" class="mt-1 font-semibold text-amber-700 underline dark:text-amber-400">
+                                                                            Drop student to OSA
+                                                                        </button>
+                                                                        <button type="submit" x-show="studentScores[{{ $enrollmentId }}].is_permanent_drop_eligible" class="mt-1 font-semibold text-rose-700 underline dark:text-rose-400">
+                                                                            Permanent drop to OSA
+                                                                        </button>
+                                                                    </form>
+                                                                </div>
+                                                                <details class="mt-2">
+                                                                    <summary class="cursor-pointer font-semibold text-blue-700 underline dark:text-blue-300">
+                                                                        Refer student to OSA for a circumstance
+                                                                    </summary>
+                                                                    <form method="POST" action="{{ route('faculty.enrollments.drop', $row['enrollment']) }}" class="mt-2 space-y-2" data-confirm="Refer this student to OSA for review of the stated circumstance?">
+                                                                        @csrf
+                                                                        <input type="hidden" name="referral_type" value="circumstance">
+                                                                        <label class="block font-medium text-gray-700 dark:text-gray-300">
+                                                                            Reason for referral (required)
+                                                                            <textarea name="instructor_reason" rows="2" maxlength="1000" required class="mt-1 block w-full rounded-md border-gray-300 text-xs shadow-sm dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100" placeholder="Explain why this student should be referred to OSA."></textarea>
+                                                                        </label>
+                                                                        @error('instructor_reason')
+                                                                            <p class="text-xs text-rose-600">{{ $message }}</p>
+                                                                        @enderror
+                                                                        <button type="submit" class="font-semibold text-blue-700 underline dark:text-blue-300">
+                                                                            Drop and refer to OSA
+                                                                        </button>
+                                                                    </form>
+                                                                </details>
+                                                            </div>
+                                                        @endif
                                                         <div class="mt-3 border-t border-gray-200 pt-2 dark:border-gray-700">
                                                             <p class="font-semibold text-gray-800 dark:text-gray-100">Drop history</p>
                                                             @forelse ($row['drop_history'] as $drop)
@@ -1654,6 +1580,69 @@
                     return progress >= 100 ? 'progress-bad' : (progress >= 80 ? 'progress-warn' : '');
                 },
 
+                handleStudentDetailsToggle(details) {
+                    if (!details.open) {
+                        this.closeStudentDetailsPanel(details);
+
+                        return;
+                    }
+
+                    document.querySelectorAll('details[data-student-details]').forEach((otherDetails) => {
+                        if (otherDetails !== details && otherDetails.open) {
+                            otherDetails.open = false;
+                            this.closeStudentDetailsPanel(otherDetails);
+                        }
+                    });
+
+                    const panel = details.querySelector('[data-student-details-panel]');
+
+                    if (panel && ! panel.matches(':popover-open')) {
+                        panel.showPopover();
+                    }
+
+                    this.positionStudentDetails(details);
+                },
+
+                closeStudentDetails(details) {
+                    details.open = false;
+                    this.closeStudentDetailsPanel(details);
+                },
+
+                closeStudentDetailsPanel(details) {
+                    const panel = details.querySelector('[data-student-details-panel]');
+
+                    if (panel?.matches(':popover-open')) {
+                        panel.hidePopover();
+                    }
+                },
+
+                positionStudentDetails(details) {
+                    const summary = details.querySelector('summary');
+                    const panel = details.querySelector('[data-student-details-panel]');
+
+                    if (!summary || !panel) {
+                        return;
+                    }
+
+                    const summaryBounds = summary.getBoundingClientRect();
+                    const panelBounds = panel.getBoundingClientRect();
+                    const padding = 16;
+                    const left = Math.max(
+                        padding,
+                        Math.min(summaryBounds.right - panelBounds.width, window.innerWidth - panelBounds.width - padding)
+                    );
+                    const below = summaryBounds.bottom + 8;
+                    const top = below + panelBounds.height <= window.innerHeight - padding
+                        ? below
+                        : Math.max(padding, summaryBounds.top - panelBounds.height - 8);
+
+                    panel.style.right = 'auto';
+                    panel.style.bottom = 'auto';
+                    panel.style.margin = '0';
+                    panel.style.left = `${left}px`;
+                    panel.style.top = `${top}px`;
+                },
+
                 applyAttendanceStats(enrollmentId, stats) {
                     if (!stats) {
                         return;
@@ -1750,19 +1739,18 @@
                     const tokenMeta = document.querySelector('meta[name="csrf-token"]');
                     const csrfToken = tokenMeta ? tokenMeta.getAttribute('content') : '';
 
-                    Object.keys(this.studentStatuses).forEach(idx => {
-                        this.studentStatuses[idx] = targetStatus;
-                    });
-
                     // Prepare bulk entries
                     const attendanceEntries = [];
                     @foreach ($enrollmentRows as $idx => $row)
-                        attendanceEntries.push({
-                            enrollment_id: {{ $row['enrollment']->enrollment_id }},
-                            status: targetStatus,
-                            hours_absent: targetStatus === 'absent' ? this.selectedMeetingSessionHours : null,
-                            remarks: this.studentRemarks[{{ $idx }}] || null
-                        });
+                        @if ($row['can_record_attendance'])
+                            this.studentStatuses[{{ $idx }}] = targetStatus;
+                            attendanceEntries.push({
+                                enrollment_id: {{ $row['enrollment']->enrollment_id }},
+                                status: targetStatus,
+                                hours_absent: targetStatus === 'absent' ? this.selectedMeetingSessionHours : null,
+                                remarks: this.studentRemarks[{{ $idx }}] || null
+                            });
+                        @endif
                     @endforeach
 
                     fetch('{{ route("faculty.attendance.store") }}', {
@@ -1791,7 +1779,7 @@
                     })
                     .then(data => {
                         const label = targetStatus.charAt(0).toUpperCase() + targetStatus.slice(1);
-                        this.showToast(`Marked all students as ${label}`);
+                        this.showToast(`Marked eligible students as ${label}`);
                         const url = new URL(window.location.href);
                         url.searchParams.set('date', this.selectedMeetingDate);
                         url.searchParams.set('tab', config.activeTab);

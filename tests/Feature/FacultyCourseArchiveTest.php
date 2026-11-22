@@ -53,6 +53,18 @@ class FacultyCourseArchiveTest extends TestCase
         $this->assertModelExists($attendanceRecord);
     }
 
+    public function test_edit_subject_page_offers_archive_without_a_delete_button(): void
+    {
+        $faculty = $this->createFaculty();
+        $course = $this->createCourse($faculty);
+
+        $this->actingAs($faculty->user)
+            ->get(route('faculty.courses.edit', $course))
+            ->assertOk()
+            ->assertSee('Archive Subject')
+            ->assertDontSee('Delete Subject');
+    }
+
     public function test_archived_subjects_are_hidden_from_active_lists_and_shown_with_restore_action(): void
     {
         $faculty = $this->createFaculty();
