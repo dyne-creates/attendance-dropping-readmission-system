@@ -34,7 +34,7 @@ class StudentAttendanceWarningTest extends TestCase
 
         $response = $this->actingAs($user)->get(route('student.dashboard'));
 
-        $response->assertSee('Approaching the 3-hour drop threshold (3 lates = 1 absence)')
+        $response->assertSee('Approaching the 3.00-hour weekly drop threshold (3 lates = 1 absence)')
             ->assertSee('2.50 of')
             ->assertSee('3.00 absence-equivalent hours');
         $response->assertSee('aria-label="Drop threshold progress"', false);
@@ -58,11 +58,11 @@ class StudentAttendanceWarningTest extends TestCase
 
         $this->actingAs($user)
             ->get(route('student.dashboard'))
-            ->assertSee('Approaching the 3-hour drop threshold (3 lates = 1 absence)')
+            ->assertDontSee('Approaching the 3.00-hour weekly drop threshold')
             ->assertSee('2.50 of')
-            ->assertSee('3.00 absence-equivalent hours')
+            ->assertSee('5.00 absence-equivalent hours')
             ->assertViewHas('enrollments', fn ($enrollments): bool => $enrollments->first()->absence_hours === 2.5
-                && $enrollments->first()->weekly_drop_threshold_hours === 3.0);
+                && $enrollments->first()->weekly_drop_threshold_hours === 5.0);
     }
 
     public function test_dashboard_shows_critical_warning_when_maximum_absence_hours_are_reached(): void
@@ -99,7 +99,7 @@ class StudentAttendanceWarningTest extends TestCase
         $this->assertSame('enrolled', $enrollment->fresh()->status);
     }
 
-    public function test_lab_course_uses_the_same_three_hour_drop_threshold(): void
+    public function test_lab_course_uses_its_accumulated_weekly_hours_as_the_drop_threshold(): void
     {
         [$user, $faculty, $enrollment] = $this->createStudentEnrollment(5);
 
@@ -115,13 +115,13 @@ class StudentAttendanceWarningTest extends TestCase
 
         $response = $this->actingAs($user)->get(route('student.dashboard'));
 
-        $response->assertSee('3-hour drop threshold reached (3 lates = 1 absence)')
+        $response->assertSee('Weekly drop threshold reached (3 lates = 1 absence)')
             ->assertSee('15.00 of')
-            ->assertSee('3.00 absence-equivalent hours')
+            ->assertSee('5.00 absence-equivalent hours')
             ->assertDontSee('Permanent-drop level reached');
     }
 
-    public function test_drop_threshold_is_three_hours_regardless_of_course_hours_per_week(): void
+    public function test_drop_threshold_uses_the_course_hours_per_week(): void
     {
         [$user, $faculty, $enrollment] = $this->createStudentEnrollment(5);
         AttendanceRecord::create([
@@ -135,10 +135,12 @@ class StudentAttendanceWarningTest extends TestCase
 
         $response = $this->actingAs($user)->get(route('student.dashboard'));
 
-        $response->assertSee('3-hour drop threshold reached (3 lates = 1 absence)')
+        $response->assertSee('Weekly drop threshold reached (3 lates = 1 absence)')
             ->assertSee('5.00 of')
-            ->assertSee('3.00 absence-equivalent hours')
+            ->assertSee('5.00 absence-equivalent hours')
             ->assertDontSee('Permanent-drop level reached');
+        $response->assertViewHas('enrollments', fn ($enrollments): bool => $enrollments->first()->weekly_drop_threshold_hours === 5.0
+            && $enrollments->first()->absence_warning === 'weekly_drop_eligible');
         $this->assertSame('enrolled', $enrollment->fresh()->status);
     }
 

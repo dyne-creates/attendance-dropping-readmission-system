@@ -135,6 +135,22 @@ class FacultyAttendanceTest extends TestCase
             ->assertSee('studentStatusOutline');
     }
 
+    public function test_overall_attendance_details_dropdown_stays_sticky_beside_drops(): void
+    {
+        $response = $this->actingAs($this->facultyUser)
+            ->get(route('faculty.dashboard', [
+                'course_id' => $this->course->course_id,
+                'tab' => 'overall',
+            ]));
+
+        $response->assertSee('Details')
+            ->assertSee('View')
+            ->assertSee('sticky right-0')
+            ->assertSee('sticky right-24')
+            ->assertSee('student details for John Doe')
+            ->assertSee('No drop history recorded.');
+    }
+
     public function test_faculty_dashboard_shows_current_osa_statuses_beside_student_names(): void
     {
         $osaStatuses = [
@@ -1109,7 +1125,7 @@ class FacultyAttendanceTest extends TestCase
             ->post(route('faculty.enrollments.drop', $this->enrollment));
 
         $response->assertRedirect();
-        $response->assertSessionHas('error', 'This student can be dropped to OSA after reaching 3.00 absence-equivalent hours; current total is 2.99 hours.');
+        $response->assertSessionHas('error', 'This student can be dropped to OSA after reaching 3.00 accumulated absence hours (the course weekly hours); current total is 2.99 hours.');
         $this->assertSame('enrolled', $this->enrollment->fresh()->status);
         $this->assertDatabaseMissing('dropping_transactions', [
             'enrollment_id' => $this->enrollment->enrollment_id,
@@ -1184,7 +1200,7 @@ class FacultyAttendanceTest extends TestCase
         $this->assertSame('enrolled', $this->enrollment->fresh()->status);
     }
 
-    public function test_faculty_can_drop_student_to_osa_after_one_week_of_absences(): void
+    public function test_faculty_can_drop_student_after_accumulated_absences_reach_course_weekly_hours(): void
     {
         AttendanceRecord::create([
             'enrollment_id' => $this->enrollment->enrollment_id,
@@ -1217,9 +1233,10 @@ class FacultyAttendanceTest extends TestCase
         ]);
     }
 
-    public function test_three_lates_equal_one_absence_and_six_lates_reach_the_three_hour_drop_threshold(): void
+    public function test_three_lates_equal_one_absence_and_accumulated_weekly_hours_enable_dropping(): void
     {
         $this->course->update(['hours_per_week' => 5]);
+        $this->course->schedules()->update(['end_time' => '11:00:00']);
         $scheduleIds = $this->course->schedules()->orderBy('schedule_id')->pluck('schedule_id')->all();
         $lateDates = [
             '2026-10-05',
@@ -1243,8 +1260,8 @@ class FacultyAttendanceTest extends TestCase
         $this->actingAs($this->facultyUser)
             ->get(route('faculty.dashboard', ['course_id' => $this->course->course_id]))
             ->assertViewHas('enrollmentRows', function ($rows): bool {
-                $this->assertSame(1.5, $rows->first()['absent_hours']);
-                $this->assertSame(3.0, $rows->first()['weekly_drop_threshold_hours']);
+                $this->assertSame(2.5, $rows->first()['absent_hours']);
+                $this->assertSame(5.0, $rows->first()['weekly_drop_threshold_hours']);
                 $this->assertFalse($rows->first()['is_drop_eligible']);
 
                 return true;
@@ -1263,8 +1280,8 @@ class FacultyAttendanceTest extends TestCase
         $this->actingAs($this->facultyUser)
             ->get(route('faculty.dashboard', ['course_id' => $this->course->course_id]))
             ->assertViewHas('enrollmentRows', function ($rows): bool {
-                $this->assertSame(3.0, $rows->first()['absent_hours']);
-                $this->assertSame(3.0, $rows->first()['weekly_drop_threshold_hours']);
+                $this->assertSame(5.0, $rows->first()['absent_hours']);
+                $this->assertSame(5.0, $rows->first()['weekly_drop_threshold_hours']);
                 $this->assertTrue($rows->first()['is_drop_eligible']);
 
                 return true;
@@ -1279,7 +1296,7 @@ class FacultyAttendanceTest extends TestCase
         $this->assertDatabaseHas('dropping_transactions', [
             'enrollment_id' => $this->enrollment->enrollment_id,
             'drop_type' => DroppingTransaction::TYPE_WEEKLY_HOURS,
-            'absence_hours_at_drop' => 3,
+            'absence_hours_at_drop' => 5,
         ]);
     }
 

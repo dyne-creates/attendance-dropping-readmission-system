@@ -1071,7 +1071,7 @@ class FacultyController extends Controller
 
         if ($referralType === 'attendance' && $absenceHours < $weeklyDropThresholdHours) {
             return back()->with('error', sprintf(
-                'This student can be dropped to OSA after reaching %.2f absence-equivalent hours; current total is %.2f hours.',
+                'This student can be dropped to OSA after reaching %.2f accumulated absence hours (the course weekly hours); current total is %.2f hours.',
                 $weeklyDropThresholdHours,
                 $absenceHours,
             ));

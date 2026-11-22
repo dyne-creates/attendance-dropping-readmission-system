@@ -13,8 +13,6 @@ class AttendanceService
 {
     private const MAXIMUM_ABSENCE_PERCENTAGE = 0.20;
 
-    private const WEEKLY_DROP_THRESHOLD_HOURS = 3.0;
-
     /**
      * Determine the duration in hours for a class session on a given date.
      */
@@ -133,11 +131,11 @@ class AttendanceService
     }
 
     /**
-     * Calculate the absence-equivalent hour threshold for an instructor-initiated drop.
+     * Calculate the accumulated absence-hour threshold from the course's weekly hours.
      */
     public function weeklyDropThresholdHours(Course $course): float
     {
-        return self::WEEKLY_DROP_THRESHOLD_HOURS;
+        return (float) $course->hours_per_week;
     }
 
     /**

@@ -975,8 +975,12 @@
                                             Overall
                                         </th>
                                         <th scope="col"
-                                            class="py-3.5 px-3 text-center font-semibold text-gray-700 dark:text-gray-200 border-r border-b border-gray-200 dark:border-gray-700 min-w-[5rem]">
+                                            class="sticky right-24 z-30 bg-white dark:bg-gray-800 py-3.5 px-3 text-center font-semibold text-gray-700 dark:text-gray-200 border-r border-b border-gray-200 dark:border-gray-700 min-w-[5rem]">
                                             Drops
+                                        </th>
+                                        <th scope="col"
+                                            class="sticky right-0 z-30 bg-white dark:bg-gray-800 py-3.5 px-3 text-center font-semibold text-gray-700 dark:text-gray-200 border-b border-gray-200 dark:border-gray-700 min-w-[6rem]">
+                                            Details
                                         </th>
                                     </tr>
                                 </thead>
@@ -1246,14 +1250,82 @@
                                                     {{ $scoreText }}
                                                 </span>
                                             </td>
-                                            <td class="py-3 px-3 text-center border-r border-b border-gray-200 dark:border-gray-700 tabular-nums">
+                                            <td class="sticky right-24 z-10 bg-white dark:bg-gray-800 py-3 px-3 text-center border-r border-b border-gray-200 dark:border-gray-700 tabular-nums">
                                                 {{ $row['drop_count'] }}
+                                            </td>
+                                            <td class="sticky right-0 z-20 bg-white dark:bg-gray-800 py-3 px-2 text-center border-b border-gray-200 dark:border-gray-700">
+                                                <details class="group relative inline-block text-left">
+                                                    <summary class="inline-flex cursor-pointer list-none items-center gap-1 rounded-md border border-gray-300 bg-white px-2 py-1 text-[11px] font-semibold text-blue-700 shadow-sm hover:bg-gray-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 dark:border-gray-600 dark:bg-gray-800 dark:text-blue-300 dark:hover:bg-gray-700">
+                                                        View
+                                                        <svg class="h-3 w-3 transition-transform group-open:rotate-180" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                                                            <path fill-rule="evenodd" d="M5.22 7.22a.75.75 0 0 1 1.06 0L10 10.94l3.72-3.72a.75.75 0 1 1 1.06 1.06l-4.25 4.25a.75.75 0 0 1-1.06 0L5.22 8.28a.75.75 0 0 1 0-1.06Z" clip-rule="evenodd" />
+                                                        </svg>
+                                                        <span class="sr-only">student details for {{ $student->fullName }}</span>
+                                                    </summary>
+                                                    <div class="absolute right-0 top-full z-50 mt-2 max-h-[60vh] w-80 max-w-[calc(100vw-2rem)] overflow-y-auto rounded-lg border border-gray-200 bg-white p-3 text-left text-[11px] shadow-xl dark:border-gray-700 dark:bg-gray-800">
+                                                        <p class="mb-2 font-semibold text-gray-900 dark:text-gray-100">{{ $student->fullName }}</p>
+                                                        <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
+                                                            <dt class="text-gray-500 dark:text-gray-400">Student number</dt>
+                                                            <dd class="font-medium text-gray-900 dark:text-gray-100">{{ $student->student_number }}</dd>
+                                                            <dt class="text-gray-500 dark:text-gray-400">Program / year</dt>
+                                                            <dd class="font-medium text-gray-900 dark:text-gray-100">{{ $student->program ?: 'Not set' }} / {{ $student->year_level ?? 'Not set' }}</dd>
+                                                            <dt class="text-gray-500 dark:text-gray-400">Department</dt>
+                                                            <dd class="font-medium text-gray-900 dark:text-gray-100">{{ $student->department ?: 'Not set' }}</dd>
+                                                            <dt class="text-gray-500 dark:text-gray-400">Enrollment</dt>
+                                                            <dd class="font-medium capitalize text-gray-900 dark:text-gray-100">{{ $row['status'] }}</dd>
+                                                            <dt class="text-gray-500 dark:text-gray-400">Attendance score</dt>
+                                                            <dd class="font-medium text-gray-900 dark:text-gray-100">{{ number_format($overallScore, 2) }}%</dd>
+                                                            <dt class="text-gray-500 dark:text-gray-400">Present / late / absent / excused</dt>
+                                                            <dd class="font-medium text-gray-900 dark:text-gray-100">{{ $row['presences'] }} / {{ $row['lates'] }} / {{ $row['absences'] }} / {{ $row['excused'] }}</dd>
+                                                            <dt class="text-gray-500 dark:text-gray-400">Absence hours</dt>
+                                                            <dd class="font-medium text-gray-900 dark:text-gray-100">{{ number_format($row['absent_hours'], 2) }} / {{ number_format($row['weekly_drop_threshold_hours'], 2) }} weekly hours</dd>
+                                                        </dl>
+                                                        <div class="mt-3 border-t border-gray-200 pt-2 dark:border-gray-700">
+                                                            <p class="font-semibold text-gray-800 dark:text-gray-100">Drop history</p>
+                                                            @forelse ($row['drop_history'] as $drop)
+                                                                <section class="mt-2 rounded-md bg-gray-50 p-2 dark:bg-gray-900/60">
+                                                                    <div class="flex items-center justify-between gap-2">
+                                                                        <span class="font-semibold text-gray-800 dark:text-gray-100">Drop {{ $drop['sequence'] }}</span>
+                                                                        <span class="badge {{ $drop['status_class'] }} text-[10px]">{{ $drop['status'] }}</span>
+                                                                    </div>
+                                                                    @if ($drop['status'] === 'Awaiting student request')
+                                                                        <p class="mt-1 text-[10px] text-amber-700 dark:text-amber-300">The student must submit a readmission request before OSA review.</p>
+                                                                    @endif
+                                                                    <dl class="mt-1 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5">
+                                                                        <dt class="text-gray-500 dark:text-gray-400">Date</dt>
+                                                                        <dd class="text-gray-700 dark:text-gray-300">{{ $drop['date'] ?? 'Not recorded' }}</dd>
+                                                                        <dt class="text-gray-500 dark:text-gray-400">Absence hours</dt>
+                                                                        <dd class="text-gray-700 dark:text-gray-300">{{ number_format($drop['absence_hours'], 2) }} hours</dd>
+                                                                        <dt class="text-gray-500 dark:text-gray-400">Drop type</dt>
+                                                                        <dd class="capitalize text-gray-700 dark:text-gray-300">{{ str_replace('_', ' ', $drop['type'] ?? 'Not recorded') }}</dd>
+                                                                        <dt class="text-gray-500 dark:text-gray-400">Readmission application</dt>
+                                                                        <dd class="font-medium text-gray-700 dark:text-gray-300">{{ $drop['application_status'] }}</dd>
+                                                                        @if ($drop['attempt'])
+                                                                            <dt class="text-gray-500 dark:text-gray-400">Attempt</dt>
+                                                                            <dd class="text-gray-700 dark:text-gray-300">{{ $drop['attempt'] }}</dd>
+                                                                            <dt class="text-gray-500 dark:text-gray-400">Applied</dt>
+                                                                            <dd class="text-gray-700 dark:text-gray-300">{{ $drop['applied_at'] }}</dd>
+                                                                            <dt class="text-gray-500 dark:text-gray-400">Reason</dt>
+                                                                            <dd class="text-gray-700 dark:text-gray-300">{{ $drop['reason'] }}</dd>
+                                                                            @if ($drop['reason_details'])
+                                                                                <dt class="text-gray-500 dark:text-gray-400">Student details</dt>
+                                                                                <dd class="whitespace-pre-line text-gray-700 dark:text-gray-300">{{ $drop['reason_details'] }}</dd>
+                                                                            @endif
+                                                                        @endif
+                                                                    </dl>
+                                                                </section>
+                                                            @empty
+                                                                <p class="mt-1 text-gray-600 dark:text-gray-300">No drop history recorded.</p>
+                                                            @endforelse
+                                                        </div>
+                                                    </div>
+                                                </details>
                                             </td>
 
                                         </tr>
                                     @empty
                                         <tr>
-                                            <td colspan="{{ 3 + max(1, $gridDates->count()) }}" class="muted py-12 text-center">
+                                            <td colspan="{{ 4 + max(1, $gridDates->count()) }}" class="muted py-12 text-center">
                                                 No students are enrolled in this course yet.
                                             </td>
                                         </tr>
