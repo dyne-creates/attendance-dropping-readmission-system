@@ -472,7 +472,7 @@
                             <thead>
                                 <tr class="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 text-gray-800 dark:text-gray-200 select-none">
                                     {{-- Column 1: Student --}}
-                                    <th scope="col" class="sticky left-0 z-30 bg-white dark:bg-gray-800 py-4 px-6 text-left font-medium text-sm border-r border-gray-200 dark:border-gray-700 w-[38%] min-w-[14rem]">
+                                    <th scope="col" class="sticky left-0 z-30 bg-slate-100 dark:bg-slate-900 py-4 px-6 text-left font-medium text-sm border-r border-gray-300 dark:border-gray-600 w-[38%] min-w-[14rem]">
                                         Student
                                     </th>
 
@@ -527,7 +527,7 @@
                                         title="{{ $canCheckAttendance ? 'Click to mark all as Excused' : 'No class is scheduled for this date' }}">
                                         <span class="group-hover:text-slate-700 dark:group-hover:text-slate-300">Excused</span>
                                     </th>
-                                    <th scope="col" class="sticky right-0 z-30 bg-white dark:bg-gray-800 py-4 px-3 text-center font-medium text-sm border-l border-gray-200 dark:border-gray-700 min-w-[6rem]">
+                                    <th scope="col" class="sticky right-0 z-30 bg-slate-100 dark:bg-slate-900 py-4 px-3 text-center font-medium text-sm border-l border-gray-300 dark:border-gray-600 min-w-[6rem]">
                                         Details
                                     </th>
                                 </tr>
@@ -547,7 +547,7 @@
                                         @class(['hover:bg-gray-50/60 dark:hover:bg-gray-700/30 transition-colors', 'opacity-60 bg-gray-50/50' => $isDropped])>
 
                                         {{-- Column 1: Student name only --}}
-                                        <td class="sticky left-0 z-10 bg-white dark:bg-gray-800 py-4 px-6 border-r border-b border-gray-200 dark:border-gray-700 min-w-[14rem]">
+                                        <td class="sticky left-0 z-10 bg-slate-100 dark:bg-slate-900 py-4 px-6 border-r border-b border-gray-300 dark:border-gray-600 min-w-[14rem]">
                                             <span class="font-medium text-sm text-gray-900 dark:text-gray-100">{{ $student->fullName }}</span>
                                         </td>
                                         {{-- Column 2: Present Icon Cell --}}
@@ -627,7 +627,7 @@
                                             </svg>
                                         </td>
 
-                                        <td class="sticky right-0 z-20 bg-white dark:bg-gray-800 py-4 px-2 text-center border-l border-b border-gray-200 dark:border-gray-700">
+                                        <td class="sticky right-0 z-20 bg-slate-100 dark:bg-slate-900 py-4 px-2 text-center border-l border-b border-gray-300 dark:border-gray-600">
                                             <details data-student-details class="group relative inline-block text-left"
                                                      @toggle="handleStudentDetailsToggle($el)"
                                                      @scroll.window.capture="if ($el.open) positionStudentDetails($el)"
@@ -885,10 +885,10 @@
                         <div class="overflow-x-auto max-h-[72vh]">
                             <table id="attendance-overall-grid" class="bb-grid-table border-collapse w-full">
                                 <thead>
-                                    <tr class="bg-white dark:bg-gray-800 sticky top-0 z-20 shadow-xs border-b border-gray-200 dark:border-gray-700">
+                                    <tr class="sticky top-0 z-20 border-b border-gray-300 bg-slate-200 shadow-xs dark:border-gray-600 dark:bg-slate-950">
                                         {{-- Student Column (Sticky left) --}}
                                         <th scope="col"
-                                            class="sticky left-0 z-30 bg-white dark:bg-gray-800 py-3.5 px-4 text-left font-semibold text-gray-700 dark:text-gray-200 border-r border-b border-gray-200 dark:border-gray-700 min-w-[13rem]">
+                                            class="sticky left-0 z-30 bg-slate-100 dark:bg-slate-900 py-3.5 px-4 text-left font-semibold text-gray-700 dark:text-gray-200 border-r border-b border-gray-300 dark:border-gray-600 min-w-[13rem]">
                                             Student
                                         </th>
 
@@ -931,11 +931,11 @@
                                             Overall
                                         </th>
                                         <th scope="col"
-                                            class="sticky right-24 z-30 bg-white dark:bg-gray-800 py-3.5 px-3 text-center font-semibold text-gray-700 dark:text-gray-200 border-r border-b border-gray-200 dark:border-gray-700 min-w-[5rem]">
+                                            class="sticky right-24 z-30 bg-slate-100 dark:bg-slate-900 py-3.5 px-3 text-center font-semibold text-gray-700 dark:text-gray-200 border-r border-b border-gray-300 dark:border-gray-600 min-w-[5rem]">
                                             Drops
                                         </th>
                                         <th scope="col"
-                                            class="sticky right-0 z-30 bg-white dark:bg-gray-800 py-3.5 px-3 text-center font-semibold text-gray-700 dark:text-gray-200 border-b border-gray-200 dark:border-gray-700 min-w-[6rem]">
+                                            class="sticky right-0 z-30 bg-slate-100 dark:bg-slate-900 py-3.5 px-3 text-center font-semibold text-gray-700 dark:text-gray-200 border-b border-gray-300 dark:border-gray-600 min-w-[6rem]">
                                             Details
                                         </th>
                                     </tr>
@@ -956,7 +956,7 @@
                                             @class(['hover:bg-gray-50/70 dark:hover:bg-gray-800/50 transition-colors', 'opacity-60 bg-gray-50/50' => $isDropped])>
 
                                             {{-- Student Name & Info (Sticky Left) --}}
-                                            <td class="sticky left-0 z-10 bg-white dark:bg-gray-800 py-3 px-4 border-r border-b border-gray-200 dark:border-gray-700 min-w-[13rem]">
+                                            <td class="sticky left-0 z-10 bg-slate-100 dark:bg-slate-900 py-3 px-4 border-r border-b border-gray-300 dark:border-gray-600 min-w-[13rem]">
                                                 <div class="flex items-center gap-3 rounded-lg border-2 border-transparent p-2 transition-colors"
                                                      x-bind:class="studentStatusOutline({{ $enrollmentId }})">
                                                     <div class="min-w-0">
@@ -1133,10 +1133,10 @@
                                                     {{ $scoreText }}
                                                 </span>
                                             </td>
-                                            <td class="sticky right-24 z-10 bg-white dark:bg-gray-800 py-3 px-3 text-center border-r border-b border-gray-200 dark:border-gray-700 tabular-nums">
+                                            <td class="sticky right-24 z-10 bg-slate-100 dark:bg-slate-900 py-3 px-3 text-center border-r border-b border-gray-300 dark:border-gray-600 tabular-nums">
                                                 {{ $row['drop_count'] }}
                                             </td>
-                                            <td class="sticky right-0 z-20 bg-white dark:bg-gray-800 py-3 px-2 text-center border-b border-gray-200 dark:border-gray-700">
+                                            <td class="sticky right-0 z-20 bg-slate-100 dark:bg-slate-900 py-3 px-2 text-center border-b border-gray-300 dark:border-gray-600">
                                                 <details data-student-details class="group relative inline-block text-left"
                                                          @toggle="handleStudentDetailsToggle($el)"
                                                          @scroll.window.capture="if ($el.open) positionStudentDetails($el)"
