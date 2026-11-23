@@ -1,0 +1,17 @@
+.env
+.env.*
+!.env.example
+.git
+.github
+.agents
+.idea
+.vscode
+node_modules
+vendor
+public/hot
+public/build
+storage/app/private
+storage/logs
+database/database.sqlite
+tests
+docs

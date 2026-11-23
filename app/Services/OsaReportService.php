@@ -132,11 +132,23 @@ class OsaReportService
     private function getAvailableYears(): array
     {
         $years = collect();
-        $isSqlite = DB::connection()->getDriverName() === 'sqlite';
+        $driver = DB::connection()->getDriverName();
 
-        $dropYearExpr = $isSqlite ? "strftime('%Y', drop_date) as yr" : 'YEAR(drop_date) as yr';
-        $readmissionYearExpr = $isSqlite ? "strftime('%Y', created_at) as yr" : 'YEAR(created_at) as yr';
-        $attendanceYearExpr = $isSqlite ? "strftime('%Y', session_date) as yr" : 'YEAR(session_date) as yr';
+        $dropYearExpr = match ($driver) {
+            'sqlite' => "strftime('%Y', drop_date) as yr",
+            'pgsql' => 'EXTRACT(YEAR FROM drop_date) as yr',
+            default => 'YEAR(drop_date) as yr',
+        };
+        $readmissionYearExpr = match ($driver) {
+            'sqlite' => "strftime('%Y', created_at) as yr",
+            'pgsql' => 'EXTRACT(YEAR FROM created_at) as yr',
+            default => 'YEAR(created_at) as yr',
+        };
+        $attendanceYearExpr = match ($driver) {
+            'sqlite' => "strftime('%Y', session_date) as yr",
+            'pgsql' => 'EXTRACT(YEAR FROM session_date) as yr',
+            default => 'YEAR(session_date) as yr',
+        };
 
         $dropYears = DB::table('dropping_transactions')
             ->selectRaw($dropYearExpr)
@@ -468,9 +480,17 @@ class OsaReportService
             $cursor->addMonth();
         }
 
-        $isSqlite = DB::connection()->getDriverName() === 'sqlite';
-        $dropFormatExpr = $isSqlite ? "strftime('%Y-%m', dropping_transactions.drop_date) as ym, COUNT(*) as cnt" : "DATE_FORMAT(dropping_transactions.drop_date, '%Y-%m') as ym, COUNT(*) as cnt";
-        $readmissionFormatExpr = $isSqlite ? "strftime('%Y-%m', readmission_requests.created_at) as ym, COUNT(*) as cnt" : "DATE_FORMAT(readmission_requests.created_at, '%Y-%m') as ym, COUNT(*) as cnt";
+        $driver = DB::connection()->getDriverName();
+        $dropFormatExpr = match ($driver) {
+            'sqlite' => "strftime('%Y-%m', dropping_transactions.drop_date) as ym, COUNT(*) as cnt",
+            'pgsql' => "TO_CHAR(dropping_transactions.drop_date, 'YYYY-MM') as ym, COUNT(*) as cnt",
+            default => "DATE_FORMAT(dropping_transactions.drop_date, '%Y-%m') as ym, COUNT(*) as cnt",
+        };
+        $readmissionFormatExpr = match ($driver) {
+            'sqlite' => "strftime('%Y-%m', readmission_requests.created_at) as ym, COUNT(*) as cnt",
+            'pgsql' => "TO_CHAR(readmission_requests.created_at, 'YYYY-MM') as ym, COUNT(*) as cnt",
+            default => "DATE_FORMAT(readmission_requests.created_at, '%Y-%m') as ym, COUNT(*) as cnt",
+        };
 
         // Query referrals grouped by YYYY-MM
         $referralQuery = $this->applyCommonFilters(

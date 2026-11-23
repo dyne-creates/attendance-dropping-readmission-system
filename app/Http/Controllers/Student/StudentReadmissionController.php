@@ -166,7 +166,10 @@ class StudentReadmissionController extends Controller
                 ]);
 
                 if ($request->hasFile('attachment')) {
-                    $filePath = $request->file('attachment')->store('readmission-documents', 'local');
+                    $filePath = $request->file('attachment')->store(
+                        'readmission-documents',
+                        config('filesystems.private_disk', 'local')
+                    );
 
                     if ($filePath === false) {
                         throw new RuntimeException('The supporting document could not be stored.');

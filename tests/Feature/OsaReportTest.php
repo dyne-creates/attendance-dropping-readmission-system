@@ -149,7 +149,8 @@ class OsaReportTest extends TestCase
         $osaUser = User::factory()->osaStaff()->create();
         $this->seedReportData();
         $this->travelTo(new \DateTimeImmutable('2026-11-06T19:18:50+00:00'));
-        Storage::fake('local');
+        Storage::fake('s3');
+        config(['filesystems.private_disk' => 's3']);
 
         // Transparent 1x1 png base64 for testing chart image embedding
         $dummyChart = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
@@ -175,8 +176,8 @@ class OsaReportTest extends TestCase
             ->assertSee('Download PDF');
 
         $pdfPath = 'osa-reports/'.$osaUser->user_id.'/'.$token.'.pdf';
-        Storage::disk('local')->assertExists($pdfPath);
-        $this->assertStringStartsWith('%PDF-', Storage::disk('local')->get($pdfPath));
+        Storage::disk('s3')->assertExists($pdfPath);
+        $this->assertStringStartsWith('%PDF-', Storage::disk('s3')->get($pdfPath));
 
         $fileResponse = $this->get(route('osa.reports.pdf.file', $token));
         $fileResponse->assertOk();

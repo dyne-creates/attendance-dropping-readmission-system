@@ -316,14 +316,16 @@ class OsaStaffController extends Controller
 
     public function downloadExcuseDocument(ExcuseDocument $document): StreamedResponse
     {
-        abort_unless(Storage::disk('local')->exists($document->file_path), 404);
+        $disk = Storage::disk(config('filesystems.private_disk', 'local'));
+        abort_unless($disk->exists($document->file_path), 404);
 
-        return Storage::disk('local')->download($document->file_path);
+        return $disk->download($document->file_path);
     }
 
-    public function previewExcuseDocument(Request $request, ExcuseDocument $document): BinaryFileResponse|Response
+    public function previewExcuseDocument(Request $request, ExcuseDocument $document): StreamedResponse|Response
     {
-        abort_unless(Storage::disk('local')->exists($document->file_path), 404);
+        $disk = Storage::disk(config('filesystems.private_disk', 'local'));
+        abort_unless($disk->exists($document->file_path), 404);
 
         if (strtolower(pathinfo($document->file_path, PATHINFO_EXTENSION)) === 'docx' && ! $request->boolean('raw')) {
             return response()->view('osa-staff.document-preview', [
@@ -334,8 +336,8 @@ class OsaStaffController extends Controller
             ]);
         }
 
-        return response()->file(Storage::disk('local')->path($document->file_path), [
-            'Content-Type' => Storage::disk('local')->mimeType($document->file_path) ?? 'application/octet-stream',
+        return $disk->response($document->file_path, null, [
+            'Content-Type' => $disk->mimeType($document->file_path) ?? 'application/octet-stream',
             'X-Content-Type-Options' => 'nosniff',
         ]);
     }

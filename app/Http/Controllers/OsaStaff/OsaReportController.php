@@ -16,7 +16,8 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\View\View;
-use Symfony\Component\HttpFoundation\BinaryFileResponse;
+use RuntimeException;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class OsaReportController extends Controller
 {
@@ -57,8 +58,6 @@ class OsaReportController extends Controller
         ]);
     }
 
-    private const PDF_DISK = 'local';
-
     private const PDF_TTL_MINUTES = 60;
 
     /**
@@ -94,7 +93,9 @@ class OsaReportController extends Controller
 
         $token = (string) Str::uuid();
         $path = $this->pdfDirectory().'/'.$token.'.pdf';
-        Storage::disk(self::PDF_DISK)->put($path, $report['pdf']);
+        if (! Storage::disk($this->privateDisk())->put($path, $report['pdf'])) {
+            throw new RuntimeException('The generated report could not be stored.');
+        }
 
         Cache::put($this->pdfCacheKey($token), [
             'user_id' => Auth::id(),
@@ -129,26 +130,25 @@ class OsaReportController extends Controller
     /**
      * Inline PDF bytes for the viewer iframe.
      */
-    public function streamPdf(string $token): BinaryFileResponse
+    public function streamPdf(string $token): StreamedResponse
     {
         $meta = $this->resolveStoredPdf($token);
 
-        return response()->file(Storage::disk(self::PDF_DISK)->path($meta['path']), [
+        return Storage::disk($this->privateDisk())->response($meta['path'], $meta['filename'], [
             'Content-Type' => 'application/pdf',
-            'Content-Disposition' => 'inline; filename="'.$meta['filename'].'"',
             'X-Content-Type-Options' => 'nosniff',
             'Cache-Control' => 'private, max-age=0, must-revalidate',
-        ]);
+        ], 'inline');
     }
 
     /**
      * Forced download with a guaranteed application/pdf content type.
      */
-    public function downloadPdf(string $token): BinaryFileResponse
+    public function downloadPdf(string $token): StreamedResponse
     {
         $meta = $this->resolveStoredPdf($token);
 
-        return response()->download(Storage::disk(self::PDF_DISK)->path($meta['path']), $meta['filename'], [
+        return Storage::disk($this->privateDisk())->download($meta['path'], $meta['filename'], [
             'Content-Type' => 'application/pdf',
             'X-Content-Type-Options' => 'nosniff',
         ]);
@@ -318,7 +318,7 @@ class OsaReportController extends Controller
         abort_unless(
             is_array($meta)
                 && (int) $meta['user_id'] === (int) Auth::id()
-                && Storage::disk(self::PDF_DISK)->exists($meta['path']),
+                && Storage::disk($this->privateDisk())->exists($meta['path']),
             404,
             'This report has expired. Please generate it again from the Reports page.'
         );
@@ -336,9 +336,14 @@ class OsaReportController extends Controller
         return 'osa-reports/'.Auth::id();
     }
 
+    private function privateDisk(): string
+    {
+        return (string) config('filesystems.private_disk', 'local');
+    }
+
     private function pruneExpiredPdfs(): void
     {
-        $disk = Storage::disk(self::PDF_DISK);
+        $disk = Storage::disk($this->privateDisk());
         $cutoff = now()->subMinutes(self::PDF_TTL_MINUTES)->getTimestamp();
 
         foreach ($disk->files($this->pdfDirectory()) as $file) {

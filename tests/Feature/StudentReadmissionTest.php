@@ -198,7 +198,8 @@ class StudentReadmissionTest extends TestCase
     public function test_dropped_student_can_submit_a_readmission_request_with_a_pdf_supporting_document(): void
     {
         [$user, $student, , $enrollment] = $this->createDroppedStudent();
-        Storage::fake();
+        Storage::fake('s3');
+        config(['filesystems.private_disk' => 's3']);
 
         $response = $this->actingAs($user)
             ->post(route('student.readmissions.store', $enrollment), [
@@ -226,7 +227,7 @@ class StudentReadmissionTest extends TestCase
 
         $document = $readmission->excuseDocuments()->firstOrFail();
         $this->assertSame('supporting_document', $document->document_type);
-        Storage::assertExists($document->file_path);
+        Storage::disk('s3')->assertExists($document->file_path);
 
         $this->actingAs(User::factory()->osaStaff()->create())
             ->get(route('osa.readmissions'))

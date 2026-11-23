@@ -19,6 +19,7 @@ use Carbon\Carbon;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use RuntimeException;
 
 class DatabaseSeeder extends Seeder
 {
@@ -28,7 +29,9 @@ class DatabaseSeeder extends Seeder
     public function run(): void
     {
         // 1. Clear records of all courses and dependent records
-        if (DB::getDriverName() === 'sqlite') {
+        $driver = DB::getDriverName();
+
+        if ($driver === 'sqlite') {
             DB::statement('PRAGMA foreign_keys = OFF;');
             Notification::truncate();
             ExcuseDocument::truncate();
@@ -39,7 +42,11 @@ class DatabaseSeeder extends Seeder
             CourseSchedule::truncate();
             Course::truncate();
             DB::statement('PRAGMA foreign_keys = ON;');
-        } else {
+        } elseif ($driver === 'pgsql') {
+            DB::statement(
+                'TRUNCATE TABLE notifications, excuse_documents, readmission_requests, dropping_transactions, attendance_records, enrollments, course_schedules, courses RESTART IDENTITY CASCADE'
+            );
+        } elseif (in_array($driver, ['mysql', 'mariadb'], true)) {
             DB::statement('SET FOREIGN_KEY_CHECKS=0;');
             Notification::truncate();
             ExcuseDocument::truncate();
@@ -50,6 +57,8 @@ class DatabaseSeeder extends Seeder
             CourseSchedule::truncate();
             Course::truncate();
             DB::statement('SET FOREIGN_KEY_CHECKS=1;');
+        } else {
+            throw new RuntimeException("Database seeding does not support the [{$driver}] driver.");
         }
 
         // 2. School Year
