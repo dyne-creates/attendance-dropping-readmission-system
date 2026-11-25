@@ -17,12 +17,13 @@ class AuthenticationTest extends TestCase
 
         $response
             ->assertOk()
-            ->assertSee('University email')
+            ->assertSee('Username')
+            ->assertSee('name="username"', false)
             ->assertSee('Password')
             ->assertSee('Remember me')
             ->assertSee('Log in')
             ->assertSee('Sign in with Google')
-            ->assertSee('Sign up with Google')
+            ->assertSee('Sign up with username or Google')
             ->assertSee(route('google.redirect', ['intent' => 'login']), false)
             ->assertSee(route('register'), false);
 
@@ -89,7 +90,7 @@ class AuthenticationTest extends TestCase
             ->assertRedirect(route('osa.dashboard'));
     }
 
-    public function test_seeded_demo_faculty_and_osa_accounts_can_use_temporary_password_login(): void
+    public function test_seeded_demo_faculty_can_use_its_username_and_temporary_password(): void
     {
         $faculty = User::factory()->faculty()->create([
             'email' => 'faculty@e.ubaguio.edu',
@@ -98,27 +99,29 @@ class AuthenticationTest extends TestCase
         $faculty->facultyMember()->create(['full_name' => $faculty->name]);
 
         $this->post(route('login'), [
-            'email' => $faculty->email,
+            'username' => 'faculty',
             'password' => 'demo-password',
         ])->assertRedirect(route('faculty.dashboard'));
 
         $this->assertAuthenticatedAs($faculty);
-        auth()->logout();
+    }
 
+    public function test_seeded_demo_osa_staff_can_use_its_username_and_temporary_password(): void
+    {
         $osaStaff = User::factory()->osaStaff()->create([
             'password' => Hash::make('demo-password'),
         ]);
         $osaStaff->osaStaff()->create();
 
         $this->post(route('login'), [
-            'email' => $osaStaff->email,
+            'username' => 'osa',
             'password' => 'demo-password',
         ])->assertRedirect(route('osa.dashboard'));
 
         $this->assertAuthenticatedAs($osaStaff);
     }
 
-    public function test_manual_login_rejects_student_and_unconfigured_employee_accounts(): void
+    public function test_manual_login_rejects_student_accounts(): void
     {
         $student = User::factory()->create([
             'email' => '20254611@s.ubaguio.edu',
@@ -126,23 +129,109 @@ class AuthenticationTest extends TestCase
         ]);
 
         $this->post(route('login'), [
-            'email' => $student->email,
+            'username' => $student->email,
             'password' => 'demo-password',
-        ])->assertSessionHasErrors('email');
+        ])->assertSessionHasErrors('username');
 
         $this->assertGuest();
+    }
 
+    public function test_manual_login_rejects_unconfigured_faculty_accounts(): void
+    {
         $faculty = User::factory()->faculty()->create([
             'email' => 'other.faculty@e.ubaguio.edu',
             'password' => Hash::make('demo-password'),
         ]);
 
         $this->post(route('login'), [
-            'email' => $faculty->email,
+            'username' => $faculty->email,
             'password' => 'demo-password',
-        ])->assertSessionHasErrors('email');
+        ])->assertSessionHasErrors('username');
 
         $this->assertGuest();
+    }
+
+    public function test_beta_login_authenticates_the_configured_faculty_username(): void
+    {
+        $accounts = $this->configureBetaPasswordAccounts();
+        $account = $accounts[0];
+        $faculty = User::factory()->faculty()->create([
+            'name' => $account['name'],
+            'username' => $account['username'],
+            'email' => $account['email'],
+            'password' => Hash::make($account['password']),
+        ]);
+        $faculty->facultyMember()->create(['full_name' => $faculty->name]);
+
+        $this->post(route('login'), [
+            'username' => $account['username'],
+            'password' => $account['password'],
+        ])->assertRedirect(route('faculty.dashboard'));
+
+        $this->assertAuthenticatedAs($faculty);
+    }
+
+    public function test_beta_login_authenticates_the_configured_osa_username(): void
+    {
+        $accounts = $this->configureBetaPasswordAccounts();
+        $account = $accounts[1];
+        $osaStaff = User::factory()->osaStaff()->create([
+            'name' => $account['name'],
+            'username' => $account['username'],
+            'email' => $account['email'],
+            'password' => Hash::make($account['password']),
+        ]);
+        $osaStaff->osaStaff()->create();
+
+        $this->post(route('login'), [
+            'username' => $account['username'],
+            'password' => $account['password'],
+        ])->assertRedirect(route('osa.dashboard'));
+
+        $this->assertAuthenticatedAs($osaStaff);
+    }
+
+    public function test_beta_login_rejects_unconfigured_usernames(): void
+    {
+        $this->configureBetaPasswordAccounts();
+
+        $this->post(route('login'), [
+            'username' => 'unlisted-user',
+            'password' => 'beta-test-password',
+        ])->assertSessionHasErrors('username');
+
+        $this->assertGuest();
+    }
+
+    public function test_configured_password_login_works_when_beta_demo_seeding_is_disabled(): void
+    {
+        $account = $this->configureBetaPasswordAccounts()[0];
+        $faculty = User::factory()->faculty()->create([
+            'name' => $account['name'],
+            'username' => $account['username'],
+            'email' => $account['email'],
+            'password' => Hash::make($account['password']),
+        ]);
+        $faculty->facultyMember()->create(['full_name' => $faculty->name]);
+        config(['ub.beta_password_login_enabled' => false]);
+
+        $this->post(route('login'), [
+            'username' => $account['username'],
+            'password' => $account['password'],
+        ])->assertRedirect(route('faculty.dashboard'));
+
+        $this->assertAuthenticatedAs($faculty);
+    }
+
+    public function test_login_page_shows_password_login_when_beta_login_is_disabled(): void
+    {
+        config([
+            'ub.beta_password_login_enabled' => false,
+        ]);
+
+        $this->get(route('login'))
+            ->assertSee('name="username"', false)
+            ->assertSee('Sign in with Google');
     }
 
     public function test_users_can_logout_and_cannot_reopen_dashboard_routes(): void
@@ -160,5 +249,35 @@ class AuthenticationTest extends TestCase
         $response->assertRedirect(route('login'));
         $this->get(route('student.dashboard'))->assertRedirect(route('login'));
         $this->get(route('login'))->assertOk();
+    }
+
+    /**
+     * @return array<int, array{username: string, email: string, name: string, password: string, role: string}>
+     */
+    private function configureBetaPasswordAccounts(): array
+    {
+        $accounts = [
+            [
+                'username' => 'faculty-beta',
+                'email' => 'faculty.beta@example.test',
+                'name' => 'Beta Faculty',
+                'password' => 'faculty-beta-test-password',
+                'role' => 'faculty',
+            ],
+            [
+                'username' => 'osa-beta',
+                'email' => 'osa.beta@example.test',
+                'name' => 'Beta OSA Staff',
+                'password' => 'osa-beta-test-password',
+                'role' => 'osa_staff',
+            ],
+        ];
+
+        config([
+            'ub.beta_password_login_enabled' => true,
+            'ub.beta_password_accounts' => $accounts,
+        ]);
+
+        return $accounts;
     }
 }

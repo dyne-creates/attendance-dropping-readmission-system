@@ -18,7 +18,7 @@ Route::get('/', function () {
         : redirect()->route('login');
 })->middleware('prevent-back-history');
 
-Route::middleware(['auth', 'prevent-back-history'])->group(function () {
+Route::middleware(['auth', 'verified', 'prevent-back-history'])->group(function () {
     Route::get('/dashboard', function (Request $request) {
         return match ($request->user()->role) {
             'student' => redirect()->route('student.dashboard'),
@@ -116,7 +116,7 @@ Route::middleware(['auth', 'prevent-back-history'])->group(function () {
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
 });
 
-Route::middleware(['auth', 'staffMiddleware'])->prefix('osa')->name('osa.')->group(function () {
+Route::middleware(['auth', 'verified', 'staffMiddleware'])->prefix('osa')->name('osa.')->group(function () {
 
     // Dashboard
     Route::get('/dashboard', [
@@ -204,7 +204,7 @@ Route::middleware(['auth', 'staffMiddleware'])->prefix('osa')->name('osa.')->gro
     ])->name('reports.readmissions.extract');
 });
 
-Route::middleware(['auth', 'adminMiddleware'])->prefix('admin')->name('admin.')->group(function () {
+Route::middleware(['auth', 'verified', 'adminMiddleware'])->prefix('admin')->name('admin.')->group(function () {
     Route::get('/osa-accounts', [OsaAccountController::class, 'index'])->name('osa-accounts.index');
     Route::post('/osa-accounts', [OsaAccountController::class, 'store'])->name('osa-accounts.store');
     Route::put('/osa-accounts/{account}', [OsaAccountController::class, 'update'])->name('osa-accounts.update');

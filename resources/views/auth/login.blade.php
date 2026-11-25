@@ -1,17 +1,16 @@
-<x-guest-layout heading="Log in" subheading="Use your University of Baguio account to continue.">
+<x-guest-layout heading="Log in" subheading="Use your account to continue.">
     <x-auth-session-status class="mb-5" :status="session('status')" />
 
     <x-input-error class="mb-5" :messages="$errors->get('google')" />
 
-    @if (app()->environment(['local', 'testing']))
-        <form method="POST" action="{{ route('login') }}">
+    <form method="POST" action="{{ route('login') }}">
             @csrf
 
             <div>
-                <x-input-label for="email" value="University email" />
-                <x-text-input id="email" class="mt-1.5" type="email" name="email" :value="old('email')" required autofocus
-                    autocomplete="username" :aria-invalid="$errors->has('email') ? 'true' : null" />
-                <x-input-error class="mt-2" :messages="$errors->get('email')" />
+                <x-input-label for="username" value="Username" />
+                <x-text-input id="username" class="mt-1.5" type="text" name="username" :value="old('username')" required autofocus
+                    autocomplete="username" :aria-invalid="$errors->has('username') ? 'true' : null" />
+                <x-input-error class="mt-2" :messages="$errors->get('username')" />
             </div>
 
             <div class="mt-5">
@@ -34,14 +33,13 @@
             </div>
 
             <x-primary-button class="mt-6 w-full">Log in</x-primary-button>
-        </form>
+    </form>
 
-        <div class="my-6 flex items-center gap-3 text-xs muted" aria-hidden="true">
-            <span class="h-px flex-1 bg-gray-200 dark:bg-gray-700"></span>
-            <span>Or continue with</span>
-            <span class="h-px flex-1 bg-gray-200 dark:bg-gray-700"></span>
-        </div>
-    @endif
+    <div class="my-6 flex items-center gap-3 text-xs muted" aria-hidden="true">
+        <span class="h-px flex-1 bg-gray-200 dark:bg-gray-700"></span>
+        <span>Or continue with</span>
+        <span class="h-px flex-1 bg-gray-200 dark:bg-gray-700"></span>
+    </div>
 
     <a href="{{ route('google.redirect', ['intent' => 'login']) }}" class="btn btn-secondary w-full">
         <svg class="h-5 w-5" viewBox="0 0 48 48" aria-hidden="true" focusable="false" fill="none" stroke="currentColor"
@@ -56,6 +54,6 @@
 
     <p class="mt-6 text-center text-sm muted">
         Don’t have an account yet?
-        <a href="{{ route('register') }}" class="link font-semibold">Sign up with Google</a>
+        <a href="{{ route('register') }}" class="link font-semibold">Sign up with username or Google</a>
     </p>
 </x-guest-layout>

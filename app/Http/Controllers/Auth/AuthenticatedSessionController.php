@@ -19,11 +19,14 @@ class AuthenticatedSessionController extends Controller
         return view('auth.login');
     }
 
-    /** Allow password login only for local demo accounts. */
     public function store(LoginRequest $request): RedirectResponse
     {
         $request->authenticate();
         $request->session()->regenerate();
+
+        if (! $request->user()->hasVerifiedEmail()) {
+            return redirect()->route('verification.notice');
+        }
 
         $dashboardRoute = match ($request->user()->role) {
             'admin' => 'admin.osa-accounts.index',

@@ -21,14 +21,16 @@ class LoginRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'email' => ['required', 'string', 'email'],
+            'username' => ['required', 'string', 'max:255'],
             'password' => ['required', 'string'],
         ];
     }
 
     protected function prepareForValidation(): void
     {
-        $this->merge(['email' => Str::lower(trim((string) $this->input('email')))]);
+        $username = $this->input('username', $this->input('email'));
+
+        $this->merge(['username' => Str::lower(trim((string) $username))]);
     }
 
     /** @throws ValidationException */
@@ -36,25 +38,58 @@ class LoginRequest extends FormRequest
     {
         $this->ensureIsNotRateLimited();
 
-        $email = $this->string('email')->toString();
-        $dummyAccounts = config('ub.dummy_password_accounts', []);
+        $username = $this->string('username')->toString();
+        $password = $this->string('password')->toString();
 
-        if (! app()->environment(['local', 'testing']) || ! Auth::attempt($this->only('email', 'password'), $this->boolean('remember'))) {
-            $this->rejectCredentials();
+        if (Auth::attempt([
+            'username' => $username,
+            'password' => $password,
+        ], $this->boolean('remember'))) {
+            RateLimiter::clear($this->throttleKey());
+
+            return;
         }
 
-        $user = Auth::user();
+        if (app()->environment(['local', 'testing'])) {
+            $email = $this->resolveLocalEmail($username);
 
-        if (
-            ! $user instanceof User
-            || ! in_array($user->role, ['faculty', 'osa_staff', 'admin'], true)
-            || ($user->role === 'faculty' && ! in_array($email, $dummyAccounts, true))
-        ) {
-            Auth::guard('web')->logout();
+            if ($email === null || ! Auth::attempt([
+                'email' => $email,
+                'password' => $password,
+            ], $this->boolean('remember'))) {
+                $this->rejectCredentials();
+            }
+
+            $user = Auth::user();
+            $dummyAccounts = config('ub.dummy_password_accounts', []);
+
+            if (
+                ! $user instanceof User
+                || ! in_array($user->role, ['faculty', 'osa_staff', 'admin'], true)
+                || ($user->role === 'faculty' && ! in_array($email, $dummyAccounts, true))
+            ) {
+                Auth::guard('web')->logout();
+                $this->rejectCredentials();
+            }
+        } else {
             $this->rejectCredentials();
         }
 
         RateLimiter::clear($this->throttleKey());
+    }
+
+    private function resolveLocalEmail(string $username): ?string
+    {
+        if (filter_var($username, FILTER_VALIDATE_EMAIL)) {
+            return $username;
+        }
+
+        $matches = array_values(array_filter(
+            config('ub.dummy_password_accounts', []),
+            static fn (string $email): bool => Str::before($email, '@') === $username
+        ));
+
+        return count($matches) === 1 ? $matches[0] : null;
     }
 
     /** @throws ValidationException */
@@ -67,7 +102,7 @@ class LoginRequest extends FormRequest
         event(new Lockout($this));
 
         throw ValidationException::withMessages([
-            'email' => trans('auth.throttle', [
+            'username' => trans('auth.throttle', [
                 'seconds' => RateLimiter::availableIn($this->throttleKey()),
                 'minutes' => ceil(RateLimiter::availableIn($this->throttleKey()) / 60),
             ]),
@@ -78,11 +113,11 @@ class LoginRequest extends FormRequest
     {
         RateLimiter::hit($this->throttleKey());
 
-        throw ValidationException::withMessages(['email' => trans('auth.failed')]);
+        throw ValidationException::withMessages(['username' => trans('auth.failed')]);
     }
 
     private function throttleKey(): string
     {
-        return Str::transliterate(Str::lower($this->string('email')).'|'.$this->ip());
+        return Str::transliterate(Str::lower($this->string('username')).'|'.$this->ip());
     }
 }

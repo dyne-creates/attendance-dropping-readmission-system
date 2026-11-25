@@ -260,12 +260,11 @@ class GoogleSignupTest extends TestCase
         $this->assertGuest();
     }
 
-    public function test_password_based_signup_and_account_management_routes_are_not_available(): void
+    public function test_password_reset_and_profile_management_routes_are_not_available(): void
     {
-        $this->post('/register')->assertMethodNotAllowed();
         $this->get('/forgot-password')->assertNotFound();
         $this->get('/confirm-password')->assertNotFound();
-        $this->get('/verify-email')->assertNotFound();
+        $this->get('/verify-email')->assertRedirect(route('login'));
         $this->put('/password')->assertNotFound();
         $this->patch('/profile')->assertMethodNotAllowed();
         $this->delete('/profile')->assertMethodNotAllowed();
