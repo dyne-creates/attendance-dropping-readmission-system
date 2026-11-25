@@ -68,7 +68,7 @@ class OsaAccountController extends Controller
         $account->update([
             'name' => $validated['name'],
             'email' => strtolower($validated['email']),
-            ...($validated['password'] ? ['password' => $validated['password']] : []),
+            ...(isset($validated['password']) ? ['password' => $validated['password']] : []),
         ]);
         $account->osaStaff()->firstOrCreate();
 
