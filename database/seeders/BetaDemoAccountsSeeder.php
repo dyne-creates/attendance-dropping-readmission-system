@@ -37,7 +37,6 @@ class BetaDemoAccountsSeeder extends Seeder
                     'username' => $account['username'],
                     'role' => $account['role'],
                     'password' => Hash::make($account['password']),
-                    'email_verified_at' => now(),
                 ]
             );
 

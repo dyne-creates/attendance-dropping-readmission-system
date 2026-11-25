@@ -89,10 +89,8 @@ class RegisteredUserController extends Controller
 
         Auth::guard('web')->login($user);
         $request->session()->regenerate();
-        $user->sendEmailVerificationNotification();
 
-        return redirect()->route('verification.notice')
-            ->with('status', 'A verification link has been sent to your email address.');
+        return redirect()->route($this->dashboardRoute($user->role));
     }
 
     /** @return array{0: string, 1: string} */
@@ -103,5 +101,14 @@ class RegisteredUserController extends Controller
         $firstName = $nameParts === [] ? $lastName : implode(' ', $nameParts);
 
         return [$firstName, $lastName];
+    }
+
+    private function dashboardRoute(string $role): string
+    {
+        return match ($role) {
+            'student' => 'student.dashboard',
+            'faculty' => 'faculty.dashboard',
+            'osa_staff' => 'osa.dashboard',
+        };
     }
 }

@@ -54,7 +54,7 @@
     </a>
 
     <p class="mt-6 text-center text-sm muted">
-        We’ll send a verification link to your University email. Already registered?
+        Already registered?
         <a href="{{ route('login') }}" class="link font-semibold">Log in</a>.
     </p>
 </x-guest-layout>

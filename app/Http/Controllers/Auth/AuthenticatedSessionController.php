@@ -24,10 +24,6 @@ class AuthenticatedSessionController extends Controller
         $request->authenticate();
         $request->session()->regenerate();
 
-        if (! $request->user()->hasVerifiedEmail()) {
-            return redirect()->route('verification.notice');
-        }
-
         $dashboardRoute = match ($request->user()->role) {
             'admin' => 'admin.osa-accounts.index',
             'student' => 'student.dashboard',

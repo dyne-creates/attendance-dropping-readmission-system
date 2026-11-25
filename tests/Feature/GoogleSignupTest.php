@@ -264,7 +264,7 @@ class GoogleSignupTest extends TestCase
     {
         $this->get('/forgot-password')->assertNotFound();
         $this->get('/confirm-password')->assertNotFound();
-        $this->get('/verify-email')->assertRedirect(route('login'));
+        $this->get('/verify-email')->assertNotFound();
         $this->put('/password')->assertNotFound();
         $this->patch('/profile')->assertMethodNotAllowed();
         $this->delete('/profile')->assertMethodNotAllowed();
